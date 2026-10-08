@@ -62,6 +62,6 @@ pnpm typecheck
 | `src/features/` | Sidebar, channel and DM views, detail panel, agent form, onboarding, command palette |
 | `src-tauri/` | The Rust shell: folder dialogs and the backend URL |
 
-In the Tauri shell the window is transparent and the OS blurs what is behind it (acrylic on Windows, vibrancy on macOS), so the side panels are frosted glass over the desktop. A plain browser keeps solid panels.
+In the Tauri shell the window is transparent and, while it has focus, the OS blurs what is behind it (blur on Windows, vibrancy on macOS), so the side panels are frosted glass over the desktop. When the window loses focus, or in a plain browser, the panels are solid.
 
 Agent avatars are DiceBear avatars, rendered locally from the `{style, seed}` the backend stores. Fonts are bundled, so the app works offline.

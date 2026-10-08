@@ -22,6 +22,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 - `lib/windowGlass.ts` applies and re-tints the effect per theme.
 - `core:window:allow-set-effects` was added to the capability.
 - A plain browser keeps the solid layout.
+- Follow-up: the effect is now the lighter `blur`, and it applies only while the window has focus. Unfocused, the panels turn solid and the effect is cleared, which brings DWM GPU use behind a game back to the no-Lgt baseline.
 
 ## 2026-10-08
 

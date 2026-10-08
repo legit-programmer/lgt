@@ -35,8 +35,9 @@ summary: The Ember rules from design/README.md and how they are implemented in t
 - **Glass:**
   - The conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
   - In a plain browser, the sidebar and detail panel are solid, and the backdrop glows (`fv-backdrop`) show only through glass.
-  - **Window glass (owner override of the design README, 2026-10-09).** In the Tauri shell the window is transparent, and the OS blurs whatever is behind it: acrylic on Windows, vibrancy on macOS. The sidebar and detail panel become frosted glass over the desktop. The page grounds and glows go transparent, and the conversation pane floats as a denser sheet (`--window-glass-pane`).
+  - **Window glass (owner override of the design README, 2026-10-09).** In the Tauri shell the window is transparent, and while Lgt has focus the OS blurs whatever is behind it: `blur` on Windows, vibrancy on macOS. The sidebar and detail panel become frosted glass over the desktop. The page grounds and glows go transparent, and the conversation pane floats as a denser sheet (`--window-glass-pane`).
     - How it switches on: `lib/windowGlass.ts` applies the effect, tints it per theme, and sets `data-window-glass="on"` on `<html>`.
+    - Focus only: when the window loses focus, the page turns solid and the effect is cleared. A live blur is recomposited by DWM every frame, which is costly behind games and video. The lighter `blur` was chosen over `acrylic` for the same reason. Measured on Windows 10 behind a game, DWM used about 30% with Lgt closed, about 40% with acrylic always on, and about 25–28% with focus-only blur.
     - Styles: the `:root[data-window-glass="on"]` block in `styles/app.css`, and the `--side-glass*` tokens in `styles/tokens.css`.
     - Fallback: if the platform refuses the effect, the attribute stays off and the solid layout applies.
 - **Controls:** every control is a pill at `--size-control` (34px) with a gradient, a top sheen and a shadow. Tool rows are compact at `--size-tool-row`.

@@ -30,7 +30,7 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
   - `src-tauri/tauri.conf.json` sets a strict CSP: `connect-src` and `img-src` allow only loopback.
   - `capabilities/default.json` grants only `dialog:allow-open`, `opener:allow-open-url` and `core:window:allow-set-effects`.
 - **Identifier and window:** the identifier is `com.lgt.desktop`, and the main window label is `main`.
-- **Window glass:** the main window is `transparent` with `windowEffects` `["acrylic", "underWindowBackground"]`. `lib/windowGlass.ts` re-applies the effect with a theme tint whenever the theme changes. See the [design system](design-system.md).
+- **Window glass:** the main window is `transparent` with `windowEffects` `["blur", "underWindowBackground"]`. `lib/windowGlass.ts` applies the effect only while the window has focus (`onFocusChanged`, `isFocused`, `clearEffects`), and re-tints it when the theme changes. See the [design system](design-system.md).
 
 ## Boot sequence (`src/App.tsx`)
 

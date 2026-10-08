@@ -24,7 +24,7 @@ summary: Behaviors and risks that are not bugs in the gap list but will surprise
 - **Packaging.** `processes.py` and `sdk_host.py` relaunch `sys.executable` with a script, so freezing the backend with PyInstaller or Nuitka breaks child processes. Ship a real interpreter, such as python-build-standalone or PyApp.
 - **The local API is unauthenticated.** Any local process can drive full-permission agents until D1 adds a launch token; see [full-permission agents](../decisions/full-permission-agents.md).
 
-- **Acrylic can lag while dragging or resizing on some Windows builds.** This is a known limitation of the effect. If it bothers you, change `acrylic` to `blur` in both `desktop/src-tauri/tauri.conf.json` and `desktop/src/lib/windowGlass.ts`.
+- **Window glass is a live blur.** DWM recomposites it every frame, so it runs only while Lgt has focus, and it uses the lighter `blur` effect rather than `acrylic`. Expect a short GPU spike at launch while WebView2 renders the UI.
 
 ## Tooling quirks
 
