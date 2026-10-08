@@ -13,7 +13,8 @@ import { useUi } from "../../store/ui";
 import { reportError, useWorkspace } from "../../store/workspace";
 
 const HANDLE = /^[a-z0-9_][a-z0-9_.:-]*$/;
-const AVATAR_STYLE = "bottts";
+// New avatars use DiceBear Critters, the backend default style.
+const AVATAR_STYLE = "critters";
 
 /** Split a command line into argv, honouring double and single quotes. */
 export function splitArgs(value: string): string[] {
@@ -104,7 +105,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
 
   const avatarOptions: Avatar[] = useMemo(() => {
     const current = agent?.avatar ?? form.avatar;
-    return [current, ...seeds.map((seed) => ({ style: current.style || AVATAR_STYLE, seed }))];
+    return [current, ...seeds.map((seed) => ({ style: AVATAR_STYLE, seed }))];
   }, [agent?.avatar, seeds]);
 
   const scan = async () => {

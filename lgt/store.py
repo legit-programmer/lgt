@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .models import (
-    Agent, Attachment, Channel, Event, QueueItem, Run, Session, WorkspaceError, utc_now,
+    DEFAULT_AVATAR_STYLE, Agent, Attachment, Channel, Event, QueueItem, Run, Session,
+    WorkspaceError, utc_now,
 )
 from .run_errors import duration_ms as calculate_duration_ms, normalize_error
 
@@ -200,8 +201,17 @@ class Store:
             count = self.conn.execute("SELECT count(*) FROM agents WHERE hue IS NOT NULL").fetchone()[0]
             for row in rows:
                 self.conn.execute("UPDATE agents SET hue = ?, avatar = ? WHERE agent_id = ?",
-                                  (count % 8, _dump({"style": "bottts", "seed": row["agent_id"]}), row["agent_id"]))
+                                  (count % 8, _dump({"style": DEFAULT_AVATAR_STYLE, "seed": row["agent_id"]}), row["agent_id"]))
                 count += 1
+            # Version 1: the default avatar style moved from bottts to critters. Runs
+            # once, so an avatar later set to bottts on purpose is left alone.
+            if self.conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+                self.conn.execute(
+                    """UPDATE agents SET avatar = json_set(avatar, '$.style', ?)
+                       WHERE json_extract(avatar, '$.style') = 'bottts'""",
+                    (DEFAULT_AVATAR_STYLE,),
+                )
+                self.conn.execute("PRAGMA user_version = 1")
             has_search_index = self.conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'search_fts'"
             ).fetchone() is not None
@@ -243,7 +253,7 @@ class Store:
         with self.transaction():
             existing = self.conn.execute("SELECT hue, created_at FROM agents WHERE agent_id = ?", (agent.agent_id,)).fetchone()
             hue = existing["hue"] if existing else self.conn.execute("SELECT count(*) FROM agents").fetchone()[0] % 8
-            avatar = agent.avatar or {"style": "bottts", "seed": agent.agent_id}
+            avatar = agent.avatar or {"style": DEFAULT_AVATAR_STYLE, "seed": agent.agent_id}
             self.conn.execute(
                 """INSERT INTO agents (
                        agent_id, handle, name, description, harness, model,

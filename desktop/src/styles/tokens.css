@@ -70,10 +70,10 @@
   --glass-pane-line: rgb(255 240 225 / 0.08);
   --glass-pane-well: rgb(8 6 5 / 0.34);
   --glass-pane-raised: rgb(255 240 225 / 0.045);
-  --glass-composer: rgb(58 49 43 / 0.55);
+  --glass-composer: rgb(58 49 43 / 0.42);
   --glass-overlay: rgb(30 25 22 / 0.74);
   --glass-line: rgb(255 240 225 / 0.13);
-  --blur-pane: 28px;
+  --blur-composer: 12px;
   --blur-overlay: 36px;
   --scrim: rgb(8 6 5 / 0.55);
 }

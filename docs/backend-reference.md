@@ -72,7 +72,7 @@ Harness capabilities determine which settings the API accepts. Codex and Gemini 
 
 ## Agent identity and harness choices
 
-`POST /agents` accepts an optional `agent_id`. Omitting it generates a ULID. The response includes `avatar`, `hue`, and `dm_channel_id`. The avatar defaults to `{"style": "bottts", "seed": agent_id}`. Hue is a fixed index from 0 through 7, assigned in creation order to violet, sky, pink, green, lime, plum, indigo, and sand. Renaming preserves identity and the DM.
+`POST /agents` accepts an optional `agent_id`. Omitting it generates a ULID. The response includes `avatar`, `hue`, and `dm_channel_id`. The avatar defaults to `{"style": "critters", "seed": agent_id}` (DiceBear Critters, CC0). Databases from before this default switch their default `bottts` avatars to `critters` once, on first open. Hue is a fixed index from 0 through 7, assigned in creation order to violet, sky, pink, green, lime, plum, indigo, and sand. Renaming preserves identity and the DM.
 
 `model` must match an advertised harness model ID. `claude_code` is an alias for `claude`. `command` is an argv array for custom agents. `extra_args` accepts only flags that the adapter validates; protocol, model, and tool-policy overrides are rejected. A retirement sets `retired_at`, removes channel memberships, cancels deliveries and runs, and archives the DM. Historical runs and events retain their agent references.
 

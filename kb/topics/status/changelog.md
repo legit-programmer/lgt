@@ -16,6 +16,15 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-09
 
+### Frosted composer, quieter messages, Critters avatars
+
+- The composer floats over the timeline as frosted glass (12px blur), so scrolled messages show through it, blurred. The pane itself no longer has a backdrop filter.
+- Your messages lose the amber fill and get a quiet hairline outline.
+- Avatars:
+  - The default DiceBear style is Critters (CC0).
+  - The backend migrates existing default `bottts` avatars once (`PRAGMA user_version` 1).
+  - The desktop moves to `@dicebear/core` 10 with lazily loaded `@dicebear/styles` definitions.
+
 ### Top bar and black ground (desktop)
 
 - On Windows the window is frameless (`tauri.windows.conf.json`).

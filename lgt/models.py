@@ -21,6 +21,10 @@ EVENT_KINDS = frozenset({
 PENDING_QUEUE_STATES = frozenset({"awaiting_route", "awaiting_agent"})
 
 
+# DiceBear style for agents that don't choose one. Critters is CC0 (no attribution).
+DEFAULT_AVATAR_STYLE = "critters"
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -59,7 +63,7 @@ class Agent:
 
     def __post_init__(self) -> None:
         if not self.avatar:
-            object.__setattr__(self, "avatar", {"style": "bottts", "seed": self.agent_id})
+            object.__setattr__(self, "avatar", {"style": DEFAULT_AVATAR_STYLE, "seed": self.agent_id})
         elif not self.avatar.get("seed"):
             object.__setattr__(self, "avatar", {**self.avatar, "seed": self.agent_id})
 

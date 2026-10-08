@@ -62,4 +62,4 @@ pnpm typecheck
 | `src/features/` | Sidebar, channel and DM views, detail panel, agent form, onboarding, command palette |
 | `src-tauri/` | The Rust shell: folder dialogs and the backend URL. `tauri.windows.conf.json` makes the Windows window frameless, and `src/components/TopBar.tsx` draws the combined title bar and app chrome. |
 
-Agent avatars are DiceBear avatars, rendered locally from the `{style, seed}` the backend stores. Fonts are bundled, so the app works offline.
+Agent avatars are DiceBear avatars (Critters by default), rendered locally from the `{style, seed}` the backend stores. Each style's definition loads on first use. Fonts are bundled, so the app works offline.

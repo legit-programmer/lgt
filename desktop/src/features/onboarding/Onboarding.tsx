@@ -146,7 +146,7 @@ function CliRow({ harness }: { harness: Harness }) {
 }
 
 function TemplateCard({ template, hue, selected, onToggle }: { template: Template; hue: number; selected: boolean; onToggle: () => void }) {
-  const agent = { name: template.name, hue, avatar: { style: "bottts", seed: template.id } };
+  const agent = { name: template.name, hue, avatar: { style: "critters", seed: template.id } };
   return (
     <button className={`fv-card template-card${selected ? " is-selected" : ""}`} aria-pressed={selected} onClick={onToggle}>
       <span className="template-top">

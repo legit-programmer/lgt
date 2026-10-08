@@ -1,26 +1,67 @@
-import { createAvatar, type Style } from "@dicebear/core";
-import * as collection from "@dicebear/collection";
-import { useMemo } from "react";
+import { Avatar as DiceBearAvatar, Style, type StyleDefinition } from "@dicebear/core";
+import { useEffect, useState } from "react";
 import type { Agent, AgentStatus, Avatar as AvatarSpec } from "../api/types";
 import { hueStyle, initial } from "../lib/agents";
 import { StatusDot } from "./Status";
 
-const styles = collection as unknown as Record<string, Style<object>>;
-const cache = new Map<string, string>();
+/*
+ * Agent avatars are DiceBear avatars rendered locally from the {style, seed}
+ * the backend stores, so they work offline. Each style's definition
+ * (@dicebear/styles) is its own chunk, loaded the first time it is used; the
+ * default style is Critters (CC0).
+ */
 
-function camel(style: string): string {
-  return style.replace(/-([a-z0-9])/g, (_, char: string) => char.toUpperCase());
+const definitions = import.meta.glob<StyleDefinition>("/node_modules/@dicebear/styles/dist/*.min.json", {
+  import: "default",
+});
+
+const styles = new Map<string, Promise<Style | null>>();
+const uris = new Map<string, string>();
+
+function loadStyle(name: string): Promise<Style | null> {
+  let pending = styles.get(name);
+  if (!pending) {
+    const load = definitions[`/node_modules/@dicebear/styles/dist/${name}.min.json`];
+    pending = load ? load().then((definition) => new Style(definition)).catch(() => null) : Promise.resolve(null);
+    styles.set(name, pending);
+  }
+  return pending;
 }
 
-/** A DiceBear data URI rendered locally, so avatars work offline. */
-export function avatarUri(spec: AvatarSpec): string | null {
-  const key = `${spec.style}:${spec.seed}`;
-  const cached = cache.get(key);
-  if (cached) return cached;
-  const style = styles[camel(spec.style)];
-  if (!style) return null;
-  const uri = createAvatar(style, { seed: spec.seed }).toDataUri();
-  cache.set(key, uri);
+function cachedUri(spec: AvatarSpec): string | undefined {
+  return uris.get(`${spec.style}:${spec.seed}`);
+}
+
+/** A DiceBear data URI for the spec, or null while loading or for an unknown style. */
+export function useAvatarUri(spec: AvatarSpec | null | undefined): string | null {
+  const [uri, setUri] = useState<string | null>(() => (spec ? cachedUri(spec) ?? null : null));
+  const style = spec?.style;
+  const seed = spec?.seed;
+  useEffect(() => {
+    if (!style || !seed) {
+      setUri(null);
+      return;
+    }
+    const key = `${style}:${seed}`;
+    const cached = uris.get(key);
+    if (cached) {
+      setUri(cached);
+      return;
+    }
+    let live = true;
+    void loadStyle(style).then((loaded) => {
+      if (!loaded) {
+        if (live) setUri(null);
+        return;
+      }
+      const rendered = new DiceBearAvatar(loaded, { seed }).toDataUri();
+      uris.set(key, rendered);
+      if (live) setUri(rendered);
+    });
+    return () => {
+      live = false;
+    };
+  }, [style, seed]);
   return uri;
 }
 
@@ -32,7 +73,7 @@ interface AgentAvatarProps {
 }
 
 export function AgentAvatar({ agent, status, size = "md", className = "" }: AgentAvatarProps) {
-  const uri = useMemo(() => (agent?.avatar ? avatarUri(agent.avatar) : null), [agent?.avatar]);
+  const uri = useAvatarUri(agent?.avatar);
   const sizeClass = size === "md" ? "" : ` fv-avatar--${size}`;
   return (
     <span className={`fv-avatar${sizeClass} ${className}`} style={hueStyle(agent)} aria-hidden="true">

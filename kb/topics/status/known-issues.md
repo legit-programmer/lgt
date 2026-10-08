@@ -3,7 +3,7 @@ id: 20261008-known-issues
 title: Known issues and caveats
 tags: [status, ops]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 related: [20261008-process-hosting, 20261008-testing, 20261008-open-gaps, 20261008-harness-adapters, 20261008-cancel-retracts-message, 20261008-full-permission-agents]
 summary: Behaviors and risks that are not bugs in the gap list but will surprise a newcomer — stopped requests staying in context, SDK private access, packaging, bundle size, test and line-ending quirks.
 ---
@@ -15,7 +15,7 @@ summary: Behaviors and risks that are not bugs in the gap list but will surprise
 ## Behavior
 
 - **Stopping a run does not retract the request.** The human message stays in the log, so the agent's next turn sees it and may answer it. Only cancelling a *queued delivery* retracts a message; see [cancel retracts message](../decisions/cancel-retracts-message.md).
-- **The default avatar style is DiceBear `bottts`.** The design's blob faces are illustrative; the style is stored per agent (`avatar.style`).
+- **The default avatar style is DiceBear Critters.** It changed from `bottts` on 2026-10-09. The store's one-time migration (`PRAGMA user_version` 1) switches existing default `bottts` avatars on the first open of an older database. A running backend picks this up only after a restart.
 - **Gemini auth is always `unknown`.** There is no read-only check for it.
 
 ## Risks
@@ -26,7 +26,7 @@ summary: Behaviors and risks that are not bugs in the gap list but will surprise
 
 ## Tooling quirks
 
-- **Bundle size.** The Vite build warns about a chunk over 500 kB, because the whole `@dicebear/collection` is bundled so that any stored style renders offline.
+- **Bundle size.** The main chunk is still over Vite's 500 kB warning, because of React, markdown and the DiceBear core. Avatar styles are separate lazy chunks, for example `critters` at about 53 kB.
 - **`tests/test_server.py` boots a real server.** It starts one on a random port, and one environment once hit a local `ConnectTimeout`. Rerun the test before treating that as a regression.
 - **Line endings.** Git on Windows warns "LF will be replaced by CRLF". The files are authored with LF.
 

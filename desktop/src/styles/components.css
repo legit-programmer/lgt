@@ -89,7 +89,8 @@ select {
   background: var(--glass-pane);
   border: 1px solid var(--glass-pane-line);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(var(--blur-pane)) saturate(140%);
+  /* No backdrop-filter: the window ground is flat, and a filter here would make
+     the pane a backdrop root that hides the timeline from the composer's blur. */
 }
 
 .fv-glass {
@@ -742,8 +743,9 @@ select {
   align-items: center;
 }
 
+/* The person's messages: a quiet hairline, no fill (owner override of accent-soft). */
 .fv-msg--human {
-  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--stroke-2);
 }
 
 .fv-msg--cont {
@@ -759,6 +761,7 @@ select {
 }
 
 .fv-msg--queued {
+  box-shadow: none;
   background: var(--queued-soft);
   outline: 1.5px dashed color-mix(in srgb, var(--queued) 55%, transparent);
   outline-offset: -1.5px;

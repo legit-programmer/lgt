@@ -27,7 +27,7 @@ def store(tmp_path):
 def test_agent_identity_lifecycle_and_dm(store):
     first = store.get_agent("a")
     assert first.hue == 0
-    assert first.avatar == {"style": "bottts", "seed": "a"}
+    assert first.avatar == {"style": "critters", "seed": "a"}
     store.put_agent(replace(first, name="Renamed", hue=7, created_at="later"))
     updated = store.get_agent("a")
     assert (updated.hue, updated.created_at, updated.avatar) == (0, first.created_at, first.avatar)
@@ -40,6 +40,23 @@ def test_agent_identity_lifecycle_and_dm(store):
     assert len(store.list_agents(include_retired=True)) == 1
     store.put_agent(agent("b"))
     assert store.get_agent("b").hue == 1
+
+
+def test_default_bottts_avatars_move_to_critters_once(tmp_path):
+    db = Store(tmp_path / "old.db")
+    db.put_agent(replace(agent("old"), avatar={"style": "bottts", "seed": "old"}))
+    db.put_agent(replace(agent("lorelei"), avatar={"style": "lorelei", "seed": "x"}))
+    db.conn.execute("PRAGMA user_version = 0")  # a database from before the change
+    db.close()
+    db = Store(tmp_path / "old.db")
+    assert db.get_agent("old").avatar == {"style": "critters", "seed": "old"}
+    assert db.get_agent("lorelei").avatar == {"style": "lorelei", "seed": "x"}
+    # Later opens leave a deliberately chosen bottts avatar alone.
+    db.put_agent(replace(db.get_agent("old"), avatar={"style": "bottts", "seed": "old"}))
+    db.close()
+    db = Store(tmp_path / "old.db")
+    assert db.get_agent("old").avatar["style"] == "bottts"
+    db.close()
 
 
 def test_summaries_read_cursor_edits_search_and_reopen(store):

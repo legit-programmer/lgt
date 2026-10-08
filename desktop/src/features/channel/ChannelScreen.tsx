@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Archive, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search, Terminal,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { Agent, ChannelSummary } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
@@ -27,6 +27,19 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
   const runs = useWorkspace((s) => s.runs);
   const me = useWorkspace((s) => s.me);
   const detailOpen = useUi((s) => s.detailOpen);
+  const pane = useRef<HTMLElement>(null);
+  const composerArea = useRef<HTMLDivElement>(null);
+
+  // The composer floats over the timeline as frosted glass; the timeline reserves
+  // its live height at the bottom so the newest message is never covered.
+  useLayoutEffect(() => {
+    const area = composerArea.current;
+    const section = pane.current;
+    if (!area || !section) return;
+    const observer = new ResizeObserver(() => section.style.setProperty("--composer-h", `${area.offsetHeight}px`));
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [channelId]);
 
   useEffect(() => {
     if (anchorSeq === undefined) void useWorkspace.getState().loadTimeline(channelId);
@@ -56,7 +69,7 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
 
   return (
     <div className="channel-screen">
-      <section className="fv-pane-glass conversation" aria-label={isDm ? `Direct messages with ${agent?.handle}` : `#${channel.name}`}>
+      <section ref={pane} className="fv-pane-glass conversation" aria-label={isDm ? `Direct messages with ${agent?.handle}` : `#${channel.name}`}>
         {isDm && agent ? <DmHeader channel={channel} agent={agent} /> : <ChannelHeader channel={channel} members={members} />}
         <Timeline
           channelId={channelId}
@@ -64,7 +77,7 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
           anchorSeq={anchorSeq}
           empty={<EmptyChannel channel={channel} members={members} />}
         />
-        <div className="conversation-composer">
+        <div ref={composerArea} className="conversation-composer">
           <Composer
             channelId={channelId}
             members={members}

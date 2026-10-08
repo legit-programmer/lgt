@@ -72,7 +72,7 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 | `cmdk` | The palette |
 | `lucide-react` | Icons |
 | `react-markdown` + `remark-gfm` | Message rendering |
-| `@dicebear/core` + `@dicebear/collection` 9.x | Avatars, rendered offline |
+| `@dicebear/core` 10 + `@dicebear/styles` 10 | Avatars, rendered offline. Each style's JSON definition is its own lazy chunk, loaded on first use. |
 | `@fontsource` | Figtree and IBM Plex Mono, bundled |
 
 ## Related

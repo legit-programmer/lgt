@@ -432,6 +432,8 @@
   gap: var(--space-200);
   max-width: 1100px;
   margin: 0 auto;
+  /* Room for the floating composer, so the newest message rests above it. */
+  padding-bottom: var(--composer-h, 0px);
 }
 
 .timeline-inner > * {
@@ -442,6 +444,7 @@
 .timeline--empty {
   display: grid;
   place-items: center;
+  padding-bottom: var(--composer-h, 0px);
 }
 
 .timeline-older {
@@ -490,8 +493,24 @@
   white-space: nowrap;
 }
 
+/* The composer floats over the bottom of the timeline. Its wrapper passes
+   wheel and clicks through, so the conversation still scrolls beside it. */
+.conversation {
+  position: relative;
+}
+
 .conversation-composer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
   padding: var(--space-200) var(--space-400) var(--space-400);
+  pointer-events: none;
+}
+
+.conversation-composer > * {
+  pointer-events: auto;
 }
 
 .composer {
@@ -499,9 +518,11 @@
   max-width: 1100px;
   margin: 0 auto;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--glass-pane-line);
+  border: 1px solid var(--glass-line);
   background: var(--glass-composer);
-  box-shadow: var(--shadow-raised);
+  box-shadow: var(--shadow-overlay);
+  /* Frosted: scrolled messages show through, blurred but still visible. */
+  backdrop-filter: blur(var(--blur-composer)) saturate(140%);
 }
 
 .composer.is-dragging {

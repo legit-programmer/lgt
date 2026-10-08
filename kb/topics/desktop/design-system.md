@@ -31,9 +31,13 @@ summary: The Ember rules from design/README.md and how they are implemented in t
   - a check for done.
   - These live in `components/Status.tsx`.
 - **Agents are rounded squares and people are circles** (`fv-avatar`, `fv-avatar--person`).
+- **Your messages (owner override, 2026-10-09):** no `accent-soft` fill, just a quiet hairline (`inset 0 0 0 1px var(--stroke-2)`). Queued messages keep their dashed queued style.
+- **Agent avatars:** DiceBear **Critters** (CC0) is the default style, set by the backend (`DEFAULT_AVATAR_STYLE` in `lgt/models.py`). The picker offers Critters variants. Any stored style still renders, because `components/Avatar.tsx` lazy-loads the matching definition.
 - **Agent hue:** the server assigns a `hue` from 0 to 7, mapped to `--agent-violet … --agent-sand` by `lib/agents.ts#hueVar`. Components read it through `--h`.
 - **Glass:**
-  - Only the conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
+  - The conversation pane (`fv-pane-glass`) is a translucent sheet without its own `backdrop-filter`. A filter there would make the pane a backdrop root and hide the timeline from the composer's blur.
+  - **The composer is frosted glass over the timeline (owner request, 2026-10-09).** It floats absolutely at the bottom of the pane with `backdrop-filter: blur(var(--blur-composer))` (12px), so scrolled messages show through it, blurred. The timeline reserves its live height through `--composer-h`.
+  - Overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
   - The sidebar and detail panel are solid.
   - **Window ground (owner override, 2026-10-09):** pitch black (`--surface-0: #000000` in dark), with no backdrop glows. `fv-backdrop` is a flat `--surface-0`, and the `--backdrop-*` tokens are gone.
   - **OS window glass was tried and dropped (2026-10-09).** A transparent Tauri window with OS acrylic or blur made the side panels frosted over the desktop. DWM recomposites that blur every frame, about 10 points of GPU behind a game with acrylic. A focus-only blur fixed the cost, but the owner chose to keep the window opaque. The commits are `8b592f5` and `b62515b`, both reverted. Don't reintroduce it without the owner asking.
