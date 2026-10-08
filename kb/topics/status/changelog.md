@@ -16,13 +16,11 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-09
 
-### Window glass (desktop)
+### Window glass tried and dropped (desktop)
 
-- The Tauri window is now transparent with OS acrylic (Windows) or vibrancy (macOS), so the sidebar and detail panel are frosted glass over the desktop.
-- `lib/windowGlass.ts` applies and re-tints the effect per theme.
-- `core:window:allow-set-effects` was added to the capability.
-- A plain browser keeps the solid layout.
-- Follow-up: the effect is now the lighter `blur`, and it applies only while the window has focus. Unfocused, the panels turn solid and the effect is cleared, which brings DWM GPU use behind a game back to the no-Lgt baseline.
+- `8b592f5` made the window transparent with OS acrylic, so the side panels were frosted over the desktop.
+- `b62515b` switched to a focus-only blur to cut the DWM GPU cost.
+- The owner then dropped the effect, and both commits were reverted. The window is opaque again, with solid side panels as in the design.
 
 ## 2026-10-08
 

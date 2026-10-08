@@ -3,7 +3,7 @@ id: 20261008-known-issues
 title: Known issues and caveats
 tags: [status, ops]
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-08
 related: [20261008-process-hosting, 20261008-testing, 20261008-open-gaps, 20261008-harness-adapters, 20261008-cancel-retracts-message, 20261008-full-permission-agents]
 summary: Behaviors and risks that are not bugs in the gap list but will surprise a newcomer — stopped requests staying in context, SDK private access, packaging, bundle size, test and line-ending quirks.
 ---
@@ -23,8 +23,6 @@ summary: Behaviors and risks that are not bugs in the gap list but will surprise
 - **Codex SDK private access.** `codex_adapter.py` reads the SDK's private subprocess handle (`_client._client._sync._proc`) and its binary resolver, both pinned to `openai-codex==0.160.1`. Re-test these before upgrading the SDK.
 - **Packaging.** `processes.py` and `sdk_host.py` relaunch `sys.executable` with a script, so freezing the backend with PyInstaller or Nuitka breaks child processes. Ship a real interpreter, such as python-build-standalone or PyApp.
 - **The local API is unauthenticated.** Any local process can drive full-permission agents until D1 adds a launch token; see [full-permission agents](../decisions/full-permission-agents.md).
-
-- **Window glass is a live blur.** DWM recomposites it every frame, so it runs only while Lgt has focus, and it uses the lighter `blur` effect rather than `acrylic`. Expect a short GPU spike at launch while WebView2 renders the UI.
 
 ## Tooling quirks
 

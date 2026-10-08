@@ -3,7 +3,7 @@ id: 20261008-desktop-architecture
 title: Desktop architecture
 tags: [desktop]
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-08
 related: [20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model]
 summary: How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
 ---
@@ -28,9 +28,8 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 - **The shell is thin.** `src-tauri/src/lib.rs` registers the dialog and opener plugins and one command, `backend_url`, which returns `LGT_BACKEND_URL` or `http://127.0.0.1:8000`. It does **not** start or stop the backend; that needs the daemon handshake (D1 in [open gaps](../status/open-gaps.md)).
 - **Security:**
   - `src-tauri/tauri.conf.json` sets a strict CSP: `connect-src` and `img-src` allow only loopback.
-  - `capabilities/default.json` grants only `dialog:allow-open`, `opener:allow-open-url` and `core:window:allow-set-effects`.
+  - `capabilities/default.json` grants only `dialog:allow-open` and `opener:allow-open-url`.
 - **Identifier and window:** the identifier is `com.lgt.desktop`, and the main window label is `main`.
-- **Window glass:** the main window is `transparent` with `windowEffects` `["blur", "underWindowBackground"]`. `lib/windowGlass.ts` applies the effect only while the window has focus (`onFocusChanged`, `isFocused`, `clearEffects`), and re-tints it when the theme changes. See the [design system](design-system.md).
 
 ## Boot sequence (`src/App.tsx`)
 

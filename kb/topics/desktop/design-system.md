@@ -33,13 +33,10 @@ summary: The Ember rules from design/README.md and how they are implemented in t
 - **Agents are rounded squares and people are circles** (`fv-avatar`, `fv-avatar--person`).
 - **Agent hue:** the server assigns a `hue` from 0 to 7, mapped to `--agent-violet … --agent-sand` by `lib/agents.ts#hueVar`. Components read it through `--h`.
 - **Glass:**
-  - The conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
-  - In a plain browser, the sidebar and detail panel are solid, and the backdrop glows (`fv-backdrop`) show only through glass.
-  - **Window glass (owner override of the design README, 2026-10-09).** In the Tauri shell the window is transparent, and while Lgt has focus the OS blurs whatever is behind it: `blur` on Windows, vibrancy on macOS. The sidebar and detail panel become frosted glass over the desktop. The page grounds and glows go transparent, and the conversation pane floats as a denser sheet (`--window-glass-pane`).
-    - How it switches on: `lib/windowGlass.ts` applies the effect, tints it per theme, and sets `data-window-glass="on"` on `<html>`.
-    - Focus only: when the window loses focus, the page turns solid and the effect is cleared. A live blur is recomposited by DWM every frame, which is costly behind games and video. The lighter `blur` was chosen over `acrylic` for the same reason. Measured on Windows 10 behind a game, DWM used about 30% with Lgt closed, about 40% with acrylic always on, and about 25–28% with focus-only blur.
-    - Styles: the `:root[data-window-glass="on"]` block in `styles/app.css`, and the `--side-glass*` tokens in `styles/tokens.css`.
-    - Fallback: if the platform refuses the effect, the attribute stays off and the solid layout applies.
+  - Only the conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
+  - The sidebar and detail panel are solid.
+  - The backdrop glows (`fv-backdrop`) show only through glass.
+  - **OS window glass was tried and dropped (2026-10-09).** A transparent Tauri window with OS acrylic or blur made the side panels frosted over the desktop. DWM recomposites that blur every frame, about 10 points of GPU behind a game with acrylic. A focus-only blur fixed the cost, but the owner chose to keep the window opaque. The commits are `8b592f5` and `b62515b`, both reverted. Don't reintroduce it without the owner asking.
 - **Controls:** every control is a pill at `--size-control` (34px) with a gradient, a top sheen and a shadow. Tool rows are compact at `--size-tool-row`.
 - **Type:** Figtree for prose and UI, IBM Plex Mono for anything machine-owned (paths, tools, agent names, numbers). Labels are uppercase with 0.9px tracking, and UI copy is sentence case.
 - **Motion:** only the working dots, the shimmer and the caret move, and all three stop under `prefers-reduced-motion`.

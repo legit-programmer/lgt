@@ -1302,32 +1302,3 @@ button.fv-attachment {
 .sidebar-foot-profile:hover {
   background: var(--surface-3);
 }
-
-/*
- * Window glass (lib/windowGlass.ts). The OS blurs what is behind the window,
- * so the page grounds go transparent, the side panels become frosted glass,
- * and the conversation pane floats as a denser sheet above them.
- */
-:root[data-window-glass="on"] body,
-:root[data-window-glass="on"] .app.fv-backdrop,
-:root[data-window-glass="on"] .app-splash.fv-backdrop {
-  background: transparent;
-}
-
-:root[data-window-glass="on"] .sidebar,
-:root[data-window-glass="on"] .detail {
-  --surface-3: var(--side-glass-raised);
-  --surface-4: var(--side-glass-hover);
-  --well: var(--side-glass-well);
-  background: var(--side-glass);
-}
-
-:root[data-window-glass="on"] .fv-pane-glass {
-  --glass-pane: var(--window-glass-pane);
-}
-
-:root[data-window-glass="on"] .sidebar .fv-dot,
-:root[data-window-glass="on"] .detail .fv-dot {
-  background: transparent;
-  box-shadow: none;
-}
