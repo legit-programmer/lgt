@@ -28,6 +28,7 @@ The suite uses controlled runners and a local app-server fixture. It makes no mo
 
 ## Documents
 
+- [Knowledge base](kb/INDEX.md): architecture, decisions, operations and status, with pointers into the code. Coding agents start at [AGENTS.md](AGENTS.md).
 - [Desktop app](desktop/README.md): running and building the Tauri app.
 - [Backend reference](docs/backend-reference.md): HTTP routes, WebSocket frames, configuration and behavior.
 - [Backend gaps](design/backend-gaps.md): open contracts found while building the desktop app, and the implemented checklist.
