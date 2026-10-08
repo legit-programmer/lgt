@@ -1246,3 +1246,16 @@
 .fv-segmented button {
   white-space: nowrap;
 }
+
+button.fv-attachment {
+  cursor: pointer;
+  font: var(--type-meta);
+}
+
+.attachment-placeholder {
+  display: block;
+  width: 160px;
+  height: 100px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}

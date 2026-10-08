@@ -14,6 +14,7 @@ import { Elapsed, StatusBadge, WorkingDots } from "../../components/Status";
 import { harnessLabel, hueStyle } from "../../lib/agents";
 import { bytes, clockTime, dayTime, displayPath, duration } from "../../lib/format";
 import { toolGroupSummary, toolName, type HumanBlock, type RunBlock, type ToolEntry } from "../../lib/timeline";
+import { downloadAttachment, useBlobUrl } from "../../lib/media";
 import { reportError, useWorkspace, type RunInfo } from "../../store/workspace";
 
 export interface BlockContext {
@@ -101,20 +102,25 @@ export function Attachments({ items }: { items: AttachmentSummary[] }) {
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 function AttachmentLink({ item }: { item: AttachmentSummary }) {
-  const href = api.attachmentUrl(item.attachment_id);
-  if (IMAGE_TYPES.has(item.media_type)) {
+  const url = api.attachmentUrl(item.attachment_id);
+  const image = IMAGE_TYPES.has(item.media_type);
+  const thumb = useBlobUrl(image ? api.thumbnailUrl(item.attachment_id) : null);
+  const save = () => {
+    void downloadAttachment(url, item.filename).catch(reportError);
+  };
+  if (image && !thumb.failed) {
     return (
-      <a className="fv-attachment fv-attachment--image" href={href} target="_blank" rel="noreferrer" title={item.filename}>
-        <img src={api.thumbnailUrl(item.attachment_id)} alt={item.filename} loading="lazy" />
-      </a>
+      <button type="button" className="fv-attachment fv-attachment--image" onClick={save} title={`Save ${item.filename}`}>
+        {thumb.src ? <img src={thumb.src} alt={item.filename} /> : <span className="attachment-placeholder" />}
+      </button>
     );
   }
   return (
-    <a className="fv-attachment" href={href} download={item.filename}>
+    <button type="button" className="fv-attachment" onClick={save} title={`Save ${item.filename}`}>
       <FileText size={16} />
       <span className="fv-attachment-name">{item.filename}</span>
       <span className="fv-meta">{bytes(item.size_bytes)}</span>
-    </a>
+    </button>
   );
 }
 
