@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS agents (
     allowed_tools TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(allowed_tools)),
     default_cwd TEXT,
     permission_mode TEXT NOT NULL DEFAULT 'bypass',
+    avatar TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(avatar)),
+    hue INTEGER,
+    extra_args TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(extra_args)),
+    command TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(command)),
+    retired_at TEXT,
+    dm_channel_id TEXT REFERENCES channels(channel_id),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -54,6 +60,13 @@ CREATE TABLE IF NOT EXISTS runs (
     ended_at TEXT,
     tokens_in INTEGER NOT NULL DEFAULT 0,
     tokens_out INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER,
+    tokens_cached_in INTEGER NOT NULL DEFAULT 0,
+    tokens_cache_creation INTEGER NOT NULL DEFAULT 0,
+    tokens_reasoning INTEGER NOT NULL DEFAULT 0,
+    tokens_total INTEGER NOT NULL DEFAULT 0,
+    model_context_window INTEGER,
+    context_tokens INTEGER,
     cost_usd REAL NOT NULL DEFAULT 0,
     UNIQUE (channel_id, trigger_seq, agent_id)
 );
@@ -108,6 +121,24 @@ CREATE TABLE IF NOT EXISTS attachments (
     message_seq INTEGER,
     created_at TEXT NOT NULL,
     FOREIGN KEY (channel_id, message_seq) REFERENCES events(channel_id, seq) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS read_cursors (
+    channel_id TEXT NOT NULL REFERENCES channels(channel_id) ON DELETE RESTRICT,
+    human_id TEXT NOT NULL,
+    seq INTEGER NOT NULL DEFAULT 0 CHECK (seq >= 0),
+    PRIMARY KEY (channel_id, human_id)
+);
+
+CREATE TABLE IF NOT EXISTS harness_limits (
+    harness TEXT PRIMARY KEY,
+    snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS human_profiles (
+    human_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS attachments_message_idx ON attachments(channel_id, message_seq);

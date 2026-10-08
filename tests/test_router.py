@@ -92,6 +92,36 @@ async def test_empty_claude_selection_is_valid_and_does_not_call_codex():
 
 
 @pytest.mark.asyncio
+async def test_router_can_suggest_an_agent_outside_the_channel():
+    async def invoke(argv, cwd, prompt, timeout):
+        assert '"in_channel":false' in prompt
+        return json.dumps({"agents": [], "suggested_agents": ["a-idle"], "reason": "Add a researcher."})
+    decision = await router(invoke).route(request([{**IDLE, "in_channel": False}]))
+    assert decision.agents == [] and decision.suggested_agents == ["a-idle"]
+    assert decision.reason_code == "none"
+
+
+@pytest.mark.asyncio
+async def test_random_fallback_never_selects_an_outside_agent():
+    async def invoke(*args):
+        raise TimeoutError("offline")
+    decision = await router(invoke).route(request([{**IDLE, "in_channel": False}]))
+    assert decision.agents == [] and decision.reason_code == "none"
+
+
+@pytest.mark.asyncio
+async def test_starter_suggestions_use_router_model_with_their_own_schema():
+    async def invoke(argv, cwd, prompt, timeout):
+        schema = json.loads(argv[argv.index("--json-schema") + 1])
+        assert schema["required"] == ["suggestions"]
+        assert "haiku" in argv and '"description": "Writes code"' in prompt
+        return json.dumps({"structured_output": {"suggestions": ["Review the code", "Plan a change", "Write tests"]}})
+    assert await router(invoke).suggestions([{"name": "Coder", "description": "Writes code"}]) == [
+        "Review the code", "Plan a change", "Write tests",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_invalid_claude_selection_falls_through_to_codex():
     calls = []
 
@@ -194,7 +224,7 @@ async def test_empty_roster_returns_nobody_without_a_model_call():
     )
 
     assert decision.agents == []
-    assert "no agent members" in decision.reason
+    assert "no agents" in decision.reason
     assert decision.error is None
 
 

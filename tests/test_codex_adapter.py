@@ -102,14 +102,60 @@ async def test_normalizes_stream_and_caps_tool_output(tmp_path):
     assert [e.kind for e in events] == [
         "run_started", "text_delta", "tool_call", "tool_result", "message", "usage", "usage", "usage", "run_finished",
     ]
-    assert events[3].data == {"tool_call_id": "tool-1", "output": "hé", "bytes": 6, "is_error": False}
+    assert events[3].data["tool_call_id"] == "tool-1"
+    assert events[3].data["output"] == "hé"
+    assert events[3].data["bytes"] == 6
+    assert events[3].data["lines"] == 1
+    assert events[3].data["truncated"] is True
+    assert events[3].data["is_error"] is False
     assert events[5].data["tokens_in"] == 7
     assert events[6].data["tokens_in"] == 4
-    assert events[7].data == {"tokens_in": 0, "tokens_out": 0}
+    assert events[7].data["tokens_in"] == events[7].data["tokens_out"] == 0
     assert events[-1].data["ok"] is True
     assert client.call[0] == "start"
     assert "home base" in client.call[1]["developer_instructions"]
     assert client.closed
+
+
+@pytest.mark.asyncio
+async def test_nested_context_usage_and_rate_limit_snapshot(tmp_path):
+    tokens = NS(input_tokens=12, output_tokens=4, cached_input_tokens=3,
+                cache_write_input_tokens=2, reasoning_output_tokens=1, total_tokens=16)
+    client = FakeClient(FakeHandle([
+        note("thread/tokenUsage/updated", token_usage=NS(last=tokens, total=tokens,
+                                                        model_context_window=128000)),
+        note("account/rateLimits/updated", rate_limits={"planType": "pro", "primary": {"usedPercent": 31}}),
+        note("turn/completed", turn=NS(id="t", status="completed")),
+    ]))
+    runner = CodexAppServerRunner(tool_output_cap=100, line_limit=1000,
+                                  cancel_grace_seconds=.1, log_dir=tmp_path,
+                                  client_factory=lambda _: client)
+    events = [e async for e in runner.start(sample_turn(tmp_path))]
+    report = next(e.data for e in events if e.kind == "usage")
+    assert report["tokens_cached_in"] == 3
+    assert report["tokens_cache_creation"] == 2
+    assert report["tokens_reasoning"] == 1
+    assert report["tokens_total"] == 16
+    assert report["context_tokens"] == 16
+    assert report["model_context_window"] == 128000
+    assert next(e for e in events if e.kind == "limits").data["snapshot"]["planType"] == "pro"
+
+
+@pytest.mark.asyncio
+async def test_global_rate_limit_notification_is_streamed_before_terminal(tmp_path):
+    class GlobalClient(FakeClient):
+        def __init__(self, handle):
+            super().__init__(handle)
+            self._queue = asyncio.Queue()
+            self._queue.put_nowait(note("account/rateLimits/updated", rate_limits={"planType": "pro"}))
+            self._client = NS(next_notification=self._queue.get)
+
+    client = GlobalClient(FakeHandle([note("turn/completed", turn=NS(id="t", status="completed"))]))
+    runner = CodexAppServerRunner(tool_output_cap=100, line_limit=1000,
+                                  cancel_grace_seconds=.1, log_dir=tmp_path,
+                                  client_factory=lambda _: client)
+    events = [e async for e in runner.start(sample_turn(tmp_path))]
+    assert [e.kind for e in events].index("limits") < [e.kind for e in events].index("run_finished")
 
 
 @pytest.mark.asyncio
@@ -179,7 +225,7 @@ async def test_startup_timeout_fails_run(tmp_path):
     )
     events = [e async for e in runner.start(sample_turn(tmp_path))]
     assert events[-1].data["ok"] is False
-    assert "startup request timed out" in events[-1].data["error"]
+    assert "startup request timed out" in events[-1].data["error"]["message"]
     assert client.closed
 
 

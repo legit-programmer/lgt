@@ -33,7 +33,7 @@ def render_delta(
             mode == "resume" and event.author_id == agent_id
         ):
             key = event.run_id or f"author:{event.author_id}"
-            tools.setdefault(key, Counter())[str(event.payload.get("name", "tool"))] += 1
+            tools.setdefault(key, Counter())[str(event.payload.get("tool", event.payload.get("name", "tool")))] += 1
 
     handles = {agent.agent_id: agent.handle for agent in store.list_agents()}
     lines: list[str] = []
@@ -90,7 +90,7 @@ def rendered_contribution(event: Event) -> int:
     if event.kind == "message":
         return len(f"[{event.author_id}] {event.payload.get('text', '')}\n")
     if event.kind == "tool_call":
-        return len(f"[{event.author_id}] (tool: {event.payload.get('name', 'tool')})\n")
+        return len(f"[{event.author_id}] (tool: {event.payload.get('tool', event.payload.get('name', 'tool'))})\n")
     if event.kind == "system":
         return len(f"[system] {event.payload.get('text', '')}\n")
     return 0

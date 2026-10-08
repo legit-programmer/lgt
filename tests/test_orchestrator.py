@@ -42,7 +42,8 @@ async def test_busy_agent_messages_coalesce_without_advancing_to_current_max(wor
     runner.finish()
     await eventually(lambda: len(factory.started) == 2)
     session = store.get_session("alpha", channel.channel_id)
-    assert session.last_seen_seq == first.seq
+    assert session.last_seen_seq == runner.turn.run.delta_end_seq
+    assert session.last_seen_seq >= first.seq
     assert session.last_seen_seq < third.seq
     turn = factory.started[1].turn
     assert turn.run.trigger_seq == third.seq
@@ -172,7 +173,7 @@ async def test_dm_bypasses_router_and_has_one_agent(workspace):
 async def test_unsupported_codex_tool_scope_is_not_silently_ignored(workspace):
     orch, store, _, _, _ = workspace
     agent = replace(store.get_agent("alpha"), allowed_tools=["Read"])
-    with pytest.raises(WorkspaceError, match="not implemented"):
+    with pytest.raises(WorkspaceError, match="cannot enforce"):
         orch.put_agent(agent)
 
 
@@ -208,7 +209,7 @@ async def test_orphan_recovery_marks_dirty_then_replays_durable_queue(tmp_path):
     store.enqueue(channel.channel_id, second.seq, "alpha")
     await orch.start()
     await eventually(lambda: len(factory.started) == 1)
-    assert store.get_run("orphan").error == "orphaned"
+    assert store.get_run("orphan").error["code"] == "orphaned"
     assert store.get_session("alpha", channel.channel_id).last_run_status == "dirty"
     assert factory.started[0].turn.run.session_mode == "cold"
     assert "queued" in factory.started[0].turn.prompt

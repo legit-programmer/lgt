@@ -76,14 +76,27 @@ def test_real_runtime_http_and_ws_use_database_on_server_thread(tmp_path, monkey
         # No agent is seeded and this empty channel does not call either router CLI.
         channel = client.post("/channels", json={"name": "general"}).json()
         cid = channel["channel_id"]
-        with client.websocket_connect("/ws") as socket:
+        with client.websocket_connect("/ws", headers={"host": "127.0.0.1"}) as socket:
             socket.send_json({"last_id": 0})
+            initial = []
+            while True:
+                frame = socket.receive_json()
+                initial.append(frame)
+                if frame["type"] == "me":
+                    break
+            assert any(frame["type"] == "channel_summary" and frame["channel_id"] == cid
+                       for frame in initial)
             socket.send_json({"type": "send_message", "channel_id": cid, "text": "hello"})
-            # Queue frames report the pending routing delivery between events.
-            frames = [socket.receive_json() for _ in range(4)]
-            assert [f["type"] for f in frames] == ["event", "queue", "event", "queue"]
-            assert frames[1]["items"][0]["state"] == "awaiting_route" and frames[3]["items"] == []
-            human, routing = frames[0], frames[2]
+            frames = []
+            while True:
+                frame = socket.receive_json()
+                frames.append(frame)
+                if frame["type"] == "queue" and frame["items"] == []:
+                    break
+            events = [frame for frame in frames if frame["type"] == "event"]
+            queues = [frame for frame in frames if frame["type"] == "queue"]
+            assert queues[0]["items"][0]["state"] == "awaiting_route"
+            human, routing = events
             assert human["event"]["payload"]["text"] == "hello"
             assert routing["event"]["kind"] == "routing_decision"
             assert routing["event"]["payload"]["agents"] == []

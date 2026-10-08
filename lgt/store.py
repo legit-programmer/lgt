@@ -5,19 +5,24 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import asdict
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 from .models import (
     Agent, Attachment, Channel, Event, QueueItem, Run, Session, WorkspaceError, utc_now,
 )
+from .run_errors import duration_ms as calculate_duration_ms, normalize_error
 
 
 _UNSET = object()
 _RUN_UPDATE_FIELDS = frozenset({
     "trigger_seq", "delta_start_seq", "delta_end_seq", "session_mode", "harness",
     "harness_session_id", "cwd", "pgid", "status", "error", "exit_code",
-    "started_at", "ended_at", "tokens_in", "tokens_out", "cost_usd",
+    "started_at", "ended_at", "duration_ms", "tokens_in", "tokens_out",
+    "tokens_cached_in", "tokens_cache_creation", "tokens_reasoning", "tokens_total",
+    "model_context_window", "context_tokens",
 })
 
 
@@ -29,12 +34,27 @@ def _load(value: str) -> Any:
     return json.loads(value)
 
 
+def _error(value: str | None) -> dict[str, Any] | str | None:
+    if value is None:
+        return None
+    if not value.startswith("{"):
+        return value
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else value
+    except (ValueError, TypeError):
+        return value
+
+
 def _agent(row: sqlite3.Row) -> Agent:
     return Agent(
         agent_id=row["agent_id"], handle=row["handle"], name=row["name"],
         description=row["description"], harness=row["harness"], model=row["model"],
         system_prompt=row["system_prompt"], allowed_tools=_load(row["allowed_tools"]),
         default_cwd=row["default_cwd"], permission_mode=row["permission_mode"],
+        avatar=_load(row["avatar"]), hue=row["hue"],
+        extra_args=_load(row["extra_args"]), command=_load(row["command"]),
+        retired_at=row["retired_at"], dm_channel_id=row["dm_channel_id"],
         created_at=row["created_at"], updated_at=row["updated_at"],
     )
 
@@ -58,15 +78,28 @@ def _event(row: sqlite3.Row) -> Event:
 
 
 def _run(row: sqlite3.Row) -> Run:
+    error = _error(row["error"])
+    if row["status"] in {"failed", "cancelled"}:
+        error = normalize_error(error, row["exit_code"])
+    elapsed = row["duration_ms"]
+    if elapsed is None and row["started_at"] and row["ended_at"]:
+        try:
+            elapsed = calculate_duration_ms(row["started_at"], row["ended_at"])
+        except (ValueError, TypeError):
+            pass
     return Run(
         run_id=row["run_id"], channel_id=row["channel_id"], agent_id=row["agent_id"],
         trigger_seq=row["trigger_seq"], delta_start_seq=row["delta_start_seq"],
         delta_end_seq=row["delta_end_seq"], session_mode=row["session_mode"],
         harness=row["harness"], cwd=row["cwd"],
         harness_session_id=row["harness_session_id"], pgid=row["pgid"],
-        status=row["status"], error=row["error"], exit_code=row["exit_code"],
+        status=row["status"], error=error, exit_code=row["exit_code"],
         started_at=row["started_at"], ended_at=row["ended_at"],
-        tokens_in=row["tokens_in"], tokens_out=row["tokens_out"], cost_usd=row["cost_usd"],
+        duration_ms=elapsed, tokens_in=row["tokens_in"],
+        tokens_out=row["tokens_out"], tokens_cached_in=row["tokens_cached_in"],
+        tokens_cache_creation=row["tokens_cache_creation"],
+        tokens_reasoning=row["tokens_reasoning"], tokens_total=row["tokens_total"],
+        model_context_window=row["model_context_window"], context_tokens=row["context_tokens"],
     )
 
 
@@ -113,6 +146,70 @@ class Store:
         schema = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
         self.conn.executescript(schema)
         self._savepoint_counter = 0
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns to databases created before the current schema."""
+        additions = {
+            "agents": {
+                "avatar": "TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(avatar))",
+                "hue": "INTEGER", "extra_args": "TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(extra_args))",
+                "command": "TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(command))",
+                "retired_at": "TEXT", "dm_channel_id": "TEXT REFERENCES channels(channel_id)",
+            },
+            "runs": {
+                "duration_ms": "INTEGER", "tokens_cached_in": "INTEGER NOT NULL DEFAULT 0",
+                "tokens_cache_creation": "INTEGER NOT NULL DEFAULT 0",
+                "tokens_reasoning": "INTEGER NOT NULL DEFAULT 0",
+                "tokens_total": "INTEGER NOT NULL DEFAULT 0", "model_context_window": "INTEGER",
+                "context_tokens": "INTEGER",
+            },
+        }
+        with self.transaction():
+            for table, columns in additions.items():
+                existing = {row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+                for column, declaration in columns.items():
+                    if column not in existing:
+                        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+            self.conn.execute(
+                """UPDATE runs SET tokens_total = tokens_in + tokens_out
+                   WHERE tokens_total = 0 AND (tokens_in != 0 OR tokens_out != 0)"""
+            )
+            for row in self.conn.execute(
+                """SELECT run_id, status, error, exit_code, started_at, ended_at,
+                          duration_ms FROM runs
+                   WHERE status IN ('failed', 'cancelled') OR
+                         (duration_ms IS NULL AND started_at IS NOT NULL AND ended_at IS NOT NULL)"""
+            ):
+                updates: dict[str, Any] = {}
+                if row["status"] in {"failed", "cancelled"}:
+                    current = _error(row["error"])
+                    normalized = normalize_error(current, row["exit_code"])
+                    if current != normalized:
+                        updates["error"] = _dump(normalized)
+                if row["duration_ms"] is None and row["started_at"] and row["ended_at"]:
+                    try:
+                        updates["duration_ms"] = calculate_duration_ms(row["started_at"], row["ended_at"])
+                    except (ValueError, TypeError):
+                        pass
+                if updates:
+                    assignments = ", ".join(f"{column} = ?" for column in updates)
+                    self.conn.execute(f"UPDATE runs SET {assignments} WHERE run_id = ?",
+                                      (*updates.values(), row["run_id"]))
+            rows = list(self.conn.execute("SELECT agent_id FROM agents WHERE hue IS NULL ORDER BY created_at, rowid"))
+            count = self.conn.execute("SELECT count(*) FROM agents WHERE hue IS NOT NULL").fetchone()[0]
+            for row in rows:
+                self.conn.execute("UPDATE agents SET hue = ?, avatar = ? WHERE agent_id = ?",
+                                  (count % 8, _dump({"style": "bottts", "seed": row["agent_id"]}), row["agent_id"]))
+                count += 1
+            has_search_index = self.conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'search_fts'"
+            ).fetchone() is not None
+            if not has_search_index:
+                self.conn.execute(
+                    "CREATE VIRTUAL TABLE search_fts USING fts5(kind, channel_id UNINDEXED, seq UNINDEXED, text)"
+                )
+                self._rebuild_search()
 
     def close(self) -> None:
         self.conn.close()
@@ -144,24 +241,34 @@ class Store:
 
     def put_agent(self, agent: Agent) -> None:
         with self.transaction():
+            existing = self.conn.execute("SELECT hue, created_at FROM agents WHERE agent_id = ?", (agent.agent_id,)).fetchone()
+            hue = existing["hue"] if existing else self.conn.execute("SELECT count(*) FROM agents").fetchone()[0] % 8
+            avatar = agent.avatar or {"style": "bottts", "seed": agent.agent_id}
             self.conn.execute(
                 """INSERT INTO agents (
                        agent_id, handle, name, description, harness, model,
                        system_prompt, allowed_tools, default_cwd, permission_mode,
+                       avatar, hue, extra_args, command, retired_at, dm_channel_id,
                        created_at, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(agent_id) DO UPDATE SET
                        handle=excluded.handle, name=excluded.name,
                        description=excluded.description, harness=excluded.harness,
                        model=excluded.model, system_prompt=excluded.system_prompt,
                        allowed_tools=excluded.allowed_tools, default_cwd=excluded.default_cwd,
                        permission_mode=excluded.permission_mode,
-                       created_at=excluded.created_at, updated_at=excluded.updated_at""",
+                       avatar=excluded.avatar, extra_args=excluded.extra_args,
+                       command=excluded.command,
+                       retired_at=COALESCE(agents.retired_at, excluded.retired_at),
+                       dm_channel_id=COALESCE(excluded.dm_channel_id, agents.dm_channel_id),
+                       updated_at=excluded.updated_at""",
                 (
                     agent.agent_id, agent.handle, agent.name, agent.description,
                     agent.harness, agent.model, agent.system_prompt,
                     _dump(agent.allowed_tools), agent.default_cwd, agent.permission_mode,
-                    agent.created_at, agent.updated_at,
+                    _dump(avatar), hue, _dump(agent.extra_args), _dump(agent.command),
+                    agent.retired_at, agent.dm_channel_id,
+                    existing["created_at"] if existing else agent.created_at, agent.updated_at,
                 ),
             )
 
@@ -171,8 +278,24 @@ class Store:
             raise KeyError(agent_id)
         return _agent(row)
 
-    def list_agents(self) -> list[Agent]:
-        return [_agent(row) for row in self.conn.execute("SELECT * FROM agents ORDER BY agent_id")]
+    def list_agents(self, include_retired: bool = False) -> list[Agent]:
+        where = "" if include_retired else " WHERE retired_at IS NULL"
+        return [_agent(row) for row in self.conn.execute(f"SELECT * FROM agents{where} ORDER BY agent_id")]
+
+    def retire_agent(self, agent_id: str) -> Agent:
+        with self.transaction():
+            cursor = self.conn.execute("UPDATE agents SET retired_at = COALESCE(retired_at, ?), updated_at = ? WHERE agent_id = ?",
+                                       (utc_now(), utc_now(), agent_id))
+            if not cursor.rowcount:
+                raise KeyError(agent_id)
+            return self.get_agent(agent_id)
+
+    def set_agent_dm_channel(self, agent_id: str, channel_id: str) -> None:
+        with self.transaction():
+            cursor = self.conn.execute("UPDATE agents SET dm_channel_id = ? WHERE agent_id = ?",
+                                       (channel_id, agent_id))
+            if not cursor.rowcount:
+                raise KeyError(agent_id)
 
     def create_channel(self, channel: Channel, members: list[tuple[str, str]]) -> None:
         with self.transaction():
@@ -267,6 +390,20 @@ class Store:
             if cursor.rowcount == 0:
                 raise KeyError(channel_id)
 
+    def patch_channel(self, channel_id: str, *, name: str | None = None,
+                      archived: bool | None = None) -> Channel:
+        with self.transaction():
+            channel = self.get_channel(channel_id)
+            if name is not None:
+                if not name.strip():
+                    raise WorkspaceError("channel name cannot be empty")
+                self.conn.execute("UPDATE channels SET name = ? WHERE channel_id = ?", (name.strip(), channel_id))
+            if archived is not None:
+                self.conn.execute("UPDATE channels SET archived_at = ? WHERE channel_id = ?",
+                                  (utc_now() if archived and channel.archived_at is None else
+                                   channel.archived_at if archived else None, channel_id))
+            return self.get_channel(channel_id)
+
     def append_event(
         self,
         channel_id: str,
@@ -319,8 +456,45 @@ class Store:
                    WHERE channel_id = ?""",
                 (seq + 1, rendered_chars, channel_id),
             )
+            self._index_event(channel_id, seq, kind, payload)
             row = self.conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
             return _event(row)
+
+    def _index_event(self, channel_id: str, seq: int, kind: str, payload: dict[str, Any]) -> None:
+        if kind == "message":
+            self.conn.execute("INSERT INTO search_fts(kind, channel_id, seq, text) VALUES (?, ?, ?, ?)",
+                              (kind, channel_id, seq, payload.get("text", "")))
+        elif kind == "tool_call":
+            summary = payload.get("summary") or payload.get("label") or ""
+            self.conn.execute("INSERT INTO search_fts(kind, channel_id, seq, text) VALUES (?, ?, ?, ?)",
+                              (kind, channel_id, seq, summary))
+        elif kind == "message_edit":
+            target = payload.get("target_seq")
+            self.conn.execute("DELETE FROM search_fts WHERE kind = 'message' AND channel_id = ? AND seq = ?",
+                              (channel_id, target))
+            if not payload.get("deleted"):
+                original = self.conn.execute(
+                    "SELECT payload FROM events WHERE channel_id = ? AND seq = ? AND kind = 'message'",
+                    (channel_id, target),
+                ).fetchone()
+                if original:
+                    latest_text = self.conn.execute(
+                        """SELECT json_extract(payload, '$.text') AS text FROM events
+                           WHERE channel_id = ? AND kind = 'message_edit'
+                           AND seq <= ? AND json_extract(payload, '$.target_seq') = ?
+                           AND json_type(payload, '$.text') IS NOT NULL
+                           ORDER BY seq DESC LIMIT 1""",
+                        (channel_id, seq, target),
+                    ).fetchone()
+                    text = (latest_text["text"] if latest_text else
+                            _load(original["payload"]).get("text", ""))
+                    self.conn.execute("INSERT INTO search_fts(kind, channel_id, seq, text) VALUES ('message', ?, ?, ?)",
+                                      (channel_id, target, text))
+
+    def _rebuild_search(self) -> None:
+        self.conn.execute("DELETE FROM search_fts")
+        for row in self.conn.execute("SELECT channel_id, seq, kind, payload FROM events ORDER BY id"):
+            self._index_event(row["channel_id"], row["seq"], row["kind"], _load(row["payload"]))
 
     def events(
         self,
@@ -489,15 +663,21 @@ class Store:
                        run_id, channel_id, agent_id, trigger_seq, delta_start_seq,
                        delta_end_seq, session_mode, harness, harness_session_id,
                        cwd, pgid, status, error, exit_code, started_at, ended_at,
-                       tokens_in, tokens_out, cost_usd
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       tokens_in, tokens_out, duration_ms, tokens_cached_in,
+                       tokens_cache_creation, tokens_reasoning, tokens_total,
+                       model_context_window, context_tokens
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(channel_id, trigger_seq, agent_id) DO NOTHING""",
                 (
                     run.run_id, run.channel_id, run.agent_id, run.trigger_seq,
                     run.delta_start_seq, run.delta_end_seq, run.session_mode,
                     run.harness, run.harness_session_id, run.cwd, run.pgid,
-                    run.status, run.error, run.exit_code, run.started_at,
-                    run.ended_at, run.tokens_in, run.tokens_out, run.cost_usd,
+                    run.status, _dump(run.error) if isinstance(run.error, dict) else run.error,
+                    run.exit_code, run.started_at,
+                    run.ended_at, run.tokens_in, run.tokens_out, run.duration_ms,
+                    run.tokens_cached_in, run.tokens_cache_creation,
+                    run.tokens_reasoning, run.tokens_total, run.model_context_window,
+                    run.context_tokens,
                 ),
             )
             return cursor.rowcount == 1
@@ -508,17 +688,32 @@ class Store:
             raise KeyError(run_id)
         return _run(row)
 
-    def list_runs(self, channel_id: str | None = None, active_only: bool = False) -> list[Run]:
+    def list_runs(self, channel_id: str | None = None, active_only: bool = False, *,
+                  agent_id: str | None = None, status: str | None = None,
+                  limit: int | None = None, newest_first: bool = False) -> list[Run]:
         clauses: list[str] = []
         params: list[Any] = []
         if channel_id is not None:
             clauses.append("channel_id = ?")
             params.append(channel_id)
-        if active_only:
+        if agent_id is not None:
+            clauses.append("agent_id = ?")
+            params.append(agent_id)
+        if status not in (None, "active", "terminal"):
+            raise WorkspaceError("run status filter must be active or terminal")
+        if active_only or status == "active":
             clauses.append("status NOT IN ('completed', 'failed', 'cancelled')")
+        elif status == "terminal":
+            clauses.append("status IN ('completed', 'failed', 'cancelled')")
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        if limit is not None and limit <= 0:
+            return []
+        suffix = " LIMIT ?" if limit is not None else ""
+        if limit is not None:
+            params.append(limit)
+        direction = "DESC" if newest_first else "ASC"
         rows = self.conn.execute(
-            f"SELECT * FROM runs{where} ORDER BY started_at, run_id", params,
+            f"SELECT * FROM runs{where} ORDER BY started_at {direction}, run_id {direction}{suffix}", params,
         )
         return [_run(row) for row in rows]
 
@@ -527,6 +722,8 @@ class Store:
         if unknown:
             raise ValueError(f"run fields cannot be updated: {', '.join(sorted(unknown))}")
         with self.transaction():
+            if "error" in allowed_fields and isinstance(allowed_fields["error"], dict):
+                allowed_fields["error"] = _dump(allowed_fields["error"])
             if not allowed_fields:
                 if self.conn.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone() is None:
                     raise KeyError(run_id)
@@ -630,3 +827,168 @@ class Store:
             if cursor.rowcount == 0:
                 self.get_attachment(attachment_id)
                 raise WorkspaceError("a sent attachment cannot be deleted")
+
+    def attachment_channel_bytes(self, channel_id: str) -> int:
+        return self.conn.execute("SELECT COALESCE(sum(size_bytes), 0) FROM attachments WHERE channel_id = ?",
+                                 (channel_id,)).fetchone()[0]
+
+    def expired_unsent_attachments(self, cutoff: str) -> list[Attachment]:
+        return [_attachment(row) for row in self.conn.execute(
+            "SELECT * FROM attachments WHERE message_seq IS NULL AND created_at < ? ORDER BY created_at",
+            (cutoff,),
+        )]
+
+    def set_read_cursor(self, channel_id: str, human_id: str, seq: int) -> int:
+        with self.transaction():
+            channel = self.get_channel(channel_id)
+            if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0 or seq >= channel.next_seq:
+                raise WorkspaceError("read sequence is outside the channel")
+            if not self.conn.execute(
+                "SELECT 1 FROM channel_members WHERE channel_id = ? AND member_kind = 'human' AND member_id = ?",
+                (channel_id, human_id),
+            ).fetchone():
+                raise WorkspaceError("human is not a channel member")
+            self.conn.execute(
+                """INSERT INTO read_cursors(channel_id, human_id, seq) VALUES (?, ?, ?)
+                   ON CONFLICT(channel_id, human_id) DO UPDATE SET seq = max(read_cursors.seq, excluded.seq)""",
+                (channel_id, human_id, seq),
+            )
+            return self.conn.execute("SELECT seq FROM read_cursors WHERE channel_id = ? AND human_id = ?",
+                                     (channel_id, human_id)).fetchone()[0]
+
+    def channel_summary(self, channel_id: str, human_id: str) -> dict[str, Any]:
+        channel = self.get_channel(channel_id)
+        members = self.members(channel_id)
+        cursor = self.conn.execute("SELECT seq FROM read_cursors WHERE channel_id = ? AND human_id = ?",
+                                   (channel_id, human_id)).fetchone()
+        read_seq = cursor[0] if cursor else 0
+        unread = self.conn.execute(
+            """SELECT count(*) FROM events AS e WHERE e.channel_id = ? AND e.seq > ?
+               AND e.kind = 'message' AND NOT (e.author_kind = 'human' AND e.author_id = ?)
+               AND EXISTS (SELECT 1 FROM search_fts AS f WHERE f.channel_id = e.channel_id
+                           AND f.seq = e.seq AND f.kind = 'message')""",
+            (channel_id, read_seq, human_id),
+        ).fetchone()[0]
+        last = self.conn.execute("SELECT ts FROM events WHERE channel_id = ? ORDER BY seq DESC LIMIT 1",
+                                 (channel_id,)).fetchone()
+        preview = None
+        for row in self.conn.execute(
+            "SELECT seq, kind, author_id, payload FROM events WHERE channel_id = ? AND kind IN ('message', 'tool_call') ORDER BY seq DESC",
+            (channel_id,),
+        ):
+            indexed = self.conn.execute("SELECT text FROM search_fts WHERE channel_id = ? AND seq = ? AND kind = ?",
+                                        (channel_id, row["seq"], row["kind"])).fetchone()
+            if indexed is None:
+                continue
+            preview = {"seq": row["seq"], "kind": row["kind"], "author_id": row["author_id"],
+                       "text_excerpt": indexed["text"][:160]}
+            break
+        active_runs = [
+            {"run_id": r["run_id"], "agent_id": r["agent_id"], "status": r["status"],
+             "started_at": r["started_at"]}
+            for r in self.conn.execute(
+                """SELECT run_id, agent_id, status, started_at FROM runs WHERE channel_id = ?
+                   AND status NOT IN ('completed', 'failed', 'cancelled') ORDER BY started_at, run_id""",
+                (channel_id,),
+            )
+        ]
+        return {**asdict(channel), "members": members, "last_activity_at": last["ts"] if last else channel.created_at,
+                "preview": preview, "unread_count": unread, "active_runs": active_runs}
+
+    def list_channel_summaries(self, human_id: str) -> list[dict[str, Any]]:
+        return [self.channel_summary(channel.channel_id, human_id)
+                for channel in self.list_channels(human_id)]
+
+    def put_harness_limits(self, harness: str, snapshot: dict[str, Any]) -> None:
+        with self.transaction():
+            self.conn.execute(
+                """INSERT INTO harness_limits(harness, snapshot, updated_at) VALUES (?, ?, ?)
+                   ON CONFLICT(harness) DO UPDATE SET snapshot = excluded.snapshot, updated_at = excluded.updated_at""",
+                (harness, _dump(snapshot), utc_now()),
+            )
+
+    def get_harness_limits(self, harness: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT snapshot FROM harness_limits WHERE harness = ?", (harness,)).fetchone()
+        return _load(row["snapshot"]) if row else None
+
+    def usage(self, group_by: str = "agent", since: str | None = None) -> list[dict[str, Any]]:
+        if group_by not in {"agent", "channel", "day"}:
+            raise WorkspaceError("usage group_by must be agent, channel, or day")
+        if since is not None:
+            try:
+                if len(since) == 10:
+                    parsed = datetime.combine(date.fromisoformat(since), datetime.min.time(), timezone.utc)
+                else:
+                    parsed = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    parsed = parsed.astimezone(timezone.utc)
+                since = parsed.isoformat()
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise WorkspaceError("since must be an ISO date or timestamp") from exc
+        expr = {"agent": "agent_id", "channel": "channel_id", "day": "date(started_at)"}[group_by]
+        predicates = []
+        if group_by == "day":
+            predicates.append("started_at IS NOT NULL")
+        if since is not None:
+            predicates.append("julianday(started_at) >= julianday(?)")
+        where = "WHERE " + " AND ".join(predicates) if predicates else ""
+        rows = self.conn.execute(
+            f"""SELECT {expr} AS key, count(*) AS run_count, sum(tokens_in) AS tokens_in,
+                sum(tokens_out) AS tokens_out, sum(tokens_cached_in) AS tokens_cached_in,
+                sum(tokens_cache_creation) AS tokens_cache_creation,
+                sum(tokens_reasoning) AS tokens_reasoning, sum(tokens_total) AS tokens_total
+                FROM runs {where} GROUP BY {expr} ORDER BY key""",
+            (since,) if since is not None else (),
+        )
+        return [{group_by: row["key"], **{key: row[key] for key in row.keys() if key != "key"}} for row in rows]
+
+    def get_human_profile(self, human_id: str = "local") -> dict[str, str]:
+        row = self.conn.execute("SELECT display_name FROM human_profiles WHERE human_id = ?", (human_id,)).fetchone()
+        return {"human_id": human_id, "display_name": row["display_name"] if row else "You"}
+
+    def set_human_profile(self, human_id: str, display_name: str) -> dict[str, str]:
+        if not display_name.strip():
+            raise WorkspaceError("display name cannot be empty")
+        with self.transaction():
+            self.conn.execute(
+                """INSERT INTO human_profiles(human_id, display_name) VALUES (?, ?)
+                   ON CONFLICT(human_id) DO UPDATE SET display_name = excluded.display_name""",
+                (human_id, display_name.strip()),
+            )
+        return self.get_human_profile(human_id)
+
+    def search(self, q: str, *, channel_id: str | None = None,
+               kinds: list[str] | None = None, limit: int = 50) -> dict[str, list[dict[str, Any]]]:
+        if limit <= 0 or not q.strip():
+            return {"channels": [], "agents": [], "messages": []}
+        phrase = '"' + q.strip().replace('"', '""') + '"'
+        params: list[Any] = [phrase]
+        clauses = ["search_fts MATCH ?"]
+        if channel_id is not None:
+            clauses.append("f.channel_id = ?")
+            params.append(channel_id)
+        if kinds is not None:
+            if not kinds:
+                return {"channels": [], "agents": [], "messages": []}
+            clauses.append("f.kind IN (" + ",".join("?" for _ in kinds) + ")")
+            params.extend(kinds)
+        rows = self.conn.execute(
+            f"""SELECT f.channel_id, CAST(f.seq AS INTEGER) AS seq, f.kind, f.text,
+                e.author_id FROM search_fts AS f JOIN events AS e
+                ON e.channel_id = f.channel_id AND e.seq = f.seq
+                WHERE {' AND '.join(clauses)} ORDER BY e.id DESC LIMIT ?""",
+            (*params, limit),
+        )
+        messages = [dict(row) for row in rows]
+        escaped = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        term = f"%{escaped}%"
+        channels = [dict(row) for row in self.conn.execute(
+            "SELECT channel_id, name FROM channels WHERE name LIKE ? ESCAPE '\\' ORDER BY name LIMIT ?",
+            (term, limit),
+        )]
+        agents = [dict(row) for row in self.conn.execute(
+            "SELECT agent_id, handle, name FROM agents WHERE retired_at IS NULL AND (handle LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY handle LIMIT ?",
+            (term, term, limit),
+        )]
+        return {"channels": channels, "agents": agents, "messages": messages}

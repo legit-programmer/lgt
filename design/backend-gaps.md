@@ -1,5 +1,11 @@
 # Backend gaps for the Lgt screens
 
+The contracts below are implemented. The original gap descriptions are retained as the acceptance checklist. See the [backend reference](../docs/backend-reference.md) and [custom harness protocol](../docs/custom-harness.md) for the current API.
+
+Capabilities remain explicit: unsupported tool policies, resume, native inputs, or plan-limit reporting are advertised as unavailable. Agent settings are validated against those capabilities and the harness model and tool catalogs. Custom argv commands have a separate probe endpoint for their catalogs.
+
+The remaining product decision is proactive scheduled or event-triggered agent posts. Voice input and theme changes remain frontend work.
+
 This compares `Lgt Screens.pdf` with the backend as of 2026-10-08. Each gap is a backend contract to build. The frontend does not compensate for missing backend features. It does not scan every channel to derive status, keep state in localStorage that the server should own, or guess queue state from heuristics. Any state the UI shows comes from the backend through HTTP for the initial load and WebSocket frames for changes.
 
 ## Closed in this change

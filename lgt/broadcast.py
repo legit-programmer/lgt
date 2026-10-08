@@ -36,7 +36,7 @@ class EventBus:
         if message["type"] == "event":
             channel_id = message["event"]["channel_id"]
         for subscription in tuple(self._subscriptions):
-            if subscription.overflowed or channel_id not in subscription.channel_ids:
+            if subscription.overflowed or (channel_id is not None and channel_id not in subscription.channel_ids):
                 continue
             try:
                 subscription.queue.put_nowait(message)

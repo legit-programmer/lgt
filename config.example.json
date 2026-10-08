@@ -16,10 +16,15 @@
     "checkpoint_threshold": 100000,
     "checkpoint_tail_chars": 25000,
     "checkpoint_summary_chars": 10000,
-    "attachment_max_bytes": 26214400
+    "attachment_max_bytes": 26214400,
+    "attachment_channel_quota_bytes": 262144000,
+    "attachment_retention_seconds": 86400,
+    "thumbnail_max_dimension": 512,
+    "allowed_origins": []
   },
   "checkpoint_mode": "deferred",
   "codex_bin": null,
   "claude_command": ["claude"],
-  "codex_router_command": null
+  "codex_router_command": null,
+  "gemini_command": ["gemini"]
 }

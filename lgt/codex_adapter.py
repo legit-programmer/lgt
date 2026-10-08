@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
+import re
 import signal
 import sys
 from pathlib import Path
@@ -15,7 +15,8 @@ from openai_codex import (
 )
 
 from .attachments import VIEWABLE_IMAGE_TYPES
-from .models import NormalizedEvent, Session, Turn
+from .models import NormalizedEvent, Turn
+from .streaming_adapter import tool_call, tool_result, usage, structured_error
 
 
 def _field(value: Any, key: str, default: Any = None) -> Any:
@@ -42,12 +43,6 @@ def _item_dict(item: Any) -> dict[str, Any]:
     if isinstance(item, dict):
         return item
     return vars(item)
-
-
-def _cap(value: Any, limit: int) -> tuple[str, int]:
-    output = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    data = output.encode("utf-8")
-    return data[:limit].decode("utf-8", errors="ignore"), len(data)
 
 
 _TOOL_TYPES = frozenset({
@@ -108,7 +103,7 @@ class CodexAppServerRunner:
     @staticmethod
     def artifact_exists(session_id: str, cwd: str) -> bool:
         """Check for a persisted rollout artifact without starting Codex."""
-        if not session_id or not cwd:
+        if not session_id or not cwd or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
             return False
         home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
         sessions = home / "sessions"
@@ -135,7 +130,8 @@ class CodexAppServerRunner:
             "capabilities": {
                 "app_server": True, "resume": True, "interrupt": True,
                 "text_delta": True, "permission_bypass": True,
-                "allowed_tools": False,
+                "allowed_tools": False, "image_input": True,
+                "usage": True, "rate_limits": True,
             },
         }
 
@@ -193,6 +189,29 @@ class CodexAppServerRunner:
             self._terminate_host()
             raise TimeoutError("Codex app-server startup request timed out") from None
 
+    async def _notifications(self, handle: Any, limits: asyncio.Queue[dict[str, Any]]):
+        """Merge turn-scoped SDK notifications with global account limits."""
+        stream = handle.stream()
+        turn_task = asyncio.create_task(anext(stream, None))
+        limit_task = asyncio.create_task(limits.get())
+        try:
+            while True:
+                done, _ = await asyncio.wait({turn_task, limit_task}, return_when=asyncio.FIRST_COMPLETED)
+                if limit_task in done:
+                    yield NormalizedEvent("limits", {"snapshot": limit_task.result()})
+                    limit_task = asyncio.create_task(limits.get())
+                if turn_task in done:
+                    note = turn_task.result()
+                    if note is None:
+                        break
+                    yield note
+                    turn_task = asyncio.create_task(anext(stream, None))
+        finally:
+            for task in (turn_task, limit_task):
+                task.cancel()
+            await asyncio.gather(turn_task, limit_task, return_exceptions=True)
+            await stream.aclose()
+
     async def start(self, turn: Turn):
         """Yield normalized events from a single SDK turn and close its host."""
         self._finished.clear()
@@ -203,7 +222,9 @@ class CodexAppServerRunner:
         natural_exit_code: int | None = None
         thread_id: str | None = None
         seen_calls: set[str] = set()
-        previous_usage_total: tuple[int, int] | None = None
+        previous_usage_total: dict[str, int] | None = None
+        limits_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        limits_task: asyncio.Task[None] | None = None
         process_group: int | None = None
         client_closed = False
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -217,6 +238,23 @@ class CodexAppServerRunner:
         try:
             await self._startup(client.__aenter__())
             try:
+                if hasattr(getattr(client, "_client", None), "next_notification"):
+                    async def collect_limits() -> None:
+                        try:
+                            while True:
+                                notification = await client._client.next_notification()
+                                if notification.method == "account/rateLimits/updated":
+                                    snapshot = _field(notification.payload, "rate_limits")
+                                    if hasattr(snapshot, "model_dump"):
+                                        snapshot = snapshot.model_dump(by_alias=True, mode="json")
+                                    elif snapshot is None:
+                                        snapshot = {}
+                                    elif not isinstance(snapshot, dict):
+                                        snapshot = vars(snapshot)
+                                    limits_queue.put_nowait(snapshot)
+                        except Exception:
+                            pass
+                    limits_task = asyncio.create_task(collect_limits())
                 pid = self._pid()
                 if pid is not None:
                     if os.name != "nt" and os.getpgid(pid) == pid:
@@ -254,7 +292,10 @@ class CodexAppServerRunner:
                     model=turn.agent.model,
                 ))
                 self._turn_handle = handle
-                async for notification in handle.stream():
+                async for notification in self._notifications(handle, limits_queue):
+                    if isinstance(notification, NormalizedEvent):
+                        yield notification
+                        continue
                     method, payload = notification.method, notification.payload
                     if method == "item/agentMessage/delta":
                         yield NormalizedEvent("text_delta", {"text": _field(payload, "delta", "")})
@@ -265,10 +306,7 @@ class CodexAppServerRunner:
                             call_id = item.get("id")
                             if call_id:
                                 seen_calls.add(call_id)
-                            yield NormalizedEvent("tool_call", {
-                                "tool_call_id": call_id, "name": kind,
-                                "input": _tool_input(item),
-                            })
+                            yield tool_call(call_id, kind, _tool_input(item))
                     elif method == "item/completed":
                         item = _item_dict(_field(payload, "item"))
                         kind = item.get("type")
@@ -277,57 +315,53 @@ class CodexAppServerRunner:
                         elif kind in _TOOL_TYPES:
                             call_id = item.get("id")
                             if call_id not in seen_calls:
-                                yield NormalizedEvent("tool_call", {
-                                    "tool_call_id": call_id, "name": kind,
-                                    "input": _tool_input(item),
-                                })
+                                yield tool_call(call_id, kind, _tool_input(item))
                             raw = item.get("aggregatedOutput", item.get("result", item))
-                            output, size = _cap(raw, self.tool_output_cap)
                             status = _value(item.get("status", ""))
-                            yield NormalizedEvent("tool_result", {
-                                "tool_call_id": call_id, "output": output,
-                                "bytes": size,
-                                "is_error": status in ("failed", "declined", "error"),
-                            })
+                            yield tool_result(call_id, raw, self.tool_output_cap,
+                                is_error=status in ("failed", "declined", "error"),
+                                exit_code=item.get("exitCode"), duration_ms=item.get("durationMs"))
                     elif method == "thread/tokenUsage/updated":
                         token_usage = _field(payload, "token_usage")
                         last = _field(token_usage, "last")
                         total = _field(token_usage, "total")
-                        current_total = (
-                            int(_field(total, "input_tokens", 0)),
-                            int(_field(total, "output_tokens", 0)),
-                        ) if total is not None else None
+                        keys = ("input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens", "total_tokens")
+                        current_total = {key: int(_field(total, key, 0) or 0) for key in keys} if total is not None else None
                         if previous_usage_total is None or current_total is None:
-                            increment = (
-                                int(_field(last, "input_tokens", 0)),
-                                int(_field(last, "output_tokens", 0)),
-                            )
+                            increment = {key: int(_field(last, key, 0) or 0) for key in keys}
                         else:
-                            increment = (
-                                max(0, current_total[0] - previous_usage_total[0]),
-                                max(0, current_total[1] - previous_usage_total[1]),
-                            )
+                            increment = {key: max(0, current_total[key] - previous_usage_total[key]) for key in keys}
                         if current_total is not None:
                             previous_usage_total = current_total
-                        yield NormalizedEvent("usage", {
-                            "tokens_in": increment[0],
-                            "tokens_out": increment[1],
-                        })
+                        event = usage(increment)
+                        event.data["context_tokens"] = (int(_field(total, "total_tokens", 0) or 0)
+                            if total is not None else None)
+                        event.data["model_context_window"] = _field(token_usage, "model_context_window")
+                        yield event
+                    elif method == "account/rateLimits/updated":
+                        limits = _field(payload, "rate_limits", payload)
+                        if hasattr(limits, "model_dump"):
+                            limits = limits.model_dump(by_alias=True, mode="json")
+                        elif limits is None:
+                            limits = {}
+                        elif not isinstance(limits, dict):
+                            limits = vars(limits)
+                        yield NormalizedEvent("limits", {"snapshot": limits})
                     elif method == "error":
                         if not _field(payload, "will_retry", False):
                             error = _field(payload, "error")
-                            terminal["error"] = str(_field(error, "message", error))
+                            terminal["error"] = structured_error(str(_field(error, "message", error)))
                     elif method == "turn/completed":
                         completed = True
                         status = _value(_field(_field(payload, "turn"), "status"))
                         terminal["ok"] = status == "completed" and not self._cancelled
                         terminal["cancelled"] = status == "interrupted" or self._cancelled
                         if not terminal["ok"] and terminal["error"] is None:
-                            terminal["error"] = f"Codex turn {status}"
+                            terminal["error"] = structured_error(f"Codex turn {status}")
                 if not started:
-                    terminal["error"] = "Codex app-server ended before a turn event"
+                    terminal["error"] = structured_error("Codex app-server ended before a turn event")
                 elif not completed:
-                    terminal["error"] = "Codex app-server ended before turn completion"
+                    terminal["error"] = structured_error("Codex app-server ended before turn completion")
                 proc = self._process()
                 if proc is not None:
                     natural_exit_code = proc.poll()
@@ -336,8 +370,11 @@ class CodexAppServerRunner:
                 client_closed = True
         except Exception as error:
             terminal["ok"] = False
-            terminal["error"] = str(error)
+            terminal["error"] = structured_error(str(error))
         finally:
+            if limits_task is not None:
+                limits_task.cancel()
+                await asyncio.gather(limits_task, return_exceptions=True)
             if not client_closed:
                 self._terminate_host()
                 try:
@@ -359,11 +396,14 @@ class CodexAppServerRunner:
             self._turn_handle = None
             self._finished.set()
             self._client = None
+        while not limits_queue.empty():
+            yield NormalizedEvent("limits", {"snapshot": limits_queue.get_nowait()})
         if natural_exit_code is not None:
             terminal["exit_code"] = natural_exit_code
             if natural_exit_code != 0:
                 terminal["ok"] = False
-                terminal["error"] = terminal["error"] or f"Codex app-server exited {natural_exit_code}"
+                terminal["error"] = terminal["error"] or structured_error(
+                    f"Codex app-server exited {natural_exit_code}", exit_code=natural_exit_code)
         terminal["cancelled"] = terminal["cancelled"] or self._cancelled
         if terminal["cancelled"]:
             terminal["ok"] = False

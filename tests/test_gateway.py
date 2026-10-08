@@ -163,14 +163,19 @@ class ThreadSafeStore(Store):
         self.conn.execute("PRAGMA journal_mode = WAL")
         schema = Path(__file__).parents[1] / "lgt" / "schema.sql"
         self.conn.executescript(schema.read_text(encoding="utf-8"))
+        self.conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(kind, channel_id UNINDEXED, seq UNINDEXED, text)")
         self._savepoint_counter = 0
 
 
-def _with_peer(app, peer: str = "127.0.0.1"):
+def _with_peer(app, peer: str = "127.0.0.1", *, normalize_ws_host: bool = True):
     async def asgi(scope, receive, send):
         if scope["type"] in {"http", "websocket"}:
             scope = dict(scope)
             scope["client"] = (peer, 45678)
+            if scope["type"] == "websocket" and normalize_ws_host:
+                scope["headers"] = [
+                    (key, value) for key, value in scope["headers"] if key.lower() != b"host"
+                ] + [(b"host", b"127.0.0.1")]
         await app(scope, receive, send)
 
     return asgi
@@ -206,6 +211,41 @@ def test_non_loopback_peer_is_rejected_even_without_origin(tmp_path):
     with TestClient(_with_peer(app, "8.8.8.8"), base_url="http://127.0.0.1") as client:
         response = client.get("/health")
     assert response.status_code == 403
+
+
+def test_explicit_desktop_origin_cors_keeps_loopback_host_policy(tmp_path):
+    orch = FakeOrchestrator(tmp_path)
+    orch.settings.allowed_origins = ("tauri://localhost", "file://", "http://127.0.0.1:5173")
+    app = create_app(orch, manage_lifespan=False)
+    with TestClient(_with_peer(app), base_url="http://127.0.0.1") as client:
+        response = client.get("/health", headers={"origin": "tauri://localhost"})
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "tauri://localhost"
+        preflight = client.options("/health", headers={
+            "origin": "http://127.0.0.1:5173",
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "content-type",
+        })
+        assert preflight.status_code == 204
+        assert preflight.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+        assert client.get("/health", headers={"origin": "http://127.0.0.1:5174"}).status_code == 403
+        assert client.get("/health", headers={"origin": "null"}).status_code == 403
+        assert client.get("/health", headers={"host": "attacker.example", "origin": "tauri://localhost"}).status_code == 403
+        with client.websocket_connect("/ws", headers={"origin": "tauri://localhost"}) as socket:
+            socket.send_json({"last_id": 0})
+        with client.websocket_connect("/ws", headers={"origin": "http://127.0.0.1:5173"}) as socket:
+            socket.send_json({"last_id": 0})
+    orch.store.close()
+
+    orch = FakeOrchestrator(tmp_path)
+    orch.settings.allowed_origins = ("tauri://localhost",)
+    with TestClient(_with_peer(create_app(orch, manage_lifespan=False), normalize_ws_host=False),
+                    base_url="http://127.0.0.1") as client:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws", headers={"host": "attacker.example",
+                                                          "origin": "tauri://localhost"}):
+                pass
+    orch.store.close()
 
 
 def test_agent_channel_member_and_event_routes(gateway_client):
@@ -316,6 +356,161 @@ def test_run_routes_scope_cancel_and_return_workspace_objects(gateway_client):
     assert cancelled.status_code == 200
     assert cancelled.json()["run_id"] == "run-1"
     assert orch.cancelled == ["run-1"]
+
+
+def test_run_filter_log_and_catalog_routes(gateway_client, tmp_path):
+    client, orch = gateway_client
+    channel_id = orch.store.list_channels(orch.human_id)[0].channel_id
+    run = Run(
+        run_id="run-log", channel_id=channel_id, agent_id="a1", trigger_seq=1,
+        delta_start_seq=1, delta_end_seq=1, session_mode="cold", harness="codex", cwd=".",
+    )
+    orch.store.create_run(run)
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "run-log.stderr.log").write_text("first\nsecond\nthird\n", encoding="utf-8")
+    orch.settings.log_dir = log_dir
+
+    runs = client.get("/runs", params={"agent_id": "a1", "status": "active"})
+    assert runs.status_code == 200
+    assert [item["run_id"] for item in runs.json()] == ["run-log"]
+    for number in (1, 2, 3):
+        orch.store.create_run(Run(
+            run_id=f"run-{number}", channel_id=channel_id, agent_id="a1",
+            trigger_seq=number + 1, delta_start_seq=number + 1, delta_end_seq=number + 1,
+            session_mode="cold", harness="codex", cwd=".",
+            started_at=f"2026-10-08T00:00:0{number}+00:00",
+        ))
+    latest = client.get("/runs", params={"agent_id": "a1", "limit": 2}).json()
+    assert [item["run_id"] for item in latest] == ["run-3", "run-2"]
+    log = client.get("/runs/run-log/log", params={"tail": 2})
+    assert log.json() == {"run_id": "run-log", "lines": ["second", "third"], "truncated": True}
+    assert {item["name"] for item in client.get("/commands").json()} == {"/new", "/cwd", "/cancel"}
+
+
+def test_attachment_thumbnail_is_bounded_and_scoped(gateway_client, tmp_path):
+    from io import BytesIO
+    import struct
+    import zlib
+    from PIL import Image
+    from lgt.models import Attachment
+
+    client, orch = gateway_client
+    channel_id = orch.store.list_channels(orch.human_id)[0].channel_id
+    source = tmp_path / "large.png"
+    Image.new("RGB", (1200, 800), "red").save(source)
+    orch.settings.thumbnail_max_dimension = 512
+    orch.store.put_attachment(Attachment(
+        attachment_id="thumb-one", channel_id=channel_id, filename="large.png",
+        media_type="image/png", size_bytes=source.stat().st_size, sha256="test", path=str(source),
+    ))
+    response = client.get("/attachments/thumb-one/thumbnail")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    with Image.open(BytesIO(response.content)) as thumbnail:
+        assert thumbnail.size == (512, 341)
+    assert client.get("/attachments/missing/thumbnail").status_code == 404
+
+    bomb = tmp_path / "spoofed.png"
+    data = bytearray(source.read_bytes())
+    data[16:24] = struct.pack(">II", 200_000, 200_000)
+    data[29:33] = struct.pack(">I", zlib.crc32(b"IHDR" + data[16:29]))
+    bomb.write_bytes(data)
+    orch.store.put_attachment(Attachment(
+        attachment_id="thumb-bomb", channel_id=channel_id, filename="spoofed.png",
+        media_type="image/png", size_bytes=bomb.stat().st_size, sha256="test", path=str(bomb),
+    ))
+    assert client.get("/attachments/thumb-bomb/thumbnail").status_code == 413
+
+
+def test_search_does_not_return_channels_outside_human_membership(gateway_client, tmp_path):
+    client, orch = gateway_client
+    own = orch.store.list_channels(orch.human_id)[0]
+    outsider = Channel("outsider", "channel", "private keyword", str(tmp_path), False)
+    orch.store.create_channel(outsider, [("agent", "a1")])
+    orch.store.append_event(own.channel_id, "message", "human", "local", {"text": "keyword public"})
+    orch.store.append_event(outsider.channel_id, "message", "human", "other", {"text": "keyword private"})
+    results = client.get("/search", params={"q": "keyword"}).json()
+    assert {item["channel_id"] for item in results["messages"]} == {own.channel_id}
+    assert results["channels"] == []
+
+
+def test_real_orchestrator_gateway_contracts(tmp_path):
+    from lgt.orchestrator import Orchestrator
+    from tests.support import ControlledFactory, FakeRouter, settings
+
+    class Registry:
+        prepared = []
+
+        def list(self):
+            return [{"harness": "codex", "found": True, "path": "codex", "version": "test",
+                     "auth": "unknown", "capabilities": {"allowed_tools": False},
+                     "models": [{"id": "test", "label": "Test", "description": "", "default": True}],
+                     "tools": []}]
+
+        async def scan(self):
+            return self.list()
+
+        async def probe_custom(self, command, extra_args):
+            return {**self.list()[0], "harness": "custom", "command": command, "extra_args": extra_args}
+
+        async def prepare_agent(self, agent):
+            self.prepared.append(agent.agent_id)
+
+        def validate_agent(self, agent):
+            pass
+
+    store = ThreadSafeStore(tmp_path / "real.sqlite3")
+    orch = Orchestrator(store, settings(tmp_path), FakeRouter([]), ControlledFactory(),
+                        lambda harness, sid, cwd: True, human_id="local",
+                        harness_registry=Registry())
+    with TestClient(_with_peer(create_app(orch)), base_url="http://127.0.0.1") as client:
+        assert client.get("/harnesses").json()[0]["harness"] == "codex"
+        assert client.post("/harnesses/custom/probe", json={"command": ["example"]}).json()["command"] == ["example"]
+        probed = client.post("/harnesses/custom/probe", json={"command": ["example"], "extra_args": ["--profile", "local"]})
+        assert probed.status_code == 200 and probed.json()["extra_args"] == ["--profile", "local"]
+        assert [item["id"] for item in client.get("/templates").json()] == ["coder", "planner", "docs"]
+        created = client.post("/agents", json={
+            "handle": "helper", "name": "Helper", "description": "Tests the workspace",
+            "harness": "codex", "model": "test", "system_prompt": "Help.",
+        })
+        assert created.status_code == 201
+        agent = created.json()
+        assert agent["avatar"]["seed"] == agent["agent_id"]
+        assert agent["dm_channel_id"]
+        assert agent["hue"] == 0
+        assert agent["agent_id"] in orch.harness_registry.prepared
+        assert client.get("/agents/status").json()[0]["state"] == "idle"
+        channel_id = agent["dm_channel_id"]
+        summary = next(item for item in client.get("/channels").json()
+                       if item["channel_id"] == channel_id)
+        assert summary["members"]
+        assert summary["unread_count"] == 0
+        assert client.get(f"/channels/{channel_id}/context").json()["agent_id"] == agent["agent_id"]
+        assert client.post(f"/channels/{channel_id}/read", json={"seq": 0}).status_code == 200
+        assert client.patch(f"/channels/{channel_id}", json={"name": "renamed"}).json()["name"] == "renamed"
+        assert client.patch("/me", json={"display_name": "Tester"}).json()["display_name"] == "Tester"
+        assert client.get("/me").json()["display_name"] == "Tester"
+        assert client.get("/runs").json() == []
+        assert client.get("/usage").json() == []
+        normal = client.post("/channels", json={"name": "temporary", "cwd": str(tmp_path)}).json()
+        pending = store.append_event(normal["channel_id"], "message", "human", "local",
+                                     {"text": "pending", "mentions": []})
+        queued = store.enqueue(normal["channel_id"], pending.seq, state="awaiting_route")
+        archived = client.post(f"/channels/{normal['channel_id']}/archive")
+        assert archived.status_code == 200 and archived.json()["archived_at"]
+        assert store.get_queue_item(queued.queue_id).state == "cancelled"
+        history = client.get(f"/channels/{normal['channel_id']}/events").json()
+        assert history[-1]["kind"] == "channel_changed"
+        assert client.post(f"/channels/{normal['channel_id']}/unarchive").json()["archived_at"] is None
+        boot = client.post("/bootstrap", json={"agent_templates": ["coder"], "cwd": str(tmp_path)})
+        assert boot.status_code == 201
+        assert boot.json()["channel"]["name"] == "general"
+        retired = client.post(f"/agents/{agent['agent_id']}/retire")
+        assert retired.status_code == 200 and retired.json()["retired_at"]
+        assert client.get("/channels").json()[0]
+        assert client.post(f"/channels/{channel_id}/unarchive").status_code == 400
+    store.close()
 
 
 def test_http_agent_create_update_and_harness_rejection(gateway_client):
@@ -442,6 +637,9 @@ def test_websocket_disconnect_does_not_cancel_an_accepted_message(gateway_client
             "channel_id": channel_id,
             "text": "accepted before disconnect",
         })
+        accepted = websocket.receive_json()
+        assert accepted["type"] == "event"
+        assert accepted["event"]["payload"]["text"] == "accepted before disconnect"
 
     events = orch.store.events(channel_id)
     assert any(

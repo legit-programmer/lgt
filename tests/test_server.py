@@ -48,7 +48,7 @@ async def test_native_server_boot_http_websocket_and_replay_without_model_calls(
                         health = await client.get(base + "/health")
                         if health.status_code == 200:
                             break
-                    except httpx.ConnectError:
+                    except (httpx.ConnectError, httpx.ConnectTimeout):
                         pass
                     await asyncio.sleep(0.05)
             assert health.json() == {"status": "ok"}
@@ -57,15 +57,28 @@ async def test_native_server_boot_http_websocket_and_replay_without_model_calls(
             cid = response.json()["channel_id"]
             async with websockets.connect(f"ws://127.0.0.1:{port}/ws", proxy=None) as ws:
                 await ws.send(json.dumps({"last_id": 0}))
+                initial = []
+                while True:
+                    frame = json.loads(await asyncio.wait_for(ws.recv(), 5))
+                    initial.append(frame)
+                    if frame["type"] == "me":
+                        break
+                assert any(frame["type"] == "channel_summary" and frame["channel_id"] == cid
+                           for frame in initial)
                 await ws.send(json.dumps({"type": "send_message", "channel_id": cid, "text": "hello"}))
-                frames = [json.loads(await asyncio.wait_for(ws.recv(), 5)) for _ in range(4)]
-                # Queue frames report the pending routing delivery between events.
-                assert [frame["type"] for frame in frames] == ["event", "queue", "event", "queue"]
-                message, routing = frames[0], frames[2]
+                frames = []
+                while True:
+                    frame = json.loads(await asyncio.wait_for(ws.recv(), 5))
+                    frames.append(frame)
+                    if frame["type"] == "queue" and frame["items"] == []:
+                        break
+                events = [frame for frame in frames if frame["type"] == "event"]
+                assert [frame["event"]["kind"] for frame in events] == ["message", "routing_decision"]
+                message, routing = events
                 assert message["event"]["kind"] == "message"
                 assert routing["event"]["kind"] == "routing_decision"
                 assert routing["event"]["payload"]["agents"] == []
-                assert "no agent members" in routing["event"]["payload"]["reason"]
+                assert routing["event"]["payload"]["reason_code"] == "none"
             history = (await client.get(base + f"/channels/{cid}/events")).json()
             assert [event["seq"] for event in history] == [1, 2]
             async with websockets.connect(f"ws://127.0.0.1:{port}/ws", proxy=None) as ws:

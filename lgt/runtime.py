@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import shutil
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from pathlib import Path
 from typing import Any
 
 from .codex_adapter import CodexAppServerRunner, bundled_codex_binary
 from .config import Settings
 from .gateway import create_app
+from .harnesses import HarnessRegistry
 from .locking import RuntimeLock
 from .oneshot import make_cli_invoker
 from .orchestrator import Orchestrator
@@ -24,6 +24,7 @@ class RuntimeConfig:
     codex_bin: str | None = None
     claude_command: tuple[str, ...] = ("claude",)
     codex_router_command: tuple[str, ...] | None = None
+    gemini_command: tuple[str, ...] = ("gemini",)
 
 
 def load_config(path: str | Path) -> RuntimeConfig:
@@ -32,7 +33,7 @@ def load_config(path: str | Path) -> RuntimeConfig:
     raw = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("settings"), dict):
         raise ValueError("configuration must contain a settings object")
-    unknown = set(raw) - {"settings", "checkpoint_mode", "codex_bin", "claude_command", "codex_router_command"}
+    unknown = set(raw) - {"settings", "checkpoint_mode", "codex_bin", "claude_command", "codex_router_command", "gemini_command"}
     if unknown:
         raise ValueError(f"unknown configuration fields: {', '.join(sorted(unknown))}")
     values = dict(raw["settings"])
@@ -40,20 +41,25 @@ def load_config(path: str | Path) -> RuntimeConfig:
     if "route_after_active" in values:
         raise ValueError("route_after_active is fixed to false for this workspace")
     values["route_after_active"] = False
-    expected = {field.name for field in fields(Settings)}
-    missing, extras = expected - values.keys(), values.keys() - expected
+    all_fields = {field.name: field for field in fields(Settings)}
+    required = {name for name, field in all_fields.items() if field.default is MISSING and field.default_factory is MISSING}
+    missing, extras = required - values.keys(), values.keys() - all_fields.keys()
     if missing or extras:
         raise ValueError(f"settings fields missing={sorted(missing)}, unknown={sorted(extras)}")
     directory = Path(values["data_dir"]).expanduser()
     if not directory.is_absolute():
         directory = config_path.parent / directory
     values["data_dir"] = directory.resolve()
+    if "allowed_origins" in values:
+        if not isinstance(values["allowed_origins"], list):
+            raise ValueError("allowed_origins must be an array")
+        values["allowed_origins"] = tuple(values["allowed_origins"])
     mode = raw.get("checkpoint_mode")
     if mode not in {"cli", "deferred"}:
         raise ValueError("checkpoint_mode must explicitly be cli or deferred")
     commands: dict[str, tuple[str, ...] | None] = {}
-    for name in ("claude_command", "codex_router_command"):
-        value = raw.get(name, ["claude"] if name == "claude_command" else None)
+    for name in ("claude_command", "codex_router_command", "gemini_command"):
+        value = raw.get(name, ["claude"] if name == "claude_command" else ["gemini"] if name == "gemini_command" else None)
         if value is not None and (not isinstance(value, list) or not value
                                   or any(not isinstance(part, str) or not part for part in value)):
             raise ValueError(f"{name} must be a nonempty argv array")
@@ -75,6 +81,7 @@ class BackendRuntime:
         self._store: Store | None = None
         self._lock = RuntimeLock(self.settings.data_dir / "workspace.lock")
         self.harness_info: dict[str, Any] = {}
+        self.harness_registry: HarnessRegistry | None = None
 
     def __getattr__(self, name: str) -> Any:
         if self._orch is None:
@@ -88,18 +95,12 @@ class BackendRuntime:
         try:
             self.settings.data_dir.mkdir(parents=True, exist_ok=True)
             self._store = Store(self.settings.database_path)
-            runner_args = dict(
-                tool_output_cap=self.settings.tool_output_cap,
-                line_limit=self.settings.ndjson_line_limit,
-                cancel_grace_seconds=self.settings.cancel_grace_seconds,
-                log_dir=self.settings.log_dir,
-                codex_bin=self.config.codex_bin,
-                startup_timeout_seconds=self.settings.router_timeout_seconds,
-            )
-            self.harness_info = await CodexAppServerRunner(**runner_args).probe()
+            self.harness_registry = HarnessRegistry(self.settings, self.config.codex_bin,
+                self.config.claude_command, self.config.gemini_command)
+            await self.harness_registry.scan()
+            self.harness_info = next((entry for entry in self.harness_registry.list() if entry["harness"] == "codex"), {})
             binary = bundled_codex_binary(self.config.codex_bin)
             claude = list(self.config.claude_command)
-            claude[0] = shutil.which(claude[0]) or claude[0]
             cli_args = dict(
                 claude_command=claude,
                 codex_command=list(self.config.codex_router_command or (binary,)),
@@ -108,16 +109,12 @@ class BackendRuntime:
                 codex_model=self.settings.codex_router_model,
                 invoke=make_cli_invoker(output_limit_bytes=self.settings.ndjson_line_limit),
             )
-            def runner_factory(harness: str):
-                if harness != "codex":
-                    raise ValueError("only Codex app-server is supported in this milestone")
-                return CodexAppServerRunner(**runner_args)
-
             self._orch = Orchestrator(
-                self._store, self.settings, CLIRouter(**cli_args), runner_factory,
-                lambda harness, sid, cwd: harness == "codex" and CodexAppServerRunner.artifact_exists(sid, cwd),
+                self._store, self.settings, CLIRouter(**cli_args), self.harness_registry.runner,
+                self.harness_registry.artifact_exists,
                 human_id=self.human_id,
                 summarizer=CLISummarizer(**cli_args) if self.config.checkpoint_mode == "cli" else None,
+                harness_registry=self.harness_registry,
             )
             await self._orch.start()
         except BaseException:

@@ -9,13 +9,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal, Protocol
 
-Harness = Literal["claude_code", "codex", "opencode"]
+Harness = Literal["claude", "claude_code", "codex", "gemini", "custom"]
 SessionMode = Literal["resume", "cold"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 EVENT_KINDS = frozenset({
     "message", "tool_call", "tool_result", "run_status", "routing_decision",
     "context_reset", "context_checkpoint", "message_edit", "system",
     "cwd_changed", "member_added", "member_removed", "delivery_cancelled",
+    "channel_changed", "agent_retired",
 })
 PENDING_QUEUE_STATES = frozenset({"awaiting_route", "awaiting_agent"})
 
@@ -49,11 +50,25 @@ class Agent:
     permission_mode: str = "bypass"
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
+    avatar: dict[str, str] = field(default_factory=dict)
+    hue: int = -1
+    extra_args: list[str] = field(default_factory=list)
+    command: list[str] = field(default_factory=list)
+    retired_at: str | None = None
+    dm_channel_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.avatar:
+            object.__setattr__(self, "avatar", {"style": "bottts", "seed": self.agent_id})
+        elif not self.avatar.get("seed"):
+            object.__setattr__(self, "avatar", {**self.avatar, "seed": self.agent_id})
 
     def fingerprint(self) -> str:
         config = {
             "harness": self.harness, "model": self.model,
             "system_prompt": self.system_prompt, "tools": sorted(self.allowed_tools),
+            "extra_args": self.extra_args, "command": self.command,
+            "permission_mode": self.permission_mode,
         }
         return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
@@ -103,13 +118,19 @@ class Run:
     harness_session_id: str | None = None
     pgid: int | None = None
     status: str = "queued"
-    error: str | None = None
+    error: dict[str, Any] | str | None = None
     exit_code: int | None = None
     started_at: str | None = None
     ended_at: str | None = None
     tokens_in: int = 0
     tokens_out: int = 0
-    cost_usd: float = 0.0
+    tokens_cached_in: int = 0
+    tokens_cache_creation: int = 0
+    tokens_reasoning: int = 0
+    tokens_total: int = 0
+    model_context_window: int | None = None
+    context_tokens: int | None = None
+    duration_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +208,8 @@ class RoutingDecision:
     agents: list[str]
     reason: str
     error: str | None = None
+    suggested_agents: list[str] = field(default_factory=list)
+    reason_code: str = "router"
 
 
 class Router(Protocol):

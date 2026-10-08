@@ -114,10 +114,16 @@ def test_websocket_cancel_delivery_and_queue_snapshot(routes):
     with client.websocket_connect("/ws") as socket:
         socket.send_json({"last_id": queued["id"]})
         snapshot = socket.receive_json()
+        while snapshot["type"] != "queue":
+            snapshot = socket.receive_json()
         assert snapshot["type"] == "queue" and snapshot["items"][0]["event_seq"] == queued["seq"]
         socket.send_json({"type": "cancel_delivery", "channel_id": cid, "target_seq": queued["seq"],
                           "agent_ids": ["alpha"]})
-        frames = [socket.receive_json() for _ in range(3)]
+        frames = []
+        while len(frames) < 3:
+            frame = socket.receive_json()
+            if frame["type"] in {"event", "queue"}:
+                frames.append(frame)
         assert [f.get("event", {}).get("kind", f["type"]) for f in frames] == [
             "delivery_cancelled", "message_edit", "queue",
         ]

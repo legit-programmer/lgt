@@ -10,11 +10,12 @@ import signal
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
-from dataclasses import replace
+from dataclasses import asdict, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
-from .attachments import normalize_media_type, remove_files, safe_filename, write_stream
+from .attachments import AttachmentTooLarge, normalize_media_type, remove_files, safe_filename, write_stream
 from .broadcast import EventBus
 from .config import Settings
 from .context import cold_plan, render_delta, render_turn, rendered_size, resolve_session
@@ -24,6 +25,7 @@ from .models import (
     TERMINAL_STATUSES, Turn, WorkspaceError, new_id, utc_now,
 )
 from .store import Store
+from .run_errors import duration_ms, failure_text, normalize_error
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -68,6 +70,7 @@ class Orchestrator:
         self, store: Store, settings: Settings, router: Router, runner_factory: RunnerFactory,
         artifact_exists: Callable[[str, str, str], bool], *, human_id: str,
         summarizer: Summarizer | None = None,
+        harness_registry: Any = None,
     ) -> None:
         self.store = store
         self.settings = settings
@@ -76,6 +79,10 @@ class Orchestrator:
         self.artifact_exists = artifact_exists
         self.human_id = human_id
         self.summarizer = summarizer
+        if harness_registry is None:
+            from .harnesses import HarnessRegistry
+            harness_registry = HarnessRegistry(settings)
+        self.harness_registry = harness_registry
         self.bus = EventBus()
         self._mailboxes: dict[str, ChannelMailbox] = {}
         self._run_tasks: dict[str, asyncio.Task] = {}
@@ -86,6 +93,12 @@ class Orchestrator:
         self._partials: dict[str, str] = {}
         self._cancelled: set[str] = set()
         self._published_queues: dict[str, list[dict[str, Any]]] = {}
+        self._published_summaries: dict[str, dict[str, Any]] = {}
+        self._published_statuses: dict[str, dict[str, Any]] = {}
+        self._activities: dict[str, dict[str, Any]] = {}
+        self._suggestions: dict[str, tuple[str, list[str]]] = {}
+        self._suggestion_tasks: dict[str, asyncio.Task] = {}
+        self._retention_task: asyncio.Task | None = None
         self._semaphore = asyncio.Semaphore(settings.concurrent_runs)
         self._closing = False
         self._started = False
@@ -102,6 +115,11 @@ class Orchestrator:
         if self._started:
             return
         self._started = True
+        for agent in self.store.list_agents():
+            if agent.dm_channel_id is None:
+                self._ensure_dm(agent)
+        self.cleanup_attachments()
+        self._retention_task = asyncio.create_task(self._retain_attachments())
         # The Windows SDK host closes its Job Object on backend stdin EOF.
         # Do not kill a persisted Windows PID, which may have been reused.
         for run in self.store.list_runs(active_only=True):
@@ -117,11 +135,15 @@ class Orchestrator:
 
     def _orphan(self, run: Run) -> None:
         trigger = self.store.get_event(run.channel_id, run.trigger_seq)
+        ended = utc_now()
+        error = normalize_error("orphaned", run.exit_code)
+        elapsed = duration_ms(run.started_at, ended)
         with self.store.transaction():
-            self.store.update_run(run.run_id, status="failed", error="orphaned", ended_at=utc_now())
+            self.store.update_run(run.run_id, status="failed", error=error, ended_at=ended, duration_ms=elapsed)
             event = self._append(
                 run.channel_id, "run_status", "system", "system",
-                {"run_id": run.run_id, "status": "failed", "error": "orphaned"},
+                {**self._run_payload(self.store.get_run(run.run_id)),
+                 "text": failure_text(run.harness, error, elapsed)},
                 run_id=run.run_id, chain_id=trigger.chain_id, hop=trigger.hop,
             )
             session = self.store.get_session(run.agent_id, run.channel_id)
@@ -133,7 +155,9 @@ class Orchestrator:
         if self._closing:
             return
         self._closing = True
-        auxiliary = [*self._route_tasks.values(), *self._checkpoint_tasks.values()]
+        auxiliary = [*self._route_tasks.values(), *self._checkpoint_tasks.values(), *self._suggestion_tasks.values()]
+        if self._retention_task:
+            auxiliary.append(self._retention_task)
         for task in auxiliary:
             task.cancel()
         await asyncio.gather(*auxiliary, return_exceptions=True)
@@ -144,17 +168,49 @@ class Orchestrator:
             await mailbox.close()
 
     def put_agent(self, agent: Agent) -> None:
-        if agent.harness != "codex":
-            raise WorkspaceError("this milestone supports Codex app-server agents only")
+        self.harness_registry.validate_agent(agent)
         if agent.permission_mode != "bypass":
             raise WorkspaceError("v1 requires permission_mode=bypass")
-        if agent.allowed_tools:
-            raise WorkspaceError("Codex tool allowlists are not implemented; leave allowed_tools empty until its policy is defined")
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:-]*", agent.handle):
             raise WorkspaceError("agent handle contains invalid mention characters")
-        if agent.default_cwd and not Path(agent.default_cwd).is_absolute():
-            raise WorkspaceError("default_cwd must be absolute")
-        self.store.put_agent(agent)
+        if agent.default_cwd and (not Path(agent.default_cwd).is_absolute() or not Path(agent.default_cwd).is_dir()):
+            raise WorkspaceError("default_cwd must be an existing absolute directory")
+        if (set(agent.avatar) != {"style", "seed"}
+                or any(not isinstance(value, str) or not value.strip() for value in agent.avatar.values())
+                or not re.fullmatch(r"[a-zA-Z0-9-]+", agent.avatar["style"])):
+            raise WorkspaceError("avatar requires a style and seed")
+        try:
+            previous = self.store.get_agent(agent.agent_id)
+        except KeyError:
+            previous = None
+        if previous is not None and previous.retired_at:
+            raise WorkspaceError("a retired agent cannot be changed")
+        with self.store.transaction():
+            self.store.put_agent(agent)
+            self._ensure_dm(self.store.get_agent(agent.agent_id))
+        saved = self.store.get_agent(agent.agent_id)
+        self._refresh_subscriptions()
+        self._publish_summary(saved.dm_channel_id)
+        self.bus.publish({"type": "agent", **asdict(saved)})
+        self._publish_agent_statuses()
+
+    def _ensure_dm(self, agent: Agent) -> None:
+        if agent.dm_channel_id:
+            return
+        # Reuse a DM from an older workspace before creating one.
+        existing = next((channel for channel in self.store.list_channels(self.human_id)
+                         if channel.kind == "dm" and agent.agent_id in self._agent_ids(channel.channel_id)), None)
+        cwd = agent.default_cwd if agent.default_cwd and Path(agent.default_cwd).is_dir() else None
+        if existing is None:
+            channel_id = new_id()
+            path = Path(cwd) if cwd else self.settings.workspace_dir / channel_id
+            if cwd is None:
+                path.mkdir(parents=True, exist_ok=True)
+            channel = Channel(channel_id, "dm", agent.name, str(path), cwd is None)
+            self.store.create_channel(channel, [("human", self.human_id), ("agent", agent.agent_id)])
+        else:
+            channel = existing
+        self.store.set_agent_dm_channel(agent.agent_id, channel.channel_id)
 
     def create_channel(
         self, name: str, kind: str = "channel", agent_ids: list[str] | None = None,
@@ -166,6 +222,8 @@ class Orchestrator:
         if kind == "dm" and len(agents) != 1:
             raise WorkspaceError("a DM needs exactly one agent")
         configs = [self.store.get_agent(agent_id) for agent_id in agents]
+        if any(agent.retired_at for agent in configs):
+            raise WorkspaceError("retired agents cannot join a channel")
         channel_id = new_id()
         if cwd is None and kind == "dm":
             cwd = configs[0].default_cwd
@@ -173,14 +231,21 @@ class Orchestrator:
         path = self.settings.workspace_dir / channel_id if managed else Path(cwd)
         if not path.is_absolute():
             raise WorkspaceError("channel cwd must be absolute")
+        if not managed and not path.is_dir():
+            raise WorkspaceError("channel cwd must be an existing directory")
+        if managed:
+            path.mkdir(parents=True, exist_ok=True)
         channel = Channel(channel_id, kind, name.strip(), str(path), managed)
         self.store.create_channel(channel, [("human", self.human_id), *[("agent", a) for a in agents]])
         self._refresh_subscriptions()
+        self._publish_summary(channel_id)
         return channel
 
     def add_member(self, channel_id: str, agent_id: str) -> None:
         channel = self._assert_channel(channel_id)
         agent = self.store.get_agent(agent_id)
+        if agent.retired_at:
+            raise WorkspaceError("retired agents cannot join a channel")
         if channel.kind == "dm" and agent_id not in self._agent_ids(channel_id):
             raise WorkspaceError("a DM cannot contain another agent")
         with self.store.transaction():
@@ -242,6 +307,8 @@ class Orchestrator:
                 raise WorkspaceError("stop the channel's active runs before changing its working directory")
             managed = cwd is None
             target = str(self.settings.workspace_dir / channel_id if managed else Path(cwd))
+            if managed:
+                Path(target).mkdir(parents=True, exist_ok=True)
             if target == channel.cwd and managed == channel.cwd_managed:
                 return channel
             with self.store.transaction():
@@ -303,6 +370,256 @@ class Orchestrator:
 
     def _publish(self, event: Event) -> None:
         self.bus.publish({"type": "event", "event": event.to_dict()})
+        self._publish_summary(event.channel_id)
+        self._publish_agent_statuses()
+        if event.kind in {"context_reset", "context_checkpoint", "cwd_changed", "message_edit"}:
+            self._publish_context(event.channel_id)
+
+    def _publish_summary(self, channel_id: str) -> None:
+        summary = self.store.channel_summary(channel_id, self.human_id)
+        if summary != self._published_summaries.get(channel_id):
+            self._published_summaries[channel_id] = summary
+            self.bus.publish({"type": "channel_summary", **summary})
+
+    def agent_statuses(self) -> list[dict[str, Any]]:
+        statuses = []
+        runs = self.store.list_runs()
+        queued = self.store.queue()
+        for agent in self.store.list_agents():
+            history = [run for run in runs if run.agent_id == agent.agent_id]
+            active = [run for run in history if run.status not in TERMINAL_STATUSES]
+            terminal = sorted((run for run in history if run.status in TERMINAL_STATUSES),
+                              key=lambda run: (run.ended_at or run.started_at or "", run.run_id), reverse=True)
+            failed = next((run for run in terminal if run.status == "failed"), None)
+            working = [run for run in active if run.status in {"starting", "running"}]
+            pending = any(item.agent_id == agent.agent_id and item.state in PENDING_QUEUE_STATES for item in queued)
+            state = ("working" if working else "queued" if active or pending else
+                     "failed" if terminal and terminal[0].status == "failed" else "idle")
+            activity = next((self._activities[run.run_id] for run in reversed(working)
+                             if run.run_id in self._activities), None)
+            statuses.append({
+                "agent_id": agent.agent_id, "state": state,
+                "active_runs": [{"run_id": run.run_id, "channel_id": run.channel_id,
+                                 "started_at": run.started_at} for run in active],
+                "activity": activity,
+                "last_failure": {"run_id": failed.run_id, "error": failed.error,
+                                 "at": failed.ended_at} if failed else None,
+            })
+        return statuses
+
+    def _publish_agent_statuses(self) -> None:
+        for status in self.agent_statuses():
+            agent_id = status["agent_id"]
+            if status != self._published_statuses.get(agent_id):
+                self._published_statuses[agent_id] = status
+                self.bus.publish({"type": "agent_status", **status})
+
+    def context_stats(self, channel_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        channel = self.store.get_channel(channel_id)
+        members = self._agent_ids(channel_id)
+        if agent_id is None:
+            if len(members) != 1:
+                raise WorkspaceError("agent_id is required for channels with multiple agents")
+            agent_id = members[0]
+        if agent_id not in members:
+            raise WorkspaceError("agent is not a channel member")
+        agent = self.store.get_agent(agent_id)
+        end_seq = channel.next_seq - 1
+        events = self.store.events(channel_id)
+        plan = self._session_plan(agent, channel, end_seq)
+        cold = cold_plan(events)
+        edits: dict[int, dict[str, Any]] = {}
+        for event in events:
+            if event.kind == "message_edit":
+                edits.setdefault(event.payload["target_seq"], {}).update(event.payload)
+        count = sum(event.kind == "message" and event.seq >= cold.start_seq
+                    and not edits.get(event.seq, {}).get("deleted", False) for event in events)
+        # Usage from a reset/changed directory cannot describe the new context.
+        latest = next((run for run in reversed(self.store.list_runs(channel_id, agent_id=agent_id))
+                       if run.delta_end_seq >= cold.start_seq
+                       and run.cwd == channel.cwd), None)
+        if latest and any(event.seq > latest.delta_end_seq and event.kind == "message_edit"
+                          and event.payload["target_seq"] <= latest.delta_end_seq for event in events):
+            latest = None
+        checkpoint = max((event.seq for event in events if event.kind == "context_checkpoint"
+                          and event.payload.get("covers_through_seq") == cold.start_seq - 1), default=None)
+        return {"channel_id": channel_id, "agent_id": agent_id, "mode": plan.mode,
+                "start_seq": plan.start_seq, "messages_in_context": count,
+                "context_tokens": (latest.context_tokens if latest.context_tokens is not None else latest.tokens_total or None) if latest else None,
+                "model_context_window": latest.model_context_window if latest else None,
+                "checkpoint_seq": checkpoint}
+
+    def _session_plan(self, agent: Agent, channel: Channel, end_seq: int):
+        if hasattr(self.harness_registry, "capabilities_for"):
+            capabilities = self.harness_registry.capabilities_for(agent)
+        else:
+            from .harnesses import canonical_harness
+            capabilities = next((item["capabilities"] for item in self.harness_registry.list()
+                                 if item["harness"] == canonical_harness(agent.harness)), {})
+        if not capabilities.get("resume", False):
+            return cold_plan(self.store.events(channel.channel_id, to_seq=end_seq))
+        return resolve_session(self.store, agent, channel, end_seq,
+                               lambda sid, cwd: self.artifact_exists(agent.harness, sid, cwd),
+                               self.settings.session_ttl_seconds)
+
+    def _publish_context(self, channel_id: str) -> None:
+        for agent_id in self._agent_ids(channel_id):
+            self.bus.publish({"type": "context", **self.context_stats(channel_id, agent_id)})
+
+    def snapshot_frames(self, channel_ids: set[str]) -> list[dict[str, Any]]:
+        frames = [{"type": "channel_summary", **self.store.channel_summary(cid, self.human_id)}
+                  for cid in sorted(channel_ids)]
+        frames.extend({"type": "agent_status", **status} for status in self.agent_statuses())
+        frames.extend({"type": "context", **self.context_stats(cid, agent_id)}
+                      for cid in sorted(channel_ids) for agent_id in self._agent_ids(cid))
+        frames.append({"type": "usage", "group_by": "agent", "totals": self.store.usage("agent")})
+        for harness in self.harness_registry.list():
+            limits = self.store.get_harness_limits(harness["harness"])
+            if limits:
+                frames.append({"type": "harness_limits", "harness": harness["harness"], "limits": limits})
+        frames.append({"type": "me", **self.store.get_human_profile(self.human_id)})
+        return frames
+
+    async def mark_read(self, channel_id: str, seq: int) -> dict[str, Any]:
+        def mark() -> dict[str, Any]:
+            self.store.set_read_cursor(channel_id, self.human_id, seq)
+            self._publish_summary(channel_id)
+            return self.store.channel_summary(channel_id, self.human_id)
+        return await self._call(channel_id, mark)
+
+    @staticmethod
+    def _run_payload(run: Run) -> dict[str, Any]:
+        payload = {"run_id": run.run_id, "agent_id": run.agent_id, "status": run.status,
+                   "started_at": run.started_at, "ended_at": run.ended_at, "duration_ms": run.duration_ms}
+        if run.error:
+            payload["error"] = run.error
+        return payload
+
+    async def retire_agent(self, agent_id: str) -> Agent:
+        agent = self.store.get_agent(agent_id)
+        if agent.retired_at:
+            return agent
+        # Mark retirement first so pending router replies cannot dispatch to it.
+        self.store.retire_agent(agent_id)
+        for channel in self.store.list_channels(self.human_id):
+            if agent_id not in self._agent_ids(channel.channel_id):
+                continue
+            if channel.kind == "dm":
+                await self.patch_channel(channel.channel_id, archived=True)
+            else:
+                await self.remove_member(channel.channel_id, agent_id)
+        for run in self.store.list_runs(active_only=True, agent_id=agent_id):
+            await self.cancel_run(run.run_id)
+        retired = self.store.get_agent(agent_id)
+        self.bus.publish({"type": "agent", **asdict(retired)})
+        self._publish_agent_statuses()
+        return retired
+
+    async def patch_channel(self, channel_id: str, name: str | None = None,
+                            archived: bool | None = None) -> Channel:
+        def patch() -> Channel:
+            channel = self.store.get_channel(channel_id)
+            if not any(member["member_kind"] == "human" and member["member_id"] == self.human_id
+                       for member in self.store.members(channel_id)):
+                raise WorkspaceError("the local human is not a member of this channel")
+            if name is not None and not name.strip():
+                raise WorkspaceError("channel name must not be empty")
+            if archived is False and channel.kind == "dm":
+                if any(self.store.get_agent(agent_id).retired_at for agent_id in self._agent_ids(channel_id)):
+                    raise WorkspaceError("a retired agent's DM cannot be unarchived")
+            with self.store.transaction():
+                self.store.patch_channel(channel_id, name=name, archived=archived)
+                if archived:
+                    for queued in self.store.queue(channel_id):
+                        if queued.state in PENDING_QUEUE_STATES:
+                            self.store.update_queue(queued.queue_id, state="cancelled")
+                event = self._append(channel_id, "channel_changed", "human", self.human_id,
+                                     {"name": self.store.get_channel(channel_id).name,
+                                      "archived_at": self.store.get_channel(channel_id).archived_at})
+            self._publish(event)
+            self._pump(channel_id)
+            return self.store.get_channel(channel_id)
+        channel = await self._call(channel_id, patch)
+        if archived:
+            for run in self.store.list_runs(channel_id, active_only=True):
+                await self.cancel_run(run.run_id)
+        return channel
+
+    async def unarchive_channel(self, channel_id: str) -> Channel:
+        return await self.patch_channel(channel_id, archived=False)
+
+    async def update_profile(self, display_name: str) -> dict[str, Any]:
+        self.store.set_human_profile(self.human_id, display_name)
+        profile = self.store.get_human_profile(self.human_id)
+        self.bus.publish({"type": "me", **profile})
+        return profile
+
+    def templates(self) -> list[dict[str, Any]]:
+        from .services import template_catalog
+        return template_catalog(self.harness_registry.list())
+
+    async def bootstrap(self, agent_templates: list[str], cwd: str) -> dict[str, Any]:
+        if not Path(cwd).is_absolute() or not Path(cwd).is_dir():
+            raise WorkspaceError("bootstrap cwd must be an existing absolute directory")
+        if not agent_templates or len(set(agent_templates)) != len(agent_templates):
+            raise WorkspaceError("choose one or more distinct agent templates")
+        catalog = {template["id"]: template for template in self.templates()}
+        if set(agent_templates) - catalog.keys():
+            raise WorkspaceError("a requested template is unavailable")
+        agents = []
+        # Finish all validation before the transaction or any live publication.
+        handles = {agent.handle for agent in self.store.list_agents(include_retired=True)}
+        for template_id in agent_templates:
+            template = catalog[template_id]
+            handle = template_id
+            suffix = 2
+            while handle in handles:
+                handle = f"{template_id}-{suffix}"
+                suffix += 1
+            handles.add(handle)
+            agent = Agent(new_id(), handle, template["name"], template["description"], template["harness"],
+                          template["model"], template["system_prompt"], template.get("allowed_tools", []), cwd)
+            self.harness_registry.validate_agent(agent)
+            agents.append(agent)
+        with self.store.transaction():
+            for agent in agents:
+                self.store.put_agent(agent)
+                dm = Channel(new_id(), "dm", agent.name, cwd, False)
+                self.store.create_channel(dm, [("human", self.human_id), ("agent", agent.agent_id)])
+                self.store.set_agent_dm_channel(agent.agent_id, dm.channel_id)
+            general = Channel(new_id(), "channel", "general", cwd, False)
+            self.store.create_channel(general, [("human", self.human_id), *[("agent", agent.agent_id) for agent in agents]])
+        self._refresh_subscriptions()
+        created = [self.store.get_agent(agent.agent_id) for agent in agents]
+        for agent in created:
+            self.bus.publish({"type": "agent", **asdict(agent)})
+            self._publish_summary(agent.dm_channel_id)
+        self._publish_summary(general.channel_id)
+        self._publish_agent_statuses()
+        return {"agents": [asdict(agent) for agent in created], "channel": asdict(general)}
+
+    async def channel_suggestions(self, channel_id: str) -> list[str]:
+        self.store.get_channel(channel_id)
+        agents = [self.store.get_agent(agent_id) for agent_id in self._agent_ids(channel_id)
+                  if not self.store.get_agent(agent_id).retired_at]
+        key = str([(agent.agent_id, agent.fingerprint(), agent.description) for agent in agents])
+        cached = self._suggestions.get(channel_id)
+        if cached and cached[0] == key:
+            return cached[1]
+        if not agents:
+            return []
+        if channel_id not in self._suggestion_tasks:
+            async def generate() -> list[str]:
+                try:
+                    generate_fn = getattr(self.router, "suggestions", None)
+                    prompts = await generate_fn([asdict(agent) for agent in agents]) if generate_fn else []
+                    prompts = [prompt.strip() for prompt in prompts if isinstance(prompt, str) and prompt.strip()][:3]
+                    self._suggestions[channel_id] = (key, prompts)
+                    return prompts
+                finally:
+                    self._suggestion_tasks.pop(channel_id, None)
+            self._suggestion_tasks[channel_id] = asyncio.create_task(generate())
+        return await asyncio.shield(self._suggestion_tasks[channel_id])
 
     async def send_message(
         self, channel_id: str, text: str, mentions: list[str] | None = None,
@@ -317,6 +634,29 @@ class Orchestrator:
             raise WorkspaceError("an attachment can be sent only once")
         if text.strip() == "/new" and not attachment_ids:
             return await self.new_context(channel_id)
+        command, _, argument = text.strip().partition(" ")
+        if not attachment_ids and command == "/cwd":
+            if not argument.strip():
+                raise WorkspaceError("usage: /cwd <absolute path>")
+            await self.set_channel_cwd(channel_id, argument.strip())
+            return self.store.events(channel_id)[-1]
+        if not attachment_ids and command == "/cancel":
+            self._assert_channel(channel_id)
+            active = self.store.list_runs(channel_id, active_only=True)
+            if argument:
+                run = self.store.get_run(argument.strip())
+                if run.channel_id != channel_id:
+                    raise WorkspaceError("run belongs to another channel")
+                active = [run]
+            for run in active:
+                await self.cancel_run(run.run_id)
+            def notice() -> Event:
+                with self.store.transaction():
+                    event = self._append(channel_id, "system", "human", self.human_id,
+                                         {"code": "cancel", "text": f"Cancelled {len(active)} active runs."})
+                self._publish(event)
+                return event
+            return await self._call(channel_id, notice)
 
         def accept() -> Event:
             channel = self._assert_channel(channel_id)
@@ -332,6 +672,7 @@ class Orchestrator:
                 payload["attachments"] = [attachment.summary() for attachment in files]
             with self.store.transaction():
                 event = self._append(channel_id, "message", "human", self.human_id, payload)
+                routing = self._mention_decision(event, targets) if targets else None
                 for attachment in files:
                     self.store.bind_attachment(attachment.attachment_id, event.seq)
                 if channel.kind == "dm":
@@ -344,6 +685,8 @@ class Orchestrator:
                                 if self.settings.route_after_active else [])
                     self.store.enqueue(channel_id, event.seq, wait_for=wait_for, state="awaiting_route")
             self._publish(event)
+            if routing:
+                self._publish(routing)
             self._pump(channel_id)
             return event
 
@@ -471,6 +814,13 @@ class Orchestrator:
         if items != self._published_queues.get(channel_id, []):
             self._published_queues[channel_id] = items
             self.bus.publish({"type": "queue", "channel_id": channel_id, "items": items})
+        self._publish_agent_statuses()
+
+    def _mention_decision(self, message: Event, targets: list[str]) -> Event:
+        return self._append(message.channel_id, "routing_decision", "system", "router", {
+            "for_seqs": [message.seq], "agents": targets, "suggested_agents": [],
+            "method": "mention", "reason_code": "mention", "reason": "explicit mentions",
+        }, chain_id=message.chain_id, hop=message.hop)
 
     def _pump(self, channel_id: str) -> None:
         try:
@@ -490,9 +840,11 @@ class Orchestrator:
         ready_route = [q for q in self.store.queue(channel_id, "awaiting_route")
                        if not active_ids.intersection(q.wait_for)]
         if ready_route and channel_id not in self._route_tasks:
+            members = set(self._agent_ids(channel_id))
             roster = [{"agent_id": agent.agent_id, "handle": agent.handle,
-                       "description": agent.description, "busy": agent.agent_id in busy}
-                      for agent in (self.store.get_agent(a) for a in self._agent_ids(channel_id))]
+                       "description": agent.description, "busy": agent.agent_id in busy,
+                       "in_channel": agent.agent_id in members}
+                      for agent in self.store.list_agents()]
             events = self.store.events(channel_id)
             from_seq = events[-self.settings.router_context_events].seq if len(events) >= self.settings.router_context_events else 1
             request = RoutingRequest(
@@ -503,7 +855,10 @@ class Orchestrator:
 
         batches: dict[str, list[QueueItem]] = defaultdict(list)
         for queued in self.store.queue(channel_id, "awaiting_agent"):
-            if queued.agent_id not in busy:
+            if (queued.agent_id not in self._agent_ids(channel_id)
+                    or self.store.get_agent(queued.agent_id).retired_at):
+                self.store.update_queue(queued.queue_id, state="cancelled")
+            elif queued.agent_id not in busy:
                 batches[queued.agent_id].append(queued)
         for agent_id, batch in batches.items():
             self._dispatch(channel_id, agent_id, batch)
@@ -512,11 +867,13 @@ class Orchestrator:
         try:
             try:
                 decision = await self.router.route(request)
-                if set(decision.agents) - {r["agent_id"] for r in request.roster}:
+                if (set(decision.agents) | set(decision.suggested_agents)) - {r["agent_id"] for r in request.roster}:
                     raise ValueError("router selected an agent outside the roster")
             except Exception as error:
-                picks = [random.choice(request.roster)["agent_id"]] if request.roster else []
-                decision = RoutingDecision(picks, "Router failed; random member takes charge.", str(error))
+                members = [entry for entry in request.roster if entry.get("in_channel", True)]
+                picks = [random.choice(members)["agent_id"]] if members else []
+                decision = RoutingDecision(picks, "Router failed; random member takes charge.", str(error),
+                                           reason_code="router_failed_random" if picks else "none")
             await self._call(channel_id, lambda: self._apply_route(channel_id, batch, decision))
         except asyncio.CancelledError:
             raise
@@ -531,10 +888,16 @@ class Orchestrator:
         if not batch:
             return
         members = set(self._agent_ids(channel_id))
-        decision = replace(decision, agents=[a for a in decision.agents if a in members])
+        available = {agent.agent_id for agent in self.store.list_agents()}
+        suggested = [agent_id for agent_id in dict.fromkeys([*decision.suggested_agents, *decision.agents])
+                     if agent_id in available and agent_id not in members]
+        decision = replace(decision, agents=[a for a in decision.agents if a in members and a in available],
+                           suggested_agents=suggested)
         trigger = self.store.get_event(channel_id, max(q.event_seq for q in batch))
         payload: dict[str, Any] = {"for_seqs": [q.event_seq for q in batch],
-                                   "agents": decision.agents, "reason": decision.reason}
+                                   "agents": decision.agents, "reason": decision.reason,
+                                   "suggested_agents": decision.suggested_agents, "method": "router",
+                                   "reason_code": decision.reason_code if decision.agents else "none"}
         if decision.error:
             payload["error"] = decision.error
         with self.store.transaction():
@@ -552,11 +915,7 @@ class Orchestrator:
         channel = self.store.get_channel(channel_id)
         end_seq = channel.next_seq - 1
         trigger_seq = max(q.event_seq for q in batch)
-        plan = resolve_session(
-            self.store, agent, channel, end_seq,
-            lambda sid, cwd: self.artifact_exists(agent.harness, sid, cwd),
-            self.settings.session_ttl_seconds,
-        )
+        plan = self._session_plan(agent, channel, end_seq)
         run = Run(new_id(), channel_id, agent_id, trigger_seq, plan.start_seq, end_seq,
                   plan.mode, agent.harness, channel.cwd,
                   harness_session_id=plan.session.harness_session_id if plan.session else None)
@@ -567,7 +926,7 @@ class Orchestrator:
                 trigger = self.store.get_event(channel_id, trigger_seq)
                 queued_event = self._append(
                     channel_id, "run_status", "system", "system",
-                    {"run_id": run.run_id, "status": "queued"},
+                    self._run_payload(run),
                     run_id=run.run_id, chain_id=trigger.chain_id, hop=trigger.hop,
                 )
             for queued in batch:
@@ -632,7 +991,7 @@ class Orchestrator:
         with self.store.transaction():
             self.store.update_run(run.run_id, status=status, started_at=run.started_at or utc_now())
             event = self._append(run.channel_id, "run_status", "system", "system",
-                                 {"run_id": run.run_id, "status": status},
+                                 self._run_payload(self.store.get_run(run.run_id)),
                                  run_id=run.run_id, chain_id=trigger.chain_id, hop=trigger.hop)
         self._publish(event)
 
@@ -652,10 +1011,15 @@ class Orchestrator:
             if data.get("harness_session_id"):
                 self.store.update_run(run.run_id, harness_session_id=data["harness_session_id"])
         elif output.kind == "text_delta":
+            self._set_activity(run.run_id, "writing", "Writing response")
             self._partials[run.run_id] = self._partials.get(run.run_id, "") + data["text"]
             self.bus.publish({"type": "delta", "run_id": run.run_id,
                               "channel_id": run.channel_id, "text": data["text"]})
         elif output.kind in {"message", "tool_call", "tool_result"}:
+            if output.kind == "tool_call":
+                self._set_activity(run.run_id, "tool", data.get("summary") or data.get("label") or data.get("tool") or data.get("name", "Using a tool"))
+            else:
+                self._set_activity(run.run_id, "writing", "Writing response")
             payload = dict(data)
             payload["author_handle"] = turn.agent.handle
             if output.kind == "message":
@@ -673,6 +1037,7 @@ class Orchestrator:
                             chain_id=trigger.chain_id, hop=hop,
                         ))
                     else:
+                        notices.append(self._mention_decision(event, payload["mentions"]))
                         for agent_id in payload["mentions"]:
                             self.store.enqueue(run.channel_id, event.seq, agent_id)
             self._publish(event)
@@ -680,25 +1045,58 @@ class Orchestrator:
                 self._publish(notice)
             self._pump(run.channel_id)
         elif output.kind == "usage":
-            self.store.update_run(run.run_id, tokens_in=run.tokens_in + int(data.get("tokens_in", 0)),
-                                  tokens_out=run.tokens_out + int(data.get("tokens_out", 0)),
-                                  cost_usd=run.cost_usd + float(data.get("cost_usd") or 0))
+            fields = ("tokens_in", "tokens_out", "tokens_cached_in", "tokens_cache_creation", "tokens_reasoning", "tokens_total")
+            values = {}
+            for name in fields:
+                value = data.get(name, 0)
+                if type(value) is not int or value < 0:
+                    raise WorkspaceError("harness reported invalid token usage")
+                values[name] = value if data.get("cumulative") else getattr(run, name) + value
+            if "tokens_total" not in data:
+                values["tokens_total"] = values["tokens_in"] + values["tokens_out"] + values["tokens_cache_creation"]
+            for name in ("model_context_window", "context_tokens"):
+                if data.get(name) is not None:
+                    if type(data[name]) is not int or data[name] < 0:
+                        raise WorkspaceError("harness reported invalid context usage")
+                    values[name] = data[name]
+            self.store.update_run(run.run_id, **values)
+            self.bus.publish({"type": "usage", "channel_id": run.channel_id,
+                              "agent_id": run.agent_id, "run_id": run.run_id,
+                              **{name: getattr(self.store.get_run(run.run_id), name) for name in fields},
+                              "group_by": "agent", "totals": self.store.usage("agent")})
+            self._publish_context(run.channel_id)
+        elif output.kind in {"limits", "rate_limits"}:
+            from .harnesses import canonical_harness
+            harness = canonical_harness(run.harness)
+            snapshot = data.get("snapshot", data)
+            self.store.put_harness_limits(harness, snapshot)
+            self.bus.publish({"type": "harness_limits", "harness": harness, "limits": snapshot})
+            self.bus.publish({"type": "usage", "harness": harness, "limits": snapshot})
         elif output.kind == "run_finished":
             cancelled = data.get("cancelled") or run.run_id in self._cancelled
             status = "cancelled" if cancelled else "completed" if data.get("ok") else "failed"
             self._finish(turn, status, data.get("error"), data.get("exit_code"))
 
-    def _finish(self, turn: Turn, status: str, error: str | None, exit_code: int | None) -> None:
+    def _set_activity(self, run_id: str, kind: str, summary: str) -> None:
+        previous = self._activities.get(run_id)
+        if previous is None or previous["kind"] != kind or previous["summary"] != summary:
+            self._activities[run_id] = {"kind": kind, "summary": summary, "since": utc_now()}
+            self._publish_agent_statuses()
+
+    def _finish(self, turn: Turn, status: str, error: Any, exit_code: int | None) -> None:
         run = self.store.get_run(turn.run.run_id)
         if run.status in TERMINAL_STATUSES:
             return
         trigger = self.store.get_event(run.channel_id, run.trigger_seq)
-        payload: dict[str, Any] = {"run_id": run.run_id, "status": status}
-        if error:
-            payload["error"] = error
+        ended = utc_now()
+        elapsed = duration_ms(run.started_at, ended)
+        error = normalize_error(error, exit_code) if status in {"failed", "cancelled"} else None
         with self.store.transaction():
             self.store.update_run(run.run_id, status=status, error=error,
-                                  exit_code=exit_code, ended_at=utc_now())
+                                  exit_code=exit_code, ended_at=ended, duration_ms=elapsed)
+            payload = self._run_payload(self.store.get_run(run.run_id))
+            if status == "failed":
+                payload["text"] = failure_text(run.harness, error, elapsed)
             event = self._append(run.channel_id, "run_status", "system", "system", payload,
                                  run_id=run.run_id, chain_id=trigger.chain_id, hop=trigger.hop)
             if status == "completed":
@@ -711,7 +1109,9 @@ class Orchestrator:
                 if session:
                     self.store.put_session(replace(session, last_run_status="dirty"))
         self._partials.pop(run.run_id, None)
+        self._activities.pop(run.run_id, None)
         self._publish(event)
+        self._publish_context(run.channel_id)
         self._pump(run.channel_id)
         if status == "completed":
             self._maybe_checkpoint(turn)
@@ -742,18 +1142,37 @@ class Orchestrator:
         chunks: AsyncIterator[bytes],
     ) -> Attachment:
         """Store an upload for a later message in this channel."""
-        self._assert_channel(channel_id)
-        attachment_id = new_id()
-        path = self.settings.attachment_dir / attachment_id / safe_filename(filename)
-        size, digest = await write_stream(path, chunks, self.settings.attachment_max_bytes)
-        attachment = Attachment(attachment_id, channel_id, path.name, normalize_media_type(media_type),
-                                size, digest, str(path))
-        try:
-            self.store.put_attachment(attachment)
-        except BaseException:
-            remove_files(path)
-            raise
-        return attachment
+        async def upload() -> Attachment:
+            self._assert_channel(channel_id)
+            self.cleanup_attachments()
+            available = self.settings.attachment_channel_quota_bytes - self.store.attachment_channel_bytes(channel_id)
+            if available <= 0:
+                raise AttachmentTooLarge("channel attachment quota exceeded")
+            attachment_id = new_id()
+            path = self.settings.attachment_dir / attachment_id / safe_filename(filename)
+            size, digest = await write_stream(path, chunks, min(self.settings.attachment_max_bytes, available))
+            attachment = Attachment(attachment_id, channel_id, path.name, normalize_media_type(media_type),
+                                    size, digest, str(path))
+            try:
+                self.store.put_attachment(attachment)
+            except BaseException:
+                remove_files(path)
+                raise
+            return attachment
+        return await self._call(channel_id, upload)
+
+    def cleanup_attachments(self) -> int:
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=self.settings.attachment_retention_seconds)).isoformat()
+        expired = self.store.expired_unsent_attachments(cutoff)
+        for attachment in expired:
+            self.delete_attachment(attachment.attachment_id)
+        return len(expired)
+
+    async def _retain_attachments(self) -> None:
+        interval = min(60, max(1, self.settings.attachment_retention_seconds / 4))
+        while not self._closing:
+            await asyncio.sleep(interval)
+            self.cleanup_attachments()
 
     def delete_attachment(self, attachment_id: str) -> None:
         """Discard an upload that was never sent."""
