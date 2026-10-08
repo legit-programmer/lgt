@@ -279,7 +279,7 @@ export function RoutingNotice({ event, ctx }: { event: WorkspaceEvent<RoutingPay
     return (
       <div className="fv-notice fv-notice--failed">
         <Ban />
-        <span>routed → none · {payload.reason}</span>
+        <span className="notice-text">routed → none · {payload.reason}</span>
         {suggestions.map((id) => (
           <button key={id} className="fv-btn fv-btn--sm" onClick={() => add(id)} disabled={adding === id}>
             Add {ctx.agents[id].handle}

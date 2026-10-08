@@ -1,6 +1,59 @@
 # Backend gaps for the Lgt screens
 
-The contracts below are implemented. The original gap descriptions are retained as the acceptance checklist. See the [backend reference](../docs/backend-reference.md) and [custom harness protocol](../docs/custom-harness.md) for the current API.
+The contracts in the sections after "Open" are implemented. The original gap descriptions are retained as the acceptance checklist. See the [backend reference](../docs/backend-reference.md) and [custom harness protocol](../docs/custom-harness.md) for the current API.
+
+## Open: found while building the desktop app
+
+These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. The app skips each feature below rather than working around it, and states what it shows instead.
+
+### D1. Daemon handshake (blocks the shell owning the backend)
+
+The shell connects to an already running backend at `LGT_BACKEND_URL` (default `http://127.0.0.1:8000`). If the backend can't be reached, it shows a retry screen. To start, find, and stop the backend itself, the shell needs:
+
+| Contract | Purpose |
+| --- | --- |
+| `--port 0`, then write `data_dir/daemon.json` with `{pid, port, api_version, token, started_at}` after binding | The shell finds a running daemon without a fixed port. |
+| `api_version` in `GET /health` | A newer shell can restart an older daemon after an update instead of talking to it with a mismatched protocol. |
+| A per-launch token: `Authorization: Bearer` on HTTP, and a `token` field in the first WebSocket frame | Any local process can drive agents with full permissions today. |
+| `POST /shutdown`, token-protected | "Quit Lgt" stops runs cleanly instead of killing the process. |
+| A detached mode that logs to `data_dir/logs/daemon.log` and opens no console window | The daemon keeps running while the window is closed. |
+
+**Skipped until then:**
+- starting and stopping the backend from the shell;
+- a tray icon with the working count;
+- notifications when runs finish with the window closed;
+- start at login;
+- restarting the backend after an app update.
+
+### D2. WebSocket head cursor
+
+The first connection has no way to learn the current global event id, so it sends `{"last_id": 0}`. The server then replays the whole history, or sends `resync` once the history exceeds `replay_cap`. The client ignores replayed events for timelines that aren't open, which is correct but wasteful at startup.
+
+Needed, either of:
+- `GET /events/cursor` returning `{"last_id": n}`;
+- a `cursor` field in the post-replay snapshot frames, so a client can start from "now".
+
+### D3. Tool durations from the Claude adapter
+
+Claude `tool_result` events carry `duration_ms: null`. The design shows per-tool times ("0.1s", "1m 51s") and group totals ("48s"). The UI shows no duration when the field is null; it does not derive one from event timestamps. Needed: every adapter measures call-to-result time.
+
+### D4. Tool summaries relative to the working directory
+
+`tool_call.summary` contains absolute paths, for example `C:\Users\…\work\hello.txt`. The design shows `playwright.config.ts`. The sidebar activity line ("Running …") repeats the same long path. Needed: summaries shorten paths under the run's cwd to relative paths, and keep `input` unchanged.
+
+### D5. Who cancelled a run
+
+A cancelled `run_status` doesn't say what cancelled it. Possible causes are the person, removing the agent, archiving the channel, retiring the agent, or shutdown. The design reads "run cancelled by you after 48s"; the UI shows "run cancelled after 48s". Needed: `cancelled_by: "human" | "member_removed" | "channel_archived" | "agent_retired" | "shutdown"` on the terminal payload.
+
+### D6. Cancelling a single tool call
+
+The design's live tool row has a × button. No endpoint stops one tool call while the run continues, so the UI doesn't show the button. Needed, if harnesses support it:
+- `POST /runs/{run_id}/tools/{tool_call_id}/cancel`;
+- a `tool_interrupt` capability.
+
+### Note: attachment media and the origin policy
+
+`<img>` and download navigations send no `Origin` header, so the backend rejects them as cross-site from `http://tauri.localhost` or a dev origin. The UI fetches thumbnails and downloads with CORS from its allowed origin and displays them as blob URLs. This uses the existing endpoints as documented. When the D1 launch token lands, short-lived signed attachment URLs would let the webview stream large files without buffering them in memory.
 
 Capabilities remain explicit: unsupported tool policies, resume, native inputs, or plan-limit reporting are advertised as unavailable. Agent settings are validated against those capabilities and the harness model and tool catalogs. Custom argv commands have a separate probe endpoint for their catalogs.
 

@@ -1259,3 +1259,26 @@ button.fv-attachment {
   border-radius: var(--radius-sm);
   background: var(--surface-3);
 }
+
+.fv-notice {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.fv-notice > svg {
+  margin-top: 3px;
+}
+
+.fv-notice .notice-text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.fv-notice:has(.fv-chip) {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.fv-notice:has(.fv-chip) > svg {
+  margin-top: 0;
+}

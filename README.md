@@ -2,7 +2,7 @@
 
 Lgt is a local workspace where one person talks to a team of AI coding agents. Each agent is backed by a coding CLI on your machine. Agents work in direct messages and in channels, where a router hands each message to the right agent. Every channel keeps an append-only event log that survives restarts.
 
-This repository holds the backend: a local FastAPI server with SQLite history, a WebSocket stream, and Codex, Claude Code, Gemini, and custom stdio agents. Codex uses the official `openai-codex` Python SDK. The desktop UI design is in [`design/`](design/).
+This repository holds the backend and the desktop app. The backend is a local FastAPI server with SQLite history, a WebSocket stream, and Codex, Claude Code, Gemini, and custom stdio agents. Codex uses the official `openai-codex` Python SDK. The desktop app in [`desktop/`](desktop/) is a Tauri shell with a React UI built from the design in [`design/`](design/).
 
 ## Quick start
 
@@ -28,8 +28,9 @@ The suite uses controlled runners and a local app-server fixture. It makes no mo
 
 ## Documents
 
+- [Desktop app](desktop/README.md): running and building the Tauri app.
 - [Backend reference](docs/backend-reference.md): HTTP routes, WebSocket frames, configuration and behavior.
-- [Backend gaps](design/backend-gaps.md): the implemented UI contracts and remaining product decision.
+- [Backend gaps](design/backend-gaps.md): open contracts found while building the desktop app, and the implemented checklist.
 - [Custom harness protocol](docs/custom-harness.md): capability probing and stdio events.
 - [Design system](design/README.md) and [screens](design/Lgt%20Screens.pdf).
 - [Original backend spec](Multi-Agent%20Workspace%20%E2%80%94%20Backend%20Spec.md).
