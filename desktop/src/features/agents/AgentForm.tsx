@@ -1,10 +1,11 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronLeft, Folder, RefreshCw, Terminal } from "lucide-react";
+import { Check, Folder, RefreshCw, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Agent, AgentInput, Avatar, Harness } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
+import { TopBarSlot } from "../../components/TopBar";
 import { harnessLabel, hueStyle } from "../../lib/agents";
 import { pickFolder } from "../../lib/folder";
 import { displayPath } from "../../lib/format";
@@ -192,12 +193,14 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
 
   return (
     <form className="form-screen fv-pane-glass" onSubmit={submit}>
-      <header className="conversation-head">
-        <button type="button" className="fv-icon-btn" aria-label="Back" onClick={back}><ChevronLeft /></button>
-        <h1 className="conversation-title">{agent ? `Edit ${agent.handle}` : "New agent"}</h1>
-        <span className="conversation-head-spacer" />
-        {agent ? <button type="button" className="fv-btn fv-btn--danger" onClick={() => setRetiring(true)}>Retire agent</button> : null}
-      </header>
+      <TopBarSlot target="title">
+        <h1 className="topbar-heading">{agent ? `Edit ${agent.handle}` : "New agent"}</h1>
+      </TopBarSlot>
+      {agent ? (
+        <TopBarSlot target="actions">
+          <button type="button" className="fv-btn fv-btn--danger fv-btn--sm" onClick={() => setRetiring(true)}>Retire agent</button>
+        </TopBarSlot>
+      ) : null}
 
       <div className="form-scroll">
         <div className="form-grid">

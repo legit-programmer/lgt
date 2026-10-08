@@ -1,6 +1,5 @@
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useState, type ReactNode } from "react";
-import { Bot, Hash, Moon, Plus, Search, SquarePen, Sun } from "lucide-react";
+import { Hash, Moon, Plus, Search, Sun } from "lucide-react";
 import type { Agent, AgentStatus, ChannelSummary } from "../../api/types";
 import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
 import { activeAgents } from "../../lib/agents";
@@ -38,26 +37,6 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar" aria-label="Conversations">
-      <div className="sidebar-head">
-        <span className="sidebar-brand">Lgt</span>
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button className="fv-icon-btn" aria-label="New conversation or agent">
-              <SquarePen />
-            </button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content className="fv-menu fv-glass" align="end" sideOffset={6}>
-              <DropdownMenu.Item className="fv-menu-item" onSelect={() => setNewChannelOpen(true)}>
-                <Hash /> New channel
-              </DropdownMenu.Item>
-              <DropdownMenu.Item className="fv-menu-item" onSelect={() => navigate({ kind: "agent-new", returnTo: view })}>
-                <Bot /> New agent
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      </div>
 
       <button className="sidebar-search" onClick={() => setPaletteOpen(true)}>
         <Search />

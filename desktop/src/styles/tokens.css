@@ -8,7 +8,7 @@
   color-scheme: dark;
 
   /* Grounds step up: window -> sidebar -> pane -> raised -> hover. */
-  --surface-0: #141110;
+  --surface-0: #000000;
   --surface-1: #1a1614;
   --surface-2: #1f1a17;
   --surface-3: #29231f;
@@ -40,6 +40,7 @@
   --failed: #f0634f;
   --failed-soft: rgb(240 99 79 / 0.12);
   --failed-text: #ff8a78;
+  --on-failed: #ffffff;
   --queued: #ae93f2;
   --queued-soft: rgb(174 147 242 / 0.09);
   --success: #63d39b;
@@ -65,9 +66,6 @@
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.3);
 
   /* Glass: the chat column and overlays only. */
-  --backdrop-ember: rgb(212 112 38 / 0.34);
-  --backdrop-rust: rgb(148 58 30 / 0.3);
-  --backdrop-dusk: rgb(92 62 128 / 0.26);
   --glass-pane: rgb(33 27 24 / 0.66);
   --glass-pane-line: rgb(255 240 225 / 0.08);
   --glass-pane-well: rgb(8 6 5 / 0.34);
@@ -112,6 +110,7 @@
   --failed: #c8392a;
   --failed-soft: rgb(200 57 42 / 0.1);
   --failed-text: #a92c1f;
+  --on-failed: #ffffff;
   --queued: #6c4fd0;
   --queued-soft: rgb(108 79 208 / 0.07);
   --success: #1f8a55;
@@ -134,9 +133,6 @@
   --shadow-overlay: 0 24px 64px rgb(60 40 25 / 0.2), 0 2px 8px rgb(60 40 25 / 0.1);
   --shadow-raised: 0 1px 2px rgb(60 40 25 / 0.08);
 
-  --backdrop-ember: rgb(242 160 28 / 0.22);
-  --backdrop-rust: rgb(214 110 70 / 0.16);
-  --backdrop-dusk: rgb(140 110 200 / 0.16);
   --glass-pane: rgb(255 252 248 / 0.7);
   --glass-pane-line: rgb(60 40 25 / 0.1);
   --glass-pane-well: rgb(60 40 25 / 0.05);
@@ -159,6 +155,7 @@
   --size-control: 34px;
   --size-control-sm: 28px;
   --size-tool-row: 26px;
+  --size-topbar: 44px;
   --size-sidebar: 260px;
   --size-detail: 360px;
   --size-avatar: 26px;

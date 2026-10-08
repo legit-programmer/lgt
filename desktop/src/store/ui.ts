@@ -19,8 +19,15 @@ interface UiState {
   paletteOpen: boolean;
   newChannelOpen: boolean;
   theme: Theme;
-  navigate(view: View): void;
-  openChannel(channelId: string, anchorSeq?: number): void;
+  sidebarOpen: boolean;
+  /** Visited views, for back and forward. */
+  history: View[];
+  historyIndex: number;
+  navigate(view: View, options?: { replace?: boolean }): void;
+  openChannel(channelId: string, anchorSeq?: number, options?: { replace?: boolean }): void;
+  back(): void;
+  forward(): void;
+  toggleSidebar(): void;
   setDetailOpen(open: boolean): void;
   showRuns(agentId: string | null, runId?: string | null): void;
   setDetailTab(tab: DetailTab): void;
@@ -60,26 +67,49 @@ function syncHash(view: View) {
   if (window.location.hash !== hash) window.history.replaceState(null, "", hash || window.location.pathname);
 }
 
-// Theme is a per-window display preference, so it lives in local storage.
-function storedTheme(): Theme {
+// Theme and sidebar visibility are per-window display preferences, so they live in local storage.
+function stored(key: string): string | null {
   try {
-    return localStorage.getItem("lgt.theme") === "light" ? "light" : "dark";
+    return localStorage.getItem(key);
   } catch {
-    return "dark";
+    return null;
   }
+}
+
+function store(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable; the preference still applies for this session.
+  }
+}
+
+function storedTheme(): Theme {
+  return stored("lgt.theme") === "light" ? "light" : "dark";
+}
+
+const HISTORY_LIMIT = 50;
+const initialView = viewFromHash(window.location.hash);
+
+/** Push a view onto the history, dropping forward entries; repeats of the current view are replaced. */
+function pushed(history: View[], index: number, view: View, replace: boolean) {
+  const current = history[index];
+  if (replace || (current && viewToHash(current) === viewToHash(view))) {
+    const next = history.slice();
+    next[index] = view;
+    return { history: next, historyIndex: index };
+  }
+  const next = [...history.slice(0, index + 1), view].slice(-HISTORY_LIMIT);
+  return { history: next, historyIndex: next.length - 1 };
 }
 
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
-  try {
-    localStorage.setItem("lgt.theme", theme);
-  } catch {
-    // Storage can be unavailable; the theme still applies for this session.
-  }
+  store("lgt.theme", theme);
 }
 
 export const useUi = create<UiState>((set, get) => ({
-  view: viewFromHash(window.location.hash),
+  view: initialView,
   detailOpen: true,
   detailTab: "agents",
   runFilterAgentId: null,
@@ -87,14 +117,38 @@ export const useUi = create<UiState>((set, get) => ({
   paletteOpen: false,
   newChannelOpen: false,
   theme: storedTheme(),
-  navigate(view) {
+  sidebarOpen: stored("lgt.sidebar") !== "closed",
+  history: [initialView],
+  historyIndex: 0,
+  navigate(view, options) {
     syncHash(view);
-    set({ view });
+    const { history, historyIndex } = get();
+    set({ view, ...pushed(history, historyIndex, view, options?.replace ?? false) });
   },
-  openChannel(channelId, anchorSeq) {
+  openChannel(channelId, anchorSeq, options) {
     const view: View = { kind: "channel", channelId, anchorSeq };
     syncHash(view);
-    set({ view, selectedRunId: null });
+    const { history, historyIndex } = get();
+    set({ view, selectedRunId: null, ...pushed(history, historyIndex, view, options?.replace ?? false) });
+  },
+  back() {
+    const { history, historyIndex } = get();
+    if (historyIndex <= 0) return;
+    const view = history[historyIndex - 1];
+    syncHash(view);
+    set({ view, historyIndex: historyIndex - 1, selectedRunId: null });
+  },
+  forward() {
+    const { history, historyIndex } = get();
+    if (historyIndex >= history.length - 1) return;
+    const view = history[historyIndex + 1];
+    syncHash(view);
+    set({ view, historyIndex: historyIndex + 1, selectedRunId: null });
+  },
+  toggleSidebar() {
+    const sidebarOpen = !get().sidebarOpen;
+    store("lgt.sidebar", sidebarOpen ? "open" : "closed");
+    set({ sidebarOpen });
   },
   setDetailOpen(detailOpen) {
     set({ detailOpen });

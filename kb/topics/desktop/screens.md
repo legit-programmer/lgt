@@ -3,7 +3,7 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
@@ -24,6 +24,13 @@ summary: Which desktop/src/features file implements each screen of Lgt Screens.p
 | 5. Onboarding | `features/onboarding/Onboarding.tsx` | `/harnesses`, `/templates`, `/bootstrap` |
 | New channel | `features/channel/NewChannelDialog.tsx` | `POST /channels` |
 | Ctrl/⌘ K palette | `features/palette/CommandPalette.tsx` | `/search`, `/unarchive` |
+
+## Top bar
+
+`components/TopBar.tsx` holds the sidebar toggle, back/forward and the "new" menu. Each screen portals its header into it through `TopBarSlot`:
+- **Channel:** `#name`, working count, cwd menu; search, panel toggle, more.
+- **DM:** avatar, handle, status, CLI and model, cwd, context stats; Fresh context, search, edit.
+- **Agent form:** "New agent" or "Edit …"; Retire.
 
 ## Composer (`Composer.tsx`)
 

@@ -12,6 +12,7 @@ import { Onboarding } from "./features/onboarding/Onboarding";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { NewChannelDialog } from "./features/channel/NewChannelDialog";
 import { Toasts } from "./components/Toasts";
+import { TopBar } from "./components/TopBar";
 
 type Boot = "resolving" | "loading" | "ready" | "failed";
 
@@ -36,9 +37,17 @@ export function App() {
     return () => workspaceSocket.stop();
   }, [start]);
 
-  if (boot === "failed") return <Unreachable message={bootError} onRetry={start} />;
-  if (boot !== "ready") return <div className="app-splash fv-backdrop" aria-busy="true" />;
-  return <Workspace />;
+  let content;
+  if (boot === "failed") content = <Unreachable message={bootError} onRetry={start} />;
+  else if (boot !== "ready") content = <div className="app-splash" aria-busy="true" />;
+  else content = <Workspace />;
+  // The shell carries the backdrop, so the top bar and the UI share one ground.
+  return (
+    <div className="app-shell fv-backdrop">
+      <TopBar workspace={boot === "ready"} />
+      {content}
+    </div>
+  );
 }
 
 function Workspace() {
@@ -46,6 +55,7 @@ function Workspace() {
   const navigate = useUi((s) => s.navigate);
   const openChannel = useUi((s) => s.openChannel);
   const setPaletteOpen = useUi((s) => s.setPaletteOpen);
+  const sidebarOpen = useUi((s) => s.sidebarOpen);
   const agents = useWorkspace((s) => s.agents);
   const channels = useWorkspace((s) => s.channels);
   const hasAgents = activeAgents(agents).length > 0;
@@ -53,21 +63,22 @@ function Workspace() {
   // Land on the most recent conversation, or onboarding with no agents.
   useEffect(() => {
     if (view.kind !== "home") return;
+    // Redirects replace the history entry, so Back never lands on an empty view.
     if (!hasAgents) {
-      navigate({ kind: "onboarding" });
+      navigate({ kind: "onboarding" }, { replace: true });
       return;
     }
     const recent = Object.values(channels)
       .filter((c) => !c.archived_at)
       .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))[0];
-    if (recent) openChannel(recent.channel_id);
+    if (recent) openChannel(recent.channel_id, undefined, { replace: true });
   }, [view.kind, hasAgents, channels, navigate, openChannel]);
 
   // A missing or archived conversation (deep link, or archived elsewhere) falls back home.
   useEffect(() => {
     if (view.kind !== "channel") return;
     const channel = channels[view.channelId];
-    if (!channel || channel.archived_at) navigate({ kind: "home" });
+    if (!channel || channel.archived_at) navigate({ kind: "home" }, { replace: true });
   }, [view, channels, navigate]);
 
   useEffect(() => {
@@ -75,6 +86,10 @@ function Workspace() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen(true);
+      } else if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        if (event.key === "ArrowLeft") useUi.getState().back();
+        else useUi.getState().forward();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -82,8 +97,8 @@ function Workspace() {
   }, [setPaletteOpen]);
 
   return (
-    <div className="app fv-backdrop">
-      <Sidebar />
+    <div className={`app${sidebarOpen ? "" : " app--no-sidebar"}`}>
+      {sidebarOpen ? <Sidebar /> : null}
       <main className="app-main">
         {view.kind === "channel" && channels[view.channelId] ? (
           <ChannelScreen key={view.channelId} channelId={view.channelId} anchorSeq={view.anchorSeq} />
@@ -107,7 +122,7 @@ function Unreachable({ message, onRetry }: { message: string | null; onRetry: ()
     url = "";
   }
   return (
-    <div className="app-splash fv-backdrop">
+    <div className="app-splash">
       <div className="unreachable fv-glass">
         <Unplug className="unreachable-icon" />
         <h1 className="fv-dialog-title">Lgt can't reach its backend</h1>

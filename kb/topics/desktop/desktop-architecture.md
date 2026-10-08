@@ -3,7 +3,7 @@ id: 20261008-desktop-architecture
 title: Desktop architecture
 tags: [desktop]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 related: [20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model]
 summary: How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
 ---
@@ -30,6 +30,12 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
   - `src-tauri/tauri.conf.json` sets a strict CSP: `connect-src` and `img-src` allow only loopback.
   - `capabilities/default.json` grants only `dialog:allow-open` and `opener:allow-open-url`.
 - **Identifier and window:** the identifier is `com.lgt.desktop`, and the main window label is `main`.
+- **Top bar (title bar and app chrome in one row):**
+  - On Windows, `src-tauri/tauri.windows.conf.json` overrides the window with `decorations: false`. Tauri merges it over `tauri.conf.json`, and arrays are replaced whole, so it repeats the full window entry.
+  - `components/TopBar.tsx` lays out three zones. The lead zone, over the sidebar column, holds the sidebar toggle, back/forward and the "new" menu. The middle holds the view's title. The right holds the view's actions, then the window controls (only when `isDecorated()` is false).
+  - Screens fill the title and actions through `<TopBarSlot target="title" | "actions">`, a portal into the bar. Plain text in the bar has `pointer-events: none` (`.topbar-passive`), so it drags the window; double-click maximizes.
+  - Permissions: `core:window:allow-minimize`, `allow-toggle-maximize`, `allow-close`, `allow-start-dragging`.
+  - `App.tsx` wraps every state (splash, unreachable, workspace) in `.app-shell`, so the window stays movable and closable on the error screen.
 
 ## Boot sequence (`src/App.tsx`)
 

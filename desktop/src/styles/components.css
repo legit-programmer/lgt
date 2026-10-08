@@ -77,12 +77,9 @@ select {
 
 /* Backdrop and glass ------------------------------------------------------ */
 
+/* The window ground: flat, no glows (owner override of the design's backdrop). */
 .fv-backdrop {
-  background:
-    radial-gradient(60% 55% at 30% 0%, var(--backdrop-ember), transparent 70%),
-    radial-gradient(45% 50% at 85% 100%, var(--backdrop-rust), transparent 70%),
-    radial-gradient(50% 45% at 60% 55%, var(--backdrop-dusk), transparent 75%),
-    var(--surface-0);
+  background: var(--surface-0);
 }
 
 .fv-pane-glass {

@@ -3,7 +3,7 @@ id: 20261008-client-state
 title: Client state and socket
 tags: [desktop, api]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 related: [20261008-websocket-protocol, 20261008-timeline-model, 20261008-http-actions-ws-state, 20261008-desktop-architecture]
 summary: The Zustand workspace store (what it holds, how frames are applied, timeline paging), the socket's reconnect and resync logic, and the UI store with hash routing.
 ---
@@ -37,7 +37,8 @@ summary: The Zustand workspace store (what it holds, how frames are applied, tim
 
 - `view`: `home`, `channel` (with an optional `anchorSeq`), `agent-new`, `agent-edit` or `onboarding`. It is synced to the URL hash: `#/c/<id>`, `#/agents/new`, `#/agents/<id>`, `#/onboarding`.
 - The detail panel tab, the run filter and the selected run; the palette and new-channel dialog flags.
-- The theme, stored in `localStorage` as `lgt.theme`. It is a per-window display preference, not workspace state.
+- The theme (`lgt.theme`) and sidebar visibility (`lgt.sidebar`), both stored in `localStorage`. They are per-window display preferences, not workspace state.
+- View history (`history`, `historyIndex`, `back()`, `forward()`) for the top bar's arrows and Alt+←/→. Automatic redirects pass `{ replace: true }`, so Back never lands on an empty view.
 
 ## Related
 

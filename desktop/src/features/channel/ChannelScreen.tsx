@@ -8,6 +8,7 @@ import { api } from "../../api/client";
 import type { Agent, ChannelSummary } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { StatusBadge } from "../../components/Status";
+import { TopBarSlot } from "../../components/TopBar";
 import { cliLine, hueStyle } from "../../lib/agents";
 import { pickFolder } from "../../lib/folder";
 import { displayPath, plural, tokens } from "../../lib/format";
@@ -143,14 +144,16 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
   };
 
   return (
-    <header className="conversation-head">
-      <Hash className="conversation-hash" />
-      <h1 className="conversation-title">{channel.name}</h1>
-      <span className="fv-chip">
+    <>
+    <TopBarSlot target="title">
+      <Hash className="topbar-hash" />
+      <h1 className="topbar-heading">{channel.name}</h1>
+      <span className="fv-chip topbar-passive">
         {members.length === 0 ? "no agents" : working ? `${working} of ${members.length} working` : `${plural(members.length, "agent")} · ${idle ? "idle" : "busy"}`}
       </span>
       <CwdButton channel={channel} />
-      <span className="conversation-head-spacer" />
+    </TopBarSlot>
+    <TopBarSlot target="actions">
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
       <button className="fv-icon-btn" aria-label="Agents panel" aria-pressed={detailOpen} onClick={() => setDetailOpen(!detailOpen)}>
         <PanelRight />
@@ -168,8 +171,9 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
-      <RenameDialog channel={channel} open={renaming} onOpenChange={setRenaming} />
-    </header>
+    </TopBarSlot>
+    <RenameDialog channel={channel} open={renaming} onOpenChange={setRenaming} />
+    </>
   );
 }
 
@@ -192,32 +196,31 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
   };
 
   return (
-    <header className="conversation-head conversation-head--dm">
-      <AgentAvatar agent={agent} status={state} size="lg" />
-      <div className="dm-head-text">
-        <div className="dm-head-line">
-          <h1 className="fv-name dm-head-name" style={hueStyle(agent)}>{agent.handle}</h1>
-          {activeHere ? <StatusBadge state="working" since={activeHere.started_at} /> : <StatusBadge state={state} />}
-        </div>
-        <div className="dm-head-line">
-          <span className="fv-chip fv-chip--mono"><Terminal /> {cliLine(agent, harnesses.data)}</span>
-          <CwdButton channel={channel} />
-          {stats ? (
-            <span className="fv-meta">
-              {plural(stats.messages_in_context, "message")} in context
-              {stats.context_tokens !== null ? ` · ${tokens(stats.context_tokens)} tokens` : ""}
-              {stats.model_context_window ? ` of ${tokens(stats.model_context_window)}` : ""}
-            </span>
-          ) : null}
-        </div>
-      </div>
-      <span className="conversation-head-spacer" />
-      <button className="fv-btn" onClick={fresh}><RotateCcw /> Fresh context</button>
+    <>
+    <TopBarSlot target="title">
+      <AgentAvatar agent={agent} status={state} className="topbar-passive" />
+      <h1 className="fv-name topbar-heading" style={hueStyle(agent)}>{agent.handle}</h1>
+      <span className="topbar-passive">
+        {activeHere ? <StatusBadge state="working" since={activeHere.started_at} /> : <StatusBadge state={state} />}
+      </span>
+      <span className="fv-chip fv-chip--mono topbar-passive"><Terminal /> {cliLine(agent, harnesses.data)}</span>
+      <CwdButton channel={channel} />
+      {stats ? (
+        <span className="fv-meta topbar-passive topbar-stats">
+          {plural(stats.messages_in_context, "message")} in context
+          {stats.context_tokens !== null ? ` · ${tokens(stats.context_tokens)} tokens` : ""}
+          {stats.model_context_window ? ` of ${tokens(stats.model_context_window)}` : ""}
+        </span>
+      ) : null}
+    </TopBarSlot>
+    <TopBarSlot target="actions">
+      <button className="fv-btn fv-btn--sm" onClick={fresh}><RotateCcw /> Fresh context</button>
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
       <button className="fv-icon-btn" aria-label={`Edit ${agent.handle}`}
         onClick={() => navigate({ kind: "agent-edit", agentId: agent.agent_id, returnTo: view })}>
         <Pencil />
       </button>
-    </header>
+    </TopBarSlot>
+    </>
   );
 }

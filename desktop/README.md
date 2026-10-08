@@ -60,6 +60,6 @@ pnpm typecheck
 | `src/store/socket.ts` | Cursor replay, resync and reconnect |
 | `src/lib/timeline.ts` | Event log to timeline blocks: runs, tool groups, notices |
 | `src/features/` | Sidebar, channel and DM views, detail panel, agent form, onboarding, command palette |
-| `src-tauri/` | The Rust shell: folder dialogs and the backend URL |
+| `src-tauri/` | The Rust shell: folder dialogs and the backend URL. `tauri.windows.conf.json` makes the Windows window frameless, and `src/components/TopBar.tsx` draws the combined title bar and app chrome. |
 
 Agent avatars are DiceBear avatars, rendered locally from the `{style, seed}` the backend stores. Fonts are bundled, so the app works offline.

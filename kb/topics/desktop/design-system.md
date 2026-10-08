@@ -35,8 +35,9 @@ summary: The Ember rules from design/README.md and how they are implemented in t
 - **Glass:**
   - Only the conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
   - The sidebar and detail panel are solid.
-  - The backdrop glows (`fv-backdrop`) show only through glass.
+  - **Window ground (owner override, 2026-10-09):** pitch black (`--surface-0: #000000` in dark), with no backdrop glows. `fv-backdrop` is a flat `--surface-0`, and the `--backdrop-*` tokens are gone.
   - **OS window glass was tried and dropped (2026-10-09).** A transparent Tauri window with OS acrylic or blur made the side panels frosted over the desktop. DWM recomposites that blur every frame, about 10 points of GPU behind a game with acrylic. A focus-only blur fixed the cost, but the owner chose to keep the window opaque. The commits are `8b592f5` and `b62515b`, both reverted. Don't reintroduce it without the owner asking.
+- **Top bar:** a 44px row (`--size-topbar`) that is both title bar and app chrome, replacing the grey native frame on Windows and the old in-pane headers. The lead zone continues the sidebar column's `--surface-1`, and the rest sits on the window ground. Caption buttons are 46px wide, as Windows users expect; close hovers to `--failed` with `--on-failed`.
 - **Controls:** every control is a pill at `--size-control` (34px) with a gradient, a top sheen and a shadow. Tool rows are compact at `--size-tool-row`.
 - **Type:** Figtree for prose and UI, IBM Plex Mono for anything machine-owned (paths, tools, agent names, numbers). Labels are uppercase with 0.9px tracking, and UI copy is sentence case.
 - **Motion:** only the working dots, the shimmer and the caret move, and all three stop under `prefers-reduced-motion`.

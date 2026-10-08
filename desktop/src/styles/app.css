@@ -1,9 +1,16 @@
 /* Layout: sidebar (solid) | glass conversation pane | detail panel (solid). */
 
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 .app {
   display: grid;
   grid-template-columns: var(--size-sidebar) minmax(0, 1fr);
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
 }
 
 .app-main {
@@ -15,8 +22,145 @@
 .app-splash {
   display: grid;
   place-items: center;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   padding: var(--space-400);
+}
+
+/* Top bar (components/TopBar.tsx): title bar and app chrome in one row. */
+.topbar {
+  display: flex;
+  flex: none;
+  height: var(--size-topbar);
+  user-select: none;
+}
+
+.topbar-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-050);
+  flex: none;
+  padding: 0 var(--space-300);
+}
+
+/* Over the sidebar the lead zone continues the sidebar column upward. */
+.topbar.has-sidebar .topbar-lead {
+  width: var(--size-sidebar);
+  background: var(--surface-1);
+  border-right: 1px solid var(--stroke-1);
+}
+
+.topbar-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-300);
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--space-300) 0 calc(var(--space-200) + var(--space-500));
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-250);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.topbar-title > * {
+  flex-shrink: 0;
+}
+
+.topbar-title > .topbar-heading,
+.topbar-title > .header-chip {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.topbar-heading {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-title);
+}
+
+.topbar-heading.fv-name {
+  font: var(--type-agent-name);
+  font-size: 16px;
+}
+
+.topbar-hash {
+  width: 17px;
+  height: 17px;
+  color: var(--text-3);
+}
+
+/* Plain text in the bar lets clicks fall through to the drag region. */
+.topbar-heading,
+.topbar-hash,
+.topbar-passive {
+  pointer-events: none;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-100);
+  flex: none;
+}
+
+@media (max-width: 1280px) {
+  .topbar-stats {
+    display: none;
+  }
+}
+
+.titlebar-controls {
+  display: flex;
+  flex: none;
+}
+
+.titlebar-button {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: var(--size-topbar);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  cursor: default;
+}
+
+.titlebar-button svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.5;
+}
+
+.titlebar-button .titlebar-restore {
+  transform: scaleX(-1);
+}
+
+.titlebar-button:hover {
+  background: var(--surface-4);
+  color: var(--text-1);
+}
+
+.titlebar-close:hover {
+  background: var(--failed);
+  color: var(--on-failed);
+}
+
+.titlebar-button:focus-visible {
+  outline-offset: -2px;
+}
+
+.app--no-sidebar {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .unreachable {
@@ -62,23 +206,12 @@
   border-right: 1px solid var(--stroke-1);
 }
 
-.sidebar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-400) var(--space-300) var(--space-200) var(--space-500);
-}
-
-.sidebar-brand {
-  font: 700 19px/1 var(--font-sans);
-}
-
 .sidebar-search {
   display: flex;
   align-items: center;
   gap: var(--space-200);
   height: var(--size-control);
-  margin: var(--space-100) var(--space-300) var(--space-300);
+  margin: var(--space-300) var(--space-300) var(--space-300);
   padding: 0 var(--space-150) 0 var(--space-300);
   border-radius: var(--radius-md);
   border: 1px solid var(--stroke-control);
@@ -264,47 +397,6 @@
   overflow: hidden;
 }
 
-.conversation-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-250);
-  min-height: 64px;
-  padding: var(--space-300) var(--space-400) var(--space-300) var(--space-500);
-  border-bottom: 1px solid var(--stroke-2);
-}
-
-.conversation-head--dm {
-  align-items: center;
-  padding-top: var(--space-300);
-  padding-bottom: var(--space-300);
-}
-
-.conversation-hash {
-  width: 18px;
-  height: 18px;
-  color: var(--text-3);
-}
-
-.conversation-title {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: var(--type-title);
-}
-
-.conversation-head > * {
-  flex-shrink: 0;
-}
-
-.conversation-head > .conversation-title,
-.conversation-head > .header-chip,
-.conversation-head > .dm-head-text {
-  flex-shrink: 1;
-  min-width: 0;
-}
-
 .chip-text {
   min-width: 0;
   overflow: hidden;
@@ -324,24 +416,6 @@
 
 .header-chip:hover {
   background: var(--surface-4);
-}
-
-.dm-head-text {
-  display: grid;
-  gap: var(--space-150);
-  min-width: 0;
-}
-
-.dm-head-line {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-200);
-}
-
-.dm-head-name {
-  margin: 0;
-  font-size: 17px;
 }
 
 .timeline {

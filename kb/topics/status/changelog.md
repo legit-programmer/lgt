@@ -16,6 +16,17 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-09
 
+### Top bar and black ground (desktop)
+
+- On Windows the window is frameless (`tauri.windows.conf.json`).
+- `components/TopBar.tsx` merges the title bar with the app chrome:
+  - sidebar toggle, back/forward and the "new" menu on the left;
+  - the view's title and actions, portaled from each screen, in the middle and on the right;
+  - window controls at the far right.
+- The in-pane conversation and agent-form headers are gone.
+- The sidebar can collapse, and Alt+←/→ navigate the view history.
+- The window ground is pitch black with no backdrop glows.
+
 ### Window glass tried and dropped (desktop)
 
 - `8b592f5` made the window transparent with OS acrylic, so the side panels were frosted over the desktop.
