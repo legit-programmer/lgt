@@ -1,0 +1,25 @@
+{
+  "settings": {
+    "data_dir": "~/.lgt",
+    "max_hops": 3,
+    "tool_output_cap": 65536,
+    "concurrent_runs": 4,
+    "replay_cap": 5000,
+    "router_timeout_seconds": 30,
+    "router_context_events": 50,
+    "session_ttl_seconds": null,
+    "router_model": "haiku",
+    "codex_router_model": null,
+    "router_attempts": 2,
+    "ndjson_line_limit": 1048576,
+    "cancel_grace_seconds": 5,
+    "checkpoint_threshold": 100000,
+    "checkpoint_tail_chars": 25000,
+    "checkpoint_summary_chars": 10000,
+    "attachment_max_bytes": 26214400
+  },
+  "checkpoint_mode": "deferred",
+  "codex_bin": null,
+  "claude_command": ["claude"],
+  "codex_router_command": null
+}
