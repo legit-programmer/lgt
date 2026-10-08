@@ -1,0 +1,194 @@
+/*
+ * Ember tokens, derived from design/README.md and design/Lgt Screens.pdf.
+ * Dark is the default; light mirrors every token. Set data-theme on <html>.
+ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Grounds step up: window -> sidebar -> pane -> raised -> hover. */
+  --surface-0: #141110;
+  --surface-1: #1a1614;
+  --surface-2: #1f1a17;
+  --surface-3: #29231f;
+  --surface-4: #332b26;
+  --well: #120f0d;
+
+  /* Text holds 4.5:1 on every surface and on well. */
+  --text-1: #f4ede6;
+  --text-2: #c2b6ab;
+  --text-3: #a09489;
+
+  --stroke-1: rgb(255 240 225 / 0.07);
+  --stroke-2: rgb(255 240 225 / 0.12);
+  --stroke-control: rgb(255 240 225 / 0.3);
+
+  /* The one accent: act here. */
+  --accent: #f5a623;
+  --accent-hi: #ffc24f;
+  --accent-lo: #e48d10;
+  --accent-soft: rgb(245 166 35 / 0.11);
+  --accent-soft-strong: rgb(245 166 35 / 0.2);
+  --accent-text: #ffbe55;
+  --on-accent: #1d1306;
+  --focus: #ffc24f;
+
+  /* Status. Never an agent hue. */
+  --working: #f6f2ec;
+  --working-soft: rgb(255 248 240 / 0.05);
+  --failed: #f0634f;
+  --failed-soft: rgb(240 99 79 / 0.12);
+  --failed-text: #ff8a78;
+  --queued: #ae93f2;
+  --queued-soft: rgb(174 147 242 / 0.09);
+  --success: #63d39b;
+  --success-soft: rgb(99 211 155 / 0.12);
+
+  /* Agent hues, assigned by the server in creation order. */
+  --agent-violet: #a990f6;
+  --agent-sky: #7fb7ff;
+  --agent-pink: #f38fb4;
+  --agent-green: #63d39b;
+  --agent-lime: #b9dd5c;
+  --agent-plum: #cd8fdc;
+  --agent-indigo: #8e97f7;
+  --agent-sand: #dcbc8c;
+
+  /* Controls: two-stop gradient, top sheen, soft drop shadow. */
+  --button-hi: #3b332d;
+  --button-lo: #2c2521;
+  --button-sheen: rgb(255 255 255 / 0.09);
+  --shadow-button: 0 1px 2px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.18);
+  --shadow-primary: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px rgb(245 166 35 / 0.24);
+  --shadow-overlay: 0 24px 64px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.3);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.3);
+
+  /* Glass: the chat column and overlays only. */
+  --backdrop-ember: rgb(212 112 38 / 0.34);
+  --backdrop-rust: rgb(148 58 30 / 0.3);
+  --backdrop-dusk: rgb(92 62 128 / 0.26);
+  --glass-pane: rgb(33 27 24 / 0.66);
+  --glass-pane-line: rgb(255 240 225 / 0.08);
+  --glass-pane-well: rgb(8 6 5 / 0.34);
+  --glass-pane-raised: rgb(255 240 225 / 0.045);
+  --glass-composer: rgb(58 49 43 / 0.55);
+  --glass-overlay: rgb(30 25 22 / 0.74);
+  --glass-line: rgb(255 240 225 / 0.13);
+  --blur-pane: 28px;
+  --blur-overlay: 36px;
+  --scrim: rgb(8 6 5 / 0.55);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-0: #efe8e0;
+  --surface-1: #f5f0ea;
+  --surface-2: #fbf8f4;
+  --surface-3: #ffffff;
+  --surface-4: #f0e9e1;
+  --well: #f1ebe4;
+
+  --text-1: #221b16;
+  --text-2: #554940;
+  --text-3: #6b5e54;
+
+  --stroke-1: rgb(60 40 25 / 0.08);
+  --stroke-2: rgb(60 40 25 / 0.14);
+  --stroke-control: rgb(60 40 25 / 0.36);
+
+  --accent: #f2a01c;
+  --accent-hi: #ffb93f;
+  --accent-lo: #e08a0c;
+  --accent-soft: rgb(242 160 28 / 0.13);
+  --accent-soft-strong: rgb(242 160 28 / 0.24);
+  --accent-text: #8f5200;
+  --on-accent: #241604;
+  --focus: #b36800;
+
+  --working: #2a211b;
+  --working-soft: rgb(42 33 27 / 0.05);
+  --failed: #c8392a;
+  --failed-soft: rgb(200 57 42 / 0.1);
+  --failed-text: #a92c1f;
+  --queued: #6c4fd0;
+  --queued-soft: rgb(108 79 208 / 0.07);
+  --success: #1f8a55;
+  --success-soft: rgb(31 138 85 / 0.1);
+
+  --agent-violet: #6f51d8;
+  --agent-sky: #2f74d0;
+  --agent-pink: #c43f78;
+  --agent-green: #1f8a55;
+  --agent-lime: #5f8a12;
+  --agent-plum: #9a49ad;
+  --agent-indigo: #4a54d6;
+  --agent-sand: #93693a;
+
+  --button-hi: #ffffff;
+  --button-lo: #f1ebe4;
+  --button-sheen: rgb(255 255 255 / 0.9);
+  --shadow-button: 0 1px 2px rgb(60 40 25 / 0.14), 0 2px 6px rgb(60 40 25 / 0.06);
+  --shadow-primary: 0 1px 2px rgb(60 40 25 / 0.18), 0 6px 16px rgb(242 160 28 / 0.28);
+  --shadow-overlay: 0 24px 64px rgb(60 40 25 / 0.2), 0 2px 8px rgb(60 40 25 / 0.1);
+  --shadow-raised: 0 1px 2px rgb(60 40 25 / 0.08);
+
+  --backdrop-ember: rgb(242 160 28 / 0.22);
+  --backdrop-rust: rgb(214 110 70 / 0.16);
+  --backdrop-dusk: rgb(140 110 200 / 0.16);
+  --glass-pane: rgb(255 252 248 / 0.7);
+  --glass-pane-line: rgb(60 40 25 / 0.1);
+  --glass-pane-well: rgb(60 40 25 / 0.05);
+  --glass-pane-raised: rgb(255 255 255 / 0.6);
+  --glass-composer: rgb(255 255 255 / 0.72);
+  --glass-overlay: rgb(255 252 248 / 0.8);
+  --glass-line: rgb(60 40 25 / 0.14);
+  --scrim: rgb(40 28 18 / 0.3);
+}
+
+:root {
+  /* Shape: containers round up as they grow. */
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+
+  --size-control: 34px;
+  --size-control-sm: 28px;
+  --size-tool-row: 26px;
+  --size-sidebar: 260px;
+  --size-detail: 360px;
+  --size-avatar: 26px;
+
+  --space-050: 2px;
+  --space-100: 4px;
+  --space-150: 6px;
+  --space-200: 8px;
+  --space-250: 10px;
+  --space-300: 12px;
+  --space-400: 16px;
+  --space-500: 20px;
+  --space-600: 24px;
+  --space-800: 32px;
+  --space-1000: 40px;
+
+  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+
+  /* Type roles. */
+  --type-body: 400 15px/1.55 var(--font-sans);
+  --type-ui: 500 14px/1.4 var(--font-sans);
+  --type-title: 600 17px/1.3 var(--font-sans);
+  --type-display: 600 28px/1.2 var(--font-sans);
+  --type-agent-name: 600 14px/1.3 var(--font-mono);
+  --type-mono: 400 13px/1.5 var(--font-mono);
+  --type-meta: 400 12px/1.4 var(--font-sans);
+  --type-meta-mono: 400 12px/1.4 var(--font-mono);
+  --type-label: 600 11px/1.3 var(--font-sans);
+  --tracking-label: 0.9px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
