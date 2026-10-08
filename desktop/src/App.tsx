@@ -63,9 +63,11 @@ function Workspace() {
     if (recent) openChannel(recent.channel_id);
   }, [view.kind, hasAgents, channels, navigate, openChannel]);
 
-  // A conversation that disappears (archived elsewhere) falls back home.
+  // A missing or archived conversation (deep link, or archived elsewhere) falls back home.
   useEffect(() => {
-    if (view.kind === "channel" && channels[view.channelId]?.archived_at) navigate({ kind: "home" });
+    if (view.kind !== "channel") return;
+    const channel = channels[view.channelId];
+    if (!channel || channel.archived_at) navigate({ kind: "home" });
   }, [view, channels, navigate]);
 
   useEffect(() => {

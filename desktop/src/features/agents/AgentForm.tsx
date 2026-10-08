@@ -7,7 +7,7 @@ import type { Agent, AgentInput, Avatar, Harness } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { harnessLabel, hueStyle } from "../../lib/agents";
 import { pickFolder } from "../../lib/folder";
-import { shortPath } from "../../lib/format";
+import { displayPath } from "../../lib/format";
 import { useUi } from "../../store/ui";
 import { reportError, useWorkspace } from "../../store/workspace";
 
@@ -188,7 +188,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
   const model = catalog?.models.find((m) => m.id === form.model);
   const previewAgent = { name: form.handle || "new-agent", hue: agent?.hue ?? Object.keys(useWorkspace.getState().agents).length % 8, avatar: form.avatar };
   const cliText = `${harnessLabel(form.harness || "cli")} · ${(model?.label ?? form.model) || "model"}`.toLowerCase();
-  const cwdText = form.defaultCwd ? shortPath(form.defaultCwd) : "its channel's directory";
+  const cwdText = form.defaultCwd ? displayPath(form.defaultCwd) : null;
 
   return (
     <form className="form-screen fv-pane-glass" onSubmit={submit}>
@@ -266,11 +266,10 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
                   </span>
                 </div>
               ) : null}
-              <div className="form-row">
-                <div className="fv-field">
+              <div className="fv-field">
                   <span className="fv-field-label">Model</span>
                   {catalog?.models.length ? (
-                    <div className="fv-segmented" role="group" aria-label="Model">
+                    <div className="fv-segmented model-picker" role="group" aria-label="Model">
                       {catalog.models.map((m) => (
                         <button type="button" key={m.id} aria-pressed={form.model === m.id} onClick={() => update({ model: m.id })}>
                           {m.label.toLowerCase()}
@@ -281,7 +280,8 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
                     <span className="fv-hint">{form.harness ? "This CLI reports no models yet." : "Choose a CLI first."}</span>
                   )}
                   {model ? <span className="fv-hint">{model.label} · {model.description}</span> : null}
-                </div>
+              </div>
+              <div className="form-row">
                 <div className="fv-field">
                   <label htmlFor="agent-flags">Extra CLI flags</label>
                   <input id="agent-flags" className="fv-input fv-input--mono" placeholder="--max-turns 40" value={form.extraArgs}
@@ -370,7 +370,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
                   <span className="fv-meta">now</span>
                 </div>
                 <p className="preview-text">
-                  Hi — I'm set up in <code>{cwdText}</code>
+                  Hi — I'm set up in {cwdText ? <code>{cwdText}</code> : "my channel's directory"}
                   {catalog?.capabilities.allowed_tools && form.tools.length ? ` with ${form.tools.length} tools.` : "."}
                 </p>
               </div>
@@ -411,7 +411,7 @@ function CliCard({ harness, selected, onSelect }: { harness: Harness; selected: 
   const detail = custom
     ? "any command that speaks stdio"
     : harness.found
-      ? [harness.path, harness.version].filter(Boolean).join(" · ")
+      ? [harness.path ? displayPath(harness.path, 34) : null, harness.version].filter(Boolean).join(" · ")
       : "not found on PATH";
   const badge = custom
     ? { text: "command", tone: "" }

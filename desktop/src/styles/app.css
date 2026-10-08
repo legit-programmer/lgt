@@ -237,6 +237,12 @@
   font-weight: 600;
 }
 
+.sidebar-foot-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Conversation pane ------------------------------------------------------------ */
 
 .channel-screen {
@@ -281,7 +287,29 @@
 
 .conversation-title {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--type-title);
+}
+
+.conversation-head > * {
+  flex-shrink: 0;
+}
+
+.conversation-head > .conversation-title,
+.conversation-head > .header-chip,
+.conversation-head > .dm-head-text {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conversation-head-spacer {
@@ -289,6 +317,8 @@
 }
 
 .header-chip {
+  max-width: 100%;
+  min-width: 0;
   cursor: pointer;
 }
 
@@ -1205,4 +1235,14 @@
   .form-preview {
     position: static;
   }
+}
+
+.model-picker {
+  flex-wrap: wrap;
+  border-radius: var(--radius-lg);
+  justify-self: start;
+}
+
+.fv-segmented button {
+  white-space: nowrap;
 }

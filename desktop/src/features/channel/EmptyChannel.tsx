@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import type { Agent, ChannelSummary } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { pickFolder } from "../../lib/folder";
-import { shortPath } from "../../lib/format";
+import { displayPath } from "../../lib/format";
 import { hueStyle } from "../../lib/agents";
 import { useUi } from "../../store/ui";
 import { reportError } from "../../store/workspace";
@@ -50,7 +50,7 @@ export function EmptyChannel({ channel, members }: { channel: ChannelSummary; me
     <div className="empty-channel">
       <h2 className="empty-title">{title}</h2>
       <p className="empty-desc">
-        {description} <span className="fv-cli">{shortPath(channel.cwd)}</span>.
+        {description} <span className="fv-cli">{displayPath(channel.cwd)}</span>.
       </p>
       {members.length ? (
         <div className="empty-roster">

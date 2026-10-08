@@ -84,3 +84,15 @@ export function shortPath(path: string): string {
   }
   return path;
 }
+
+/** Keep both ends of a long path: ~/code/…/apps/desktop. */
+export function middleTruncate(text: string, max = 48): string {
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  const head = Math.ceil(keep * 0.4);
+  return `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
+}
+
+export function displayPath(path: string, max = 48): string {
+  return middleTruncate(shortPath(path), max);
+}

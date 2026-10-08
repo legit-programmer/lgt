@@ -30,6 +30,36 @@ interface UiState {
   toggleTheme(): void;
 }
 
+/** The view as a URL hash, so a window can be reloaded or deep-linked. */
+export function viewToHash(view: View): string {
+  switch (view.kind) {
+    case "channel":
+      return `#/c/${view.channelId}`;
+    case "agent-new":
+      return "#/agents/new";
+    case "agent-edit":
+      return `#/agents/${view.agentId}`;
+    case "onboarding":
+      return "#/onboarding";
+    default:
+      return "";
+  }
+}
+
+export function viewFromHash(hash: string): View {
+  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  if (parts[0] === "c" && parts[1]) return { kind: "channel", channelId: decodeURIComponent(parts[1]) };
+  if (parts[0] === "agents" && parts[1] === "new") return { kind: "agent-new" };
+  if (parts[0] === "agents" && parts[1]) return { kind: "agent-edit", agentId: decodeURIComponent(parts[1]) };
+  if (parts[0] === "onboarding") return { kind: "onboarding" };
+  return { kind: "home" };
+}
+
+function syncHash(view: View) {
+  const hash = viewToHash(view);
+  if (window.location.hash !== hash) window.history.replaceState(null, "", hash || window.location.pathname);
+}
+
 // Theme is a per-window display preference, so it lives in local storage.
 function storedTheme(): Theme {
   try {
@@ -49,7 +79,7 @@ function applyTheme(theme: Theme) {
 }
 
 export const useUi = create<UiState>((set, get) => ({
-  view: { kind: "home" },
+  view: viewFromHash(window.location.hash),
   detailOpen: true,
   detailTab: "agents",
   runFilterAgentId: null,
@@ -58,10 +88,13 @@ export const useUi = create<UiState>((set, get) => ({
   newChannelOpen: false,
   theme: storedTheme(),
   navigate(view) {
+    syncHash(view);
     set({ view });
   },
   openChannel(channelId, anchorSeq) {
-    set({ view: { kind: "channel", channelId, anchorSeq }, selectedRunId: null });
+    const view: View = { kind: "channel", channelId, anchorSeq };
+    syncHash(view);
+    set({ view, selectedRunId: null });
   },
   setDetailOpen(detailOpen) {
     set({ detailOpen });

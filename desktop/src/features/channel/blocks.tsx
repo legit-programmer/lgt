@@ -12,7 +12,7 @@ import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
 import { Markdown } from "../../components/Markdown";
 import { Elapsed, StatusBadge, WorkingDots } from "../../components/Status";
 import { harnessLabel, hueStyle } from "../../lib/agents";
-import { bytes, clockTime, dayTime, duration, shortPath } from "../../lib/format";
+import { bytes, clockTime, dayTime, displayPath, duration } from "../../lib/format";
 import { toolGroupSummary, toolName, type HumanBlock, type RunBlock, type ToolEntry } from "../../lib/timeline";
 import { reportError, useWorkspace, type RunInfo } from "../../store/workspace";
 
@@ -344,7 +344,7 @@ export function Notice({ event, ctx }: { event: WorkspaceEvent; ctx: BlockContex
       return (
         <div className="fv-notice">
           <Folder />
-          <span>working directory changed to <span className="fv-mono">{shortPath(String(payload.cwd))}</span>
+          <span>working directory changed to <span className="fv-mono">{displayPath(String(payload.cwd))}</span>
             {payload.managed ? " (managed)" : ""} · agents start with a fresh session there</span>
         </div>
       );

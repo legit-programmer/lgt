@@ -10,7 +10,7 @@ import { AgentAvatar } from "../../components/Avatar";
 import { StatusBadge } from "../../components/Status";
 import { cliLine, hueStyle } from "../../lib/agents";
 import { pickFolder } from "../../lib/folder";
-import { plural, shortPath, tokens } from "../../lib/format";
+import { displayPath, plural, tokens } from "../../lib/format";
 import { useUi } from "../../store/ui";
 import { contextKey, reportError, useWorkspace } from "../../store/workspace";
 import type { BlockContext } from "./blocks";
@@ -98,7 +98,7 @@ function CwdButton({ channel }: { channel: ChannelSummary }) {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <button className="fv-chip fv-chip--mono header-chip" title={channel.cwd}>
-          <Folder /> {shortPath(channel.cwd)}
+          <Folder /> <span className="chip-text">{displayPath(channel.cwd)}</span>
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
