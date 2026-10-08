@@ -1282,3 +1282,23 @@ button.fv-attachment {
 .fv-notice:has(.fv-chip) > svg {
   margin-top: 0;
 }
+
+.sidebar-foot-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-300);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-100);
+  margin: calc(-1 * var(--space-100));
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-foot-profile:hover {
+  background: var(--surface-3);
+}

@@ -1,13 +1,13 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
-import { Bot, Hash, MessageSquare, Moon, Search, Sun } from "lucide-react";
+import { ArchiveRestore, Bot, Hash, MessageSquare, Moon, Search, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { AgentAvatar } from "../../components/Avatar";
 import { activeAgents, hueStyle } from "../../lib/agents";
 import { useUi } from "../../store/ui";
-import { useWorkspace } from "../../store/workspace";
+import { reportError, useWorkspace } from "../../store/workspace";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -62,6 +62,16 @@ export function CommandPalette() {
     { id: "new-channel", label: "New channel", icon: <Hash />, run: () => setNewChannelOpen(true) },
     { id: "theme", label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, run: toggleTheme },
   ].filter((a) => matches(a.label));
+  const archived = Object.values(channels).filter((c) => c.kind === "channel" && c.archived_at && lower && matches(c.name));
+  const restore = async (channelId: string) => {
+    try {
+      await api.unarchiveChannel(channelId);
+      await useWorkspace.getState().refreshSummaries();
+      openChannel(channelId);
+    } catch (error) {
+      reportError(error);
+    }
+  };
   const messages = term ? results.data?.messages ?? [] : [];
   const nameFor = (authorId: string) => (authorId === "local" ? "you" : agentsById[authorId]?.handle ?? "agent");
 
@@ -100,6 +110,17 @@ export function CommandPalette() {
                         <span className="fv-meta">{nameFor(hit.author_id)} in {channels[hit.channel_id]?.kind === "dm" ? channels[hit.channel_id]?.name : `#${channels[hit.channel_id]?.name ?? "channel"}`}</span>
                         <span className="palette-hit-body">{hit.text}</span>
                       </span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              ) : null}
+              {archived.length ? (
+                <Command.Group heading="Archived" className="palette-group">
+                  {archived.map((channel) => (
+                    <Command.Item key={channel.channel_id} value={`arch-${channel.channel_id}`} className="fv-menu-item"
+                      onSelect={() => go(() => void restore(channel.channel_id))}>
+                      <ArchiveRestore />
+                      Restore #{channel.name}
                     </Command.Item>
                   ))}
                 </Command.Group>

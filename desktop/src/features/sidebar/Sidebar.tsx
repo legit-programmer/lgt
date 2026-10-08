@@ -1,5 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Bot, Hash, Moon, Plus, Search, SquarePen, Sun } from "lucide-react";
 import type { Agent, AgentStatus, ChannelSummary } from "../../api/types";
 import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
@@ -8,6 +8,7 @@ import { relativeTime } from "../../lib/format";
 import { useNow } from "../../lib/useNow";
 import { useUi } from "../../store/ui";
 import { useWorkspace } from "../../store/workspace";
+import { ProfileDialog } from "./ProfileDialog";
 
 export function Sidebar() {
   const agentsById = useWorkspace((s) => s.agents);
@@ -22,6 +23,7 @@ export function Sidebar() {
   const theme = useUi((s) => s.theme);
   const toggleTheme = useUi((s) => s.toggleTheme);
   const now = useNow(30_000);
+  const [editingProfile, setEditingProfile] = useState(false);
 
   const agents = activeAgents(agentsById);
   const activeId = view.kind === "channel" ? view.channelId : null;
@@ -88,13 +90,16 @@ export function Sidebar() {
       </nav>
 
       <div className="sidebar-foot">
-        <PersonAvatar name={displayName} size="lg" />
-        <div className="sidebar-foot-text">
-          <span className="sidebar-foot-name">{displayName}</span>
-          <span className="fv-label">
-            {agents.length} {agents.length === 1 ? "agent" : "agents"} · {working} working
+        <button className="sidebar-foot-profile" onClick={() => setEditingProfile(true)} aria-label="Edit your display name">
+          <PersonAvatar name={displayName} size="lg" />
+          <span className="sidebar-foot-text">
+            <span className="sidebar-foot-name">{displayName}</span>
+            <span className="fv-label">
+              {agents.length} {agents.length === 1 ? "agent" : "agents"} · {working} working
+            </span>
           </span>
-        </div>
+        </button>
+        <ProfileDialog open={editingProfile} onOpenChange={setEditingProfile} />
         <button className="fv-icon-btn" onClick={toggleTheme}
           aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
           {theme === "dark" ? <Sun /> : <Moon />}
