@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,15 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-09
+
+### Window glass (desktop)
+
+- The Tauri window is now transparent with OS acrylic (Windows) or vibrancy (macOS), so the sidebar and detail panel are frosted glass over the desktop.
+- `lib/windowGlass.ts` applies and re-tints the effect per theme.
+- `core:window:allow-set-effects` was added to the capability.
+- A plain browser keeps the solid layout.
 
 ## 2026-10-08
 

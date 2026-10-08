@@ -78,6 +78,13 @@
   --blur-pane: 28px;
   --blur-overlay: 36px;
   --scrim: rgb(8 6 5 / 0.55);
+
+  /* Window glass: side panels over the OS-blurred desktop (Tauri only). */
+  --side-glass: rgb(20 16 14 / 0.38);
+  --side-glass-raised: rgb(255 240 225 / 0.06);
+  --side-glass-hover: rgb(255 240 225 / 0.1);
+  --side-glass-well: rgb(8 6 5 / 0.3);
+  --window-glass-pane: rgb(31 25 22 / 0.76);
 }
 
 :root[data-theme="light"] {
@@ -145,6 +152,12 @@
   --glass-overlay: rgb(255 252 248 / 0.8);
   --glass-line: rgb(60 40 25 / 0.14);
   --scrim: rgb(40 28 18 / 0.3);
+
+  --side-glass: rgb(255 252 248 / 0.45);
+  --side-glass-raised: rgb(255 255 255 / 0.55);
+  --side-glass-hover: rgb(255 255 255 / 0.72);
+  --side-glass-well: rgb(60 40 25 / 0.06);
+  --window-glass-pane: rgb(255 252 248 / 0.8);
 }
 
 :root {

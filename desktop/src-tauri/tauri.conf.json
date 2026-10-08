@@ -18,8 +18,20 @@
         "height": 900,
         "minWidth": 1024,
         "minHeight": 640,
-        "backgroundColor": "#141110",
-        "resizable": true
+        "resizable": true,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "acrylic",
+            "underWindowBackground"
+          ],
+          "color": [
+            18,
+            14,
+            12,
+            120
+          ]
+        }
       }
     ],
     "security": {

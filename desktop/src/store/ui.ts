@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { applyWindowGlass } from "../lib/windowGlass";
 
 export type View =
   | { kind: "home" }
@@ -71,6 +72,7 @@ function storedTheme(): Theme {
 
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
+  void applyWindowGlass(theme);
   try {
     localStorage.setItem("lgt.theme", theme);
   } catch {

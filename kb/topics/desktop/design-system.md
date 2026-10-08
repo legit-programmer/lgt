@@ -3,7 +3,7 @@ id: 20261008-design-system
 title: Ember design system
 tags: [desktop, design]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 related: [20261008-screens, 20261008-desktop-architecture]
 summary: The Ember rules from design/README.md and how they are implemented in tokens.css, components.css and app.css, including agent hues, status glyphs and glass usage.
 ---
@@ -33,9 +33,12 @@ summary: The Ember rules from design/README.md and how they are implemented in t
 - **Agents are rounded squares and people are circles** (`fv-avatar`, `fv-avatar--person`).
 - **Agent hue:** the server assigns a `hue` from 0 to 7, mapped to `--agent-violet … --agent-sand` by `lib/agents.ts#hueVar`. Components read it through `--h`.
 - **Glass:**
-  - Only the conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
-  - The sidebar and detail panel are solid.
-  - The backdrop glows (`fv-backdrop`) show only through glass.
+  - The conversation pane (`fv-pane-glass`) and overlays (`fv-glass`: menus, dialogs, palette, toasts) are glass.
+  - In a plain browser, the sidebar and detail panel are solid, and the backdrop glows (`fv-backdrop`) show only through glass.
+  - **Window glass (owner override of the design README, 2026-10-09).** In the Tauri shell the window is transparent, and the OS blurs whatever is behind it: acrylic on Windows, vibrancy on macOS. The sidebar and detail panel become frosted glass over the desktop. The page grounds and glows go transparent, and the conversation pane floats as a denser sheet (`--window-glass-pane`).
+    - How it switches on: `lib/windowGlass.ts` applies the effect, tints it per theme, and sets `data-window-glass="on"` on `<html>`.
+    - Styles: the `:root[data-window-glass="on"]` block in `styles/app.css`, and the `--side-glass*` tokens in `styles/tokens.css`.
+    - Fallback: if the platform refuses the effect, the attribute stays off and the solid layout applies.
 - **Controls:** every control is a pill at `--size-control` (34px) with a gradient, a top sheen and a shadow. Tool rows are compact at `--size-tool-row`.
 - **Type:** Figtree for prose and UI, IBM Plex Mono for anything machine-owned (paths, tools, agent names, numbers). Labels are uppercase with 0.9px tracking, and UI copy is sentence case.
 - **Motion:** only the working dots, the shimmer and the caret move, and all three stop under `prefers-reduced-motion`.
