@@ -1,7 +1,8 @@
+import { ProviderLogo } from "../../components/ProviderLogo";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Archive, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search, Terminal,
+  Archive, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
@@ -216,7 +217,7 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
       <span className="topbar-passive">
         {activeHere ? <StatusBadge state="working" since={activeHere.started_at} /> : <StatusBadge state={state} />}
       </span>
-      <span className="fv-chip fv-chip--mono topbar-passive"><Terminal /> {cliLine(agent, harnesses.data)}</span>
+      <span className="fv-chip fv-chip--mono topbar-passive"><ProviderLogo harness={agent.harness} /> {cliLine(agent, harnesses.data)}</span>
       <CwdButton channel={channel} />
       {stats ? (
         <span className="fv-meta topbar-passive topbar-stats">

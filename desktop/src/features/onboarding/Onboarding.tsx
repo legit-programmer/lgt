@@ -1,3 +1,4 @@
+import { ProviderLogo } from "../../components/ProviderLogo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Folder, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -136,7 +137,7 @@ function CliRow({ harness }: { harness: Harness }) {
     : "not found · install it, then scan again";
   return (
     <div className="cli-row">
-      <span className="cli-name">{harnessLabel(harness.harness)}</span>
+      <span className="cli-name fv-provider-label"><ProviderLogo harness={harness.harness} />{harnessLabel(harness.harness)}</span>
       <span className="cli-detail">{detail}</span>
       <span className={`fv-chip ${ready ? "fv-chip--success" : "fv-chip--failed"}`}>
         {!harness.found ? "missing" : harness.auth === "signed_out" ? "sign in" : "ready"}
@@ -153,7 +154,7 @@ function TemplateCard({ template, hue, selected, onToggle }: { template: Templat
         <AgentAvatar agent={agent} />
         <span className="template-name-block">
           <span className="fv-name" style={hueStyle(agent)}>{template.id}</span>
-          <span className="fv-meta fv-mono">{harnessLabel(template.harness)} · {template.model}</span>
+          <span className="fv-meta fv-mono fv-provider-label"><ProviderLogo harness={template.harness} />{harnessLabel(template.harness)} · {template.model}</span>
         </span>
         <span className="fv-check" data-checked={selected}>{selected ? <Check size={12} strokeWidth={3} /> : null}</span>
       </span>

@@ -33,6 +33,7 @@ summary: The Ember rules from design/README.md and how they are implemented in t
 - **Agents are rounded squares and people are circles** (`fv-avatar`, `fv-avatar--person`).
 - **Your messages (owner override, 2026-10-09):** no `accent-soft` fill, just a quiet hairline (`inset 0 0 0 1px var(--stroke-2)`). Queued messages keep their dashed queued style.
 - **Agent avatars:** DiceBear **Critters** (CC0) is the default style, set by the backend (`DEFAULT_AVATAR_STYLE` in `lgt/models.py`). The picker offers Critters variants. Any stored style still renders, because `components/Avatar.tsx` lazy-loads the matching definition.
+- **Provider logos:** `components/ProviderLogo.tsx` uses locally bundled Claude, Gemini and Codex artwork in CLI selection, onboarding, previews and conversation metadata. Codex follows the text colour; Claude and Gemini retain their brand colours. Custom or unknown harnesses use the terminal glyph. Asset sources and licensing live in `desktop/src/assets/providers/README.md`. Agent avatars remain independent of provider identity.
 - **Agent hue:** the server assigns a `hue` from 0 to 7, mapped to `--agent-violet … --agent-sand` by `lib/agents.ts#hueVar`. Components read it through `--h`.
 - **Glass:**
   - The conversation pane (`fv-pane-glass`) is a translucent sheet without its own `backdrop-filter`. A filter there would make the pane a backdrop root and hide the timeline from the composer's blur.

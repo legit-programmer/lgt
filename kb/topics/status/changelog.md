@@ -16,6 +16,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-10
 
+- Use locally bundled Claude, Gemini and Codex logos throughout provider selection and metadata, with a theme-aware Codex mark and a terminal fallback for custom CLIs.
 ### Start the backend with the desktop
 
 - The Tauri shell discovers or launches a persistent backend through owner-private `daemon.json`, with health identity and version checks and a per-launch token.

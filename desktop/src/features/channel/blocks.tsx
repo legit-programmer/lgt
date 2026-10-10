@@ -1,3 +1,4 @@
+import { ProviderLogo } from "../../components/ProviderLogo";
 import { useState } from "react";
 import {
   ArrowRight, Ban, Bookmark, ChevronDown, ChevronRight, Clock, CornerDownLeft, FileText, Folder,
@@ -153,7 +154,7 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
         {!block.cont ? (
           <div className="fv-msg-head">
             <span className="fv-name" style={hueStyle(agent)}>{agent?.handle ?? "agent"}</span>
-            {agent ? <span className="fv-cli"><span className="via">via</span>{harnessLabel(agent.harness)}</span> : null}
+            {agent ? <span className="fv-cli"><span className="via">via</span><ProviderLogo harness={agent.harness} />{harnessLabel(agent.harness)}</span> : null}
             {live ? (
               <StatusBadge state={queuedRun ? "queued" : "working"} since={queuedRun ? undefined : run?.started_at ?? block.ts}
                 label={queuedRun ? "waiting for a run slot" : undefined} />

@@ -1,6 +1,7 @@
+import { ProviderLogo } from "../../components/ProviderLogo";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Folder, RefreshCw, Terminal } from "lucide-react";
+import { Check, Folder, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Agent, AgentInput, Avatar, Harness } from "../../api/types";
@@ -351,7 +352,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
               <AgentAvatar agent={previewAgent} status="idle" size="xl" />
               <span className="fv-name preview-name" style={hueStyle(previewAgent)}>{form.handle || "new-agent"}</span>
               <p className="preview-desc">{form.description || "Add a description so routing knows when to pick this agent."}</p>
-              <span className="fv-chip fv-chip--mono"><Terminal /> {cliText}</span>
+              <span className="fv-chip fv-chip--mono"><ProviderLogo harness={form.harness} /> {cliText}</span>
             </div>
             <h2 className="fv-label">In the sidebar</h2>
             <div className="fv-card preview-row">
@@ -370,7 +371,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
               <div>
                 <div className="fv-msg-head">
                   <span className="fv-name" style={hueStyle(previewAgent)}>{form.handle || "new-agent"}</span>
-                  <span className="fv-cli"><span className="via">via</span>{harnessLabel(form.harness || "cli")}</span>
+                  <span className="fv-cli"><span className="via">via</span><ProviderLogo harness={form.harness} />{harnessLabel(form.harness || "cli")}</span>
                   <span className="fv-meta">now</span>
                 </div>
                 <p className="preview-text">
@@ -428,7 +429,7 @@ function CliCard({ harness, selected, onSelect }: { harness: Harness; selected: 
     <button type="button" role="radio" aria-checked={selected} disabled={missing}
       className={`cli-card${selected ? " is-selected" : ""}`} onClick={onSelect} title={detail}>
       <span className="fv-radio" data-checked={selected} />
-      <span className="cli-icon"><Terminal /></span>
+      <span className="cli-icon"><ProviderLogo harness={harness.harness} /></span>
       <span className="cli-text">
         <span className="cli-name">{harnessLabel(harness.harness)}</span>
         <span className="cli-detail">{detail}</span>

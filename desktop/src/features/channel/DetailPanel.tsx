@@ -1,3 +1,4 @@
+import { ProviderLogo } from "../../components/ProviderLogo";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { useQuery } from "@tanstack/react-query";
@@ -114,7 +115,7 @@ function AgentCard({ agent, channel }: { agent: Agent; channel: ChannelSummary }
         <AgentAvatar agent={agent} status={state} />
         <div className="agent-card-text">
           <span className="fv-name" style={hueStyle(agent)}>{agent.handle}</span>
-          <span className="fv-meta fv-mono">{cliLine(agent, harnesses.data)}</span>
+          <span className="fv-meta fv-mono fv-provider-label"><ProviderLogo harness={agent.harness} />{cliLine(agent, harnesses.data)}</span>
         </div>
         <StatusBadge state={state} since={state === "working" ? here?.started_at : undefined} />
       </div>
