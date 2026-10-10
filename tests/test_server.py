@@ -51,7 +51,7 @@ async def test_native_server_boot_http_websocket_and_replay_without_model_calls(
                     except (httpx.ConnectError, httpx.ConnectTimeout):
                         pass
                     await asyncio.sleep(0.05)
-            assert health.json() == {"status": "ok"}
+            assert health.json()["application"] == "lgt"
             response = await client.post(base + "/channels", json={"name": "smoke"})
             assert response.status_code == 201, response.text
             cid = response.json()["channel_id"]

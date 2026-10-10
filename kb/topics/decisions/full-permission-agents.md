@@ -3,8 +3,8 @@ id: 20261008-full-permission-agents
 title: "Decision: agents run with full permissions"
 tags: [decision, security, harness]
 created: 2026-10-08
-updated: 2026-10-08
-related: [20261008-harness-adapters, 20261008-gateway-http, 20261008-open-gaps]
+updated: 2026-10-10
+related: [20261008-harness-adapters, 20261008-gateway-http, 20261008-open-gaps, 20261010-desktop-daemon]
 summary: Why every specialist run bypasses interactive approvals, what each harness is passed, how tool allowlists still restrict Claude, and the security consequences for the local API.
 ---
 
@@ -30,7 +30,7 @@ Runs are headless; no one is there to approve a prompt. The cwd is a home base, 
 
 ## Consequences
 
-- The local API is effectively remote code execution for any local process. It is guarded only by loopback binding and the origin policy until a launch token exists (D1 in [open gaps](../status/open-gaps.md)).
+- The local API is effectively remote code execution for any local process. Manual mode is guarded by loopback binding and the origin policy. Desktop daemon mode additionally requires a per-launch token, protected by an owner-private discovery file. Processes running as the same OS user can read that file; the token is not a sandbox.
 - Never bind the backend to a non-loopback address.
 
 ## Related
@@ -38,3 +38,5 @@ Runs are headless; no one is there to approve a prompt. The cwd is a home base, 
 - [Harness adapters](../backend/harness-adapters.md) — where the flags are built.
 - [Gateway HTTP](../backend/gateway-http.md) — the origin policy.
 - [Open gaps](../status/open-gaps.md) — the launch token.
+
+- [Desktop daemon](../backend/desktop-daemon.md) - discovery, launch tokens, and shutdown.

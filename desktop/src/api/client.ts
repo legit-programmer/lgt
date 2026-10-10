@@ -6,21 +6,49 @@ import type {
 
 const FALLBACK_URL = "http://127.0.0.1:8000";
 let baseUrl: string | null = null;
+let launchToken: string | null = null;
+let resolving: Promise<string> | null = null;
 
-function isTauri(): boolean {
+export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** Resolve the backend URL once: the shell's setting, then a Vite variable. */
-export async function resolveBackendUrl(): Promise<string> {
-  if (baseUrl) return baseUrl;
-  let url = import.meta.env.VITE_LGT_BACKEND_URL as string | undefined;
-  if (isTauri()) {
-    const { invoke } = await import("@tauri-apps/api/core");
-    url = await invoke<string>("backend_url");
+/** Discover/start the daemon; concurrent boots share one launch attempt. */
+export function resolveBackendUrl(): Promise<string> {
+  if (resolving) return resolving;
+  resolving = (async () => {
+    let url = import.meta.env.VITE_LGT_BACKEND_URL as string | undefined;
+    let token: string | null = null;
+    if (isTauri()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const connection = await invoke<{ url: string; token: string | null; managed: boolean }>("ensure_backend");
+      url = connection.url;
+      token = connection.token;
+    }
+    baseUrl = (url || FALLBACK_URL).replace(/\/+$/, "");
+    launchToken = token;
+    return baseUrl;
+  })().finally(() => { resolving = null; });
+  return resolving;
+}
+
+export async function quitWorkspace(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("quit_workspace");
+}
+
+/** Keep credentials in memory and out of URLs, storage, and cross-origin requests. */
+export function fetchBackendResource(url: string, init?: RequestInit): Promise<Response> {
+  if (new URL(url).origin !== new URL(backendUrl()).origin) {
+    return Promise.reject(new Error("The resource is outside this Lgt backend."));
   }
-  baseUrl = (url || FALLBACK_URL).replace(/\/+$/, "");
-  return baseUrl;
+  const headers = new Headers(init?.headers);
+  if (launchToken) headers.set("Authorization", `Bearer ${launchToken}`);
+  return fetch(url, { ...init, headers, redirect: "error" });
+}
+
+export function socketHandshake(lastId: number): { last_id: number; token?: string } {
+  return launchToken ? { last_id: lastId, token: launchToken } : { last_id: lastId };
 }
 
 export function backendUrl(): string {
@@ -59,7 +87,7 @@ async function request<T>(method: string, path: string, body?: unknown, init?: R
   }
   let response: Response;
   try {
-    response = await fetch(backendUrl() + path, { method, headers, body: payload, ...init });
+    response = await fetchBackendResource(backendUrl() + path, { method, headers, body: payload, ...init });
   } catch {
     throw new ApiError(0, "unreachable", "The Lgt backend is not reachable.");
   }
@@ -94,7 +122,7 @@ function query(params: Record<string, string | number | undefined | null>): stri
 const enc = encodeURIComponent;
 
 export const api = {
-  health: () => get<{ status: string }>("/health"),
+  health: () => get<{ status: string; application: string; api_version: number; pid: number }>("/health"),
 
   harnesses: () => get<Harness[]>("/harnesses"),
   scanHarnesses: () => post<Harness[]>("/harnesses/scan"),

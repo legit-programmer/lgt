@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "build": {
+    "beforeBuildCommand": "uv run --project .. python ../scripts/build-backend.py && pnpm build"
+  },
+  "bundle": {
+    "resources": {
+      "resources/backend/": "backend/"
+    }
+  }
+}

@@ -3,8 +3,8 @@ id: 20261008-repo-map
 title: Repo map
 tags: [overview]
 created: 2026-10-08
-updated: 2026-10-08
-related: [20261008-system-overview, 20261008-desktop-architecture, 20261008-testing, 20261008-runtime-and-config, 20261008-glossary, 20261008-event-store, 20261008-dispatch-and-queue, 20261008-run-lifecycle, 20261008-context-and-sessions, 20261008-routing, 20261008-harness-adapters, 20261008-process-hosting, 20261008-attachments, 20261008-gateway-http, 20261008-websocket-protocol, 20261008-screens]
+updated: 2026-10-10
+related: [20261010-desktop-daemon, 20261008-system-overview, 20261008-desktop-architecture, 20261008-testing, 20261008-runtime-and-config, 20261008-glossary, 20261008-event-store, 20261008-dispatch-and-queue, 20261008-run-lifecycle, 20261008-context-and-sessions, 20261008-routing, 20261008-harness-adapters, 20261008-process-hosting, 20261008-attachments, 20261008-gateway-http, 20261008-websocket-protocol, 20261008-screens]
 summary: Every top-level folder and backend module with its responsibility, so you know which file to open for a given concern.
 ---
 
@@ -30,9 +30,10 @@ summary: Every top-level folder and backend module with its responsibility, so y
 
 | File | Responsibility | KB note |
 | --- | --- | --- |
-| `__main__.py` | CLI entry point: `--config`, `--port`; Uvicorn on `127.0.0.1` with one worker | [runtime](../backend/runtime-and-config.md) |
+| `__main__.py` | CLI entry point: `--config`, `--port`, `--daemon`; Uvicorn on `127.0.0.1` with one worker | [runtime](../backend/runtime-and-config.md) |
 | `runtime.py` | `load_config`, `BackendRuntime` (opens the store, scans harnesses, builds the orchestrator) | [runtime](../backend/runtime-and-config.md) |
 | `config.py` | `Settings` dataclass and its validation | [runtime](../backend/runtime-and-config.md) |
+| `daemon.py` | Private discovery record, daemon readiness, rotating logs, graceful server shutdown | [desktop daemon](../backend/desktop-daemon.md) |
 | `locking.py` | `RuntimeLock`: one backend per data directory | [runtime](../backend/runtime-and-config.md) |
 | `models.py` | Dataclasses (`Agent`, `Channel`, `Event`, `Run`, `Session`, `QueueItem`, `Attachment`, `Turn`), protocols, `new_id` (ULID) | [glossary](glossary.md) |
 | `schema.sql`, `store.py` | SQLite schema, migrations, triggers, FTS search, summaries, usage | [event store](../backend/event-store.md) |

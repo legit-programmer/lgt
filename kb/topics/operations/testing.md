@@ -3,7 +3,7 @@ id: 20261008-testing
 title: Testing
 tags: [ops, testing]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-10
 related: [20261008-repo-map, 20261008-running-locally, 20261008-known-issues]
 summary: How to run the backend and desktop test suites, which test file covers which module, the fakes they use, and how UI changes were verified visually.
 ---
@@ -32,6 +32,7 @@ cd desktop; pnpm test; pnpm typecheck # desktop: vitest unit tests + tsc
 | `test_codex_adapter.py`, `test_harnesses.py` | Adapters, discovery, validation |
 | `test_processes.py`, `test_oneshot.py`, `test_locking.py` | Process trees, one-shot CLI, lock |
 | `test_runtime.py`, `test_server.py`, `test_services.py` | Config loading, the real app boot, catalogs |
+| `test_daemon.py` | Private descriptor ownership, HTTP and WebSocket authentication, dynamic-port readiness, duplicate launch, and shutdown |
 
 ## Fakes
 
@@ -48,6 +49,10 @@ Use `settings(tmp_path, **overrides)` to build a valid `Settings` object.
 - `lib/timeline.test.ts`: block building rules.
 - `store/workspace.test.ts`: frame reducer, partials, runs, snapshots.
 - `lib/format.test.ts`: formatting and argv splitting.
+- `api/client.test.ts`: shared launch attempts, retry, token refresh, authenticated HTTP and media, and browser compatibility.
+- `App.test.tsx`: loading through daemon and workspace startup, StrictMode deduplication, string errors, and Retry.
+
+Rust daemon tests live in `desktop/src-tauri/src/daemon.rs`. Run them with `cargo test --lib` from `desktop/src-tauri` when changing discovery or process launch.
 
 ## Visual verification
 
@@ -56,6 +61,8 @@ The UI was checked against a live backend with headless Edge:
 - a small Chrome DevTools Protocol script for clicking, typing and attaching files.
 
 These scripts are not in the repo. Recreate them in a scratch folder if needed. Use a scratch `data_dir`, because real runs call models.
+
+The startup overlay was also checked in headless Edge at 1440 x 900 (dark) and 1024 x 640 (light), with backend requests held pending. Reduced-motion emulation produced no active overlay animations.
 
 ## Related
 

@@ -192,7 +192,7 @@ def gateway_client(tmp_path):
 def test_health_and_loopback_origin_policy(gateway_client):
     client, _ = gateway_client
 
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json()["application"] == "lgt"
     same_origin = client.get("/health", headers={"origin": "http://127.0.0.1"})
     assert same_origin.status_code == 200
     cross_origin = client.get("/health", headers={"origin": "https://attacker.example"})

@@ -3,8 +3,8 @@ id: 20261008-desktop-architecture
 title: Desktop architecture
 tags: [desktop]
 created: 2026-10-08
-updated: 2026-10-09
-related: [20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model]
+updated: 2026-10-10
+related: [20261010-desktop-daemon, 20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model]
 summary: How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
 ---
 
@@ -16,7 +16,7 @@ summary: How the Tauri shell, the React app, and the backend connect, the boot s
 
 ```
 Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
-   │ commands: backend_url()                         │
+   │ commands: ensure_backend()                         │
    │ plugins: dialog (folder picker), opener         ▼
    └──────────────────────────────────────> React app (desktop/src)
                                                │ HTTP actions (fetch)
@@ -25,10 +25,10 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
                                          Lgt backend on 127.0.0.1
 ```
 
-- **The shell is thin.** `src-tauri/src/lib.rs` registers the dialog and opener plugins and one command, `backend_url`, which returns `LGT_BACKEND_URL` or `http://127.0.0.1:8000`. It does **not** start or stop the backend; that needs the daemon handshake (D1 in [open gaps](../status/open-gaps.md)).
+- **The shell owns backend startup.** `src-tauri/src/lib.rs` registers `ensure_backend` and `quit_workspace`, implemented in `src-tauri/src/daemon.rs`. Discovery verifies the private `daemon.json` descriptor over authenticated HTTP or starts a detached backend. Closing the window preserves the daemon; **Quit Lgt** shuts it down. See [Desktop daemon](../backend/desktop-daemon.md).
 - **Security:**
   - `src-tauri/tauri.conf.json` sets a strict CSP: `connect-src` and `img-src` allow only loopback.
-  - `capabilities/default.json` grants only `dialog:allow-open` and `opener:allow-open-url`.
+  - `capabilities/default.json` grants folder picking, URL opening, and title-bar window controls. Daemon launch stays in Rust commands; the frontend gets no arbitrary shell execution permission.
 - **Identifier and window:** the identifier is `com.lgt.desktop`, and the main window label is `main`.
 - **Top bar (title bar and app chrome in one row):**
   - On Windows, `src-tauri/tauri.windows.conf.json` overrides the window with `decorations: false`. Tauri merges it over `tauri.conf.json`, and arrays are replaced whole, so it repeats the full window entry.
@@ -39,11 +39,11 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 
 ## Boot sequence (`src/App.tsx`)
 
-1. `resolveBackendUrl()` (`src/api/client.ts`) asks the Tauri `backend_url` command. In a plain browser it reads `VITE_LGT_BACKEND_URL`.
+1. `StartupOverlay` shows the frosted loading screen. `resolveBackendUrl()` (`src/api/client.ts`) awaits the Tauri `ensure_backend` command and stores its URL and launch token in memory. In a plain browser it reads `VITE_LGT_BACKEND_URL`.
 2. `useWorkspace.boot()` loads agents, channel summaries, agent statuses and the profile in parallel.
-3. `workspaceSocket.start()` opens `/ws` with the cursor.
+3. `workspaceSocket.start()` opens `/ws` with the cursor and launch token in its first frame.
 4. The workspace renders. With no agents it opens onboarding; otherwise the most recent conversation, unless the URL hash names a view.
-5. If the backend can't be reached, the app shows `Unreachable`, with the start command and a Retry button.
+5. Startup failure replaces the overlay with its error and a Retry button. Retry repeats discovery. Concurrent boot attempts share one promise, including React StrictMode effect replay.
 
 ## File map (`desktop/src`)
 
@@ -57,6 +57,7 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 | `store/ui.ts` | View, panel, palette, theme, and URL hash sync |
 | `lib/timeline.ts` | Event log → blocks ([timeline model](timeline-model.md)) |
 | `lib/format.ts`, `lib/agents.ts`, `lib/media.ts`, `lib/folder.ts`, `lib/useNow.ts` | Formatting, hues and CLI labels, blob media, folder dialog, ticking clock |
+| `components/StartupOverlay.tsx`, `StartupOverlay.css` | Frosted launch screen, animated mark, reduced-motion styles |
 | `components/` | `Avatar` (DiceBear), `Status` (dots, badges, elapsed), `Markdown` (mentions), `Toasts` |
 | `features/` | Screens; see [screens](screens.md) |
 | `styles/` | `tokens.css`, `components.css`, `app.css` ([design system](design-system.md)) |

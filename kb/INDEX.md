@@ -32,6 +32,7 @@ Format: `id` — **Title** — `path` — description.
 - `20261008-system-overview` — **System overview** — `topics/overview/system-overview.md` — What Lgt is, its two halves (Python backend and Tauri desktop app), and how a message flows from the composer to an agent and back.
 
 ### backend
+- `20261010-desktop-daemon` - **Desktop daemon lifecycle** - `topics/backend/desktop-daemon.md` - Discovery, detached launch, tokens, shutdown, and the frosted startup screen.
 - `20261008-attachments` — **Attachments** — `topics/backend/attachments.md` — Upload storage outside channel directories, size and quota limits, retention of unsent files, binding to exactly one message, thumbnails, and how files reach each harness.
 - `20261008-context-and-sessions` — **Context and sessions** — `topics/backend/context-and-sessions.md` — How a turn's prompt is rendered from the log, when a harness session is resumed versus rebuilt cold, how resets and edits invalidate sessions, and how checkpoints summarize old context.
 - `20261008-dispatch-and-queue` — **Dispatch and queue** — `topics/backend/dispatch-and-queue.md` — How the orchestrator serializes each channel through a mailbox, moves deliveries through queue states, coalesces messages for busy agents, and starts runs.
@@ -48,7 +49,7 @@ Format: `id` — **Title** — `path` — description.
 ### desktop
 - `20261008-client-state` — **Client state and socket** — `topics/desktop/client-state.md` — The Zustand workspace store (what it holds, how frames are applied, timeline paging), the socket's reconnect and resync logic, and the UI store with hash routing.
 - `20261008-design-system` — **Ember design system** — `topics/desktop/design-system.md` — The Ember rules from design/README.md and how they are implemented in tokens.css, components.css and app.css, including agent hues, status glyphs and glass usage.
-- `20261008-desktop-architecture` — **Desktop architecture** — `topics/desktop/desktop-architecture.md` — How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
+- `20261008-desktop-architecture` — **Desktop architecture** — `topics/desktop/desktop-architecture.md` — How the shell starts the daemon, shows the launch overlay, and connects the React app, plus a file map of desktop/.
 - `20261008-origins-and-media` — **Origins, CSP and media loading** — `topics/desktop/origins-and-media.md` — Which origins the backend must allow for each way of running the app, the Tauri CSP, and why attachment thumbnails and downloads are fetched with CORS into blob URLs.
 - `20261008-screens` — **Screens and features** — `topics/desktop/screens.md` — Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 - `20261008-timeline-model` — **Timeline model** — `topics/desktop/timeline-model.md` — The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
@@ -69,4 +70,4 @@ Format: `id` — **Title** — `path` — description.
 ### status
 - `20261008-changelog` — **Changelog** — `topics/status/changelog.md` — Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 - `20261008-known-issues` — **Known issues and caveats** — `topics/status/known-issues.md` — Behaviors and risks that are not bugs in the gap list but will surprise a newcomer — stopped requests staying in context, SDK private access, packaging, bundle size, test and line-ending quirks.
-- `20261008-open-gaps` — **Open gaps** — `topics/status/open-gaps.md` — Summary of the open backend contracts (D1–D6) that block desktop features, what the UI shows meanwhile, and where the full contracts live.
+- `20261008-open-gaps` — **Open gaps** — `topics/status/open-gaps.md` — Summary of the open backend contracts (D2–D6) that block desktop features, what the UI shows meanwhile, and where the full contracts live.

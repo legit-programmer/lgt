@@ -22,11 +22,30 @@ The Codex SDK receives `ApprovalMode.deny_all`, whose wire value is `approvalPol
 
 Harness capabilities determine which settings the API accepts. Codex and Gemini report `allowed_tools: false`; a nonempty allowlist is rejected. Claude tool IDs must be a subset of its advertised tools. Custom commands declare their enforced capabilities in a probe. No agents are seeded automatically. Scheduled or event-triggered agent posts remain a product decision.
 
+## Desktop daemon
+
+The Tauri shell starts or reconnects to the backend before the initial workspace load. It launches `python -m lgt --config <absolute-path> --port 0 --daemon` as a detached process without a console. `--daemon` runs the server in the foreground internally; the launcher owns detachment.
+
+After application startup and socket binding succeed, the server atomically writes `data_dir/daemon.json`:
+
+```json
+{"pid":1234,"port":49152,"api_version":1,"token":"<per-launch-secret>","started_at":"2026-10-10T00:00:00+00:00"}
+```
+
+The descriptor has owner-only access on POSIX and a protected owner-and-SYSTEM DACL on Windows. The shell verifies the application, API version, and PID with an authenticated health request before reusing it. The existing workspace lock remains authoritative for duplicate launches. Shutdown removes only the current daemon's descriptor, before releasing that lock.
+
+In daemon mode, every HTTP request except an allowed CORS preflight requires `Authorization: Bearer <token>`. This includes health, attachments, and API documentation. Missing or invalid credentials return `401 unauthorized`. Origin and loopback checks still apply. The first WebSocket frame must include the token within five seconds; authentication failure closes the socket with code 1008 before replay or snapshots.
+
+`POST /shutdown` returns `{"status":"stopping"}` and requests graceful shutdown. The runtime stops active runs and closes SQLite. Closing the desktop window preserves the background server. The sidebar's **Quit Lgt** action shuts down the managed daemon and exits the shell. Explicit external backend connections are not shut down by the desktop.
+
+Logs rotate at 5 MiB with three backups in `data_dir/logs/daemon.log`. Manual startup without `--daemon` retains the unauthenticated local API, and `/shutdown` returns 404.
+
 ## HTTP API
 
 | Method | Path | Result |
 | --- | --- | --- |
-| GET | `/health` | Backend status. |
+| GET | `/health` | `{status: "ok", application: "lgt", api_version: 1, pid}`. |
+| POST | `/shutdown` | Token-protected graceful shutdown in daemon mode. |
 | GET | `/harnesses` | Detected CLI paths, versions, auth state, capabilities, model choices, and tools. |
 | POST | `/harnesses/scan` | Refresh CLI discovery. |
 | POST | `/harnesses/custom/probe` | Probe custom `command` and optional `extra_args` argv before model and tool selection. |
@@ -94,11 +113,13 @@ Run token counters are `tokens_in`, `tokens_out`, `tokens_cached_in`, `tokens_ca
 
 ## WebSocket frames
 
-The socket path is `/ws`. The first client frame is a cursor:
+The socket path is `/ws`. In daemon mode the first client frame contains a cursor and launch token:
 
 ```json
-{"last_id": 0}
+{"last_id": 0, "token": "<launch-token>"}
 ```
+
+Manual mode omits `token` and sends only `last_id`.
 
 The server captures replay rows and partial snapshots before sending frames. Durable events have this envelope:
 
@@ -146,7 +167,7 @@ A deletion uses `deleted: true` in `edit_message`. Commands produce durable even
 
 `config.example.json` contains the settings. The original numeric runtime settings remain required. `route_after_active` is fixed to `false` by the user's routing override. New settings have defaults: `allowed_origins: []`, `attachment_channel_quota_bytes: 262144000`, `attachment_retention_seconds: 86400`, and `thumbnail_max_dimension: 512`.
 
-`allowed_origins` contains exact origins without paths, credentials, queries, or fragments. It can include `tauri://localhost`, a development HTTP origin, or the literal `file://`. Wildcards and opaque `null` origins are rejected. Loopback client and Host checks still apply to HTTP and WebSockets. Allowed HTTP origins receive CORS headers; preflight permits the API methods and `Content-Type`.
+`allowed_origins` contains exact origins without paths, credentials, queries, or fragments. It can include `tauri://localhost`, a development HTTP origin, or the literal `file://`. Wildcards and opaque `null` origins are rejected. Loopback client and Host checks still apply to HTTP and WebSockets. Allowed HTTP origins receive CORS headers; preflight permits the API methods, `Content-Type`, and `Authorization`.
 
 `attachment_max_bytes` caps each upload; the channel quota counts sent and unsent files. Concurrent uploads share the same quota check. Unsent uploads expire after the retention window. Cleanup runs at startup and periodically. Sent files stay immutable. Thumbnails reject invalid images and excessive dimensions.
 

@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { Hash, Moon, Plus, Search, Sun } from "lucide-react";
+import { Hash, Moon, Plus, Power, Search, Sun } from "lucide-react";
+import { isTauri, quitWorkspace } from "../../api/client";
 import type { Agent, AgentStatus, ChannelSummary } from "../../api/types";
 import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
 import { activeAgents } from "../../lib/agents";
 import { relativeTime } from "../../lib/format";
 import { useNow } from "../../lib/useNow";
 import { useUi } from "../../store/ui";
-import { useWorkspace } from "../../store/workspace";
+import { reportError, useWorkspace } from "../../store/workspace";
 import { ProfileDialog } from "./ProfileDialog";
 
 export function Sidebar() {
@@ -23,6 +24,17 @@ export function Sidebar() {
   const toggleTheme = useUi((s) => s.toggleTheme);
   const now = useNow(30_000);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [quitting, setQuitting] = useState(false);
+
+  const quit = async () => {
+    setQuitting(true);
+    try {
+      await quitWorkspace();
+    } catch (error) {
+      reportError(error);
+      setQuitting(false);
+    }
+  };
 
   const agents = activeAgents(agentsById);
   const activeId = view.kind === "channel" ? view.channelId : null;
@@ -83,6 +95,13 @@ export function Sidebar() {
           aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
           {theme === "dark" ? <Sun /> : <Moon />}
         </button>
+        {isTauri() ? (
+          <button className="fv-icon-btn" disabled={quitting} onClick={() => void quit()}
+            aria-label={quitting ? "Quitting Lgt" : "Quit Lgt"}
+            title="Quit Lgt and stop background runs">
+            <Power />
+          </button>
+        ) : null}
       </div>
     </aside>
   );

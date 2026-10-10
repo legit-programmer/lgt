@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import os
+import secrets
 import sqlite3
 from io import BytesIO
 from collections.abc import Mapping
@@ -376,7 +378,7 @@ def _command_error(error: BaseException) -> dict[str, Any]:
     return _error("internal_error", "The workspace command failed.")
 
 
-def create_app(orch: Any, *, manage_lifespan: bool = True) -> FastAPI:
+def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -> FastAPI:
     """Create the local API around an injected, already configured orchestrator."""
 
     @asynccontextmanager
@@ -404,13 +406,17 @@ def create_app(orch: Any, *, manage_lifespan: bool = True) -> FastAPI:
                 return _http_error(403, "forbidden", "The requested method is not allowed.")
             requested_headers = request.headers.get("access-control-request-headers", "")
             headers = {item.strip().lower() for item in requested_headers.split(",") if item.strip()}
-            if not headers.issubset({"content-type"}):
+            if not headers.issubset({"content-type", "authorization"}):
                 return _http_error(403, "forbidden", "The requested headers are not allowed.")
             response = Response(status_code=204)
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         else:
-            response = await call_next(request)
+            supplied = request.headers.get("authorization", "")
+            if daemon is not None and not secrets.compare_digest(supplied.encode(), ("Bearer " + daemon.token).encode()):
+                response = _http_error(401, "unauthorized", "A valid workspace token is required.")
+            else:
+                response = await call_next(request)
         if origin is not None:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Vary"] = "Origin"
@@ -438,7 +444,14 @@ def create_app(orch: Any, *, manage_lifespan: bool = True) -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok"}
+        return {"status": "ok", "application": "lgt", "api_version": 1, "pid": os.getpid()}
+
+    @app.post("/shutdown")
+    async def shutdown():
+        if daemon is None:
+            raise HTTPException(status_code=404, detail="Daemon mode is required.")
+        daemon.request_shutdown()
+        return {"status": "stopping"}
 
     @app.get("/harnesses")
     async def list_harnesses():
@@ -801,7 +814,14 @@ def create_app(orch: Any, *, manage_lifespan: bool = True) -> FastAPI:
         error_task: asyncio.Task[Any] | None = None
         try:
             try:
-                initial = await websocket.receive_json()
+                initial = await asyncio.wait_for(websocket.receive_json(), timeout=5) if daemon is not None else await websocket.receive_json()
+                if daemon is not None:
+                    supplied_token = initial.get("token") if isinstance(initial, dict) else None
+                    if not isinstance(supplied_token, str) or not secrets.compare_digest(supplied_token.encode(), daemon.token.encode()):
+                        await websocket.close(code=1008, reason="A valid workspace token is required.")
+                        return
+                    initial = dict(initial)
+                    initial.pop("token")
                 if (
                     not isinstance(initial, dict)
                     or set(initial) != {"last_id"}
@@ -814,6 +834,9 @@ def create_app(orch: Any, *, manage_lifespan: bool = True) -> FastAPI:
                     })
                     await websocket.close(code=1008)
                     return
+            except TimeoutError:
+                await websocket.close(code=1008, reason="Workspace authentication timed out.")
+                return
             except (ValueError, WebSocketDisconnect):
                 await websocket.send_json({
                     "type": "error",

@@ -72,7 +72,7 @@ def test_real_runtime_http_and_ws_use_database_on_server_thread(tmp_path, monkey
     monkeypatch.setattr("lgt.runtime.make_cli_invoker", lambda **kwargs: forbidden_cli)
     app = application(config_file(tmp_path))
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 42000)) as client:
-        assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/health").json()["application"] == "lgt"
         # No agent is seeded and this empty channel does not call either router CLI.
         channel = client.post("/channels", json={"name": "general"}).json()
         cid = channel["channel_id"]

@@ -133,5 +133,5 @@ class BackendRuntime:
             self._lock.close()
 
 
-def application(config_path: str | Path):
-    return create_app(BackendRuntime(load_config(config_path)))
+def application(config_path: str | Path, *, daemon: Any = None):
+    return create_app(BackendRuntime(load_config(config_path)), daemon=daemon)

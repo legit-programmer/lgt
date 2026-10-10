@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-10
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,17 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-10
+
+### Start the backend with the desktop
+
+- The Tauri shell discovers or launches a persistent backend through owner-private `daemon.json`, with health identity and version checks and a per-launch token.
+- HTTP, attachment fetches, and the initial WebSocket frame authenticate in daemon mode. Manual backend startup remains supported.
+- Normal window close leaves runs active. **Quit Lgt** requests graceful shutdown. Daemon logs rotate under the workspace data directory.
+- A frosted startup overlay shows **Setting up your Lgt workspace**, with an animated Lgt mark, reduced-motion support, and Retry on failure.
+- Release packaging includes a real standalone Python runtime, pinned dependencies, and backend source.
+- D1's startup and shutdown contract is implemented. Tray controls, notifications, start at login, and automatic restart after updates remain follow-up work.
 
 ## 2026-10-09
 

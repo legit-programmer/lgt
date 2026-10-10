@@ -3,7 +3,7 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-10
 related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
@@ -44,7 +44,7 @@ summary: Which desktop/src/features file implements each screen of Lgt Screens.p
 - Voice input (the mic button): WebView2 has no built-in speech recognition. This is frontend work, not a backend gap.
 - The × that cancels a single live tool call: no backend endpoint (D6).
 - Per-tool durations from Claude (D3), and "cancelled by you" wording (D5).
-- Tray icon, notifications and start at login: these need the daemon handshake (D1).
+- Tray icon, notifications and start at login: still unimplemented. The daemon lifecycle prerequisite (D1) is now available.
 
 See [open gaps](../status/open-gaps.md).
 

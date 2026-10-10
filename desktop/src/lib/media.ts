@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { fetchBackendResource } from "../api/client";
 
 /*
  * Attachment bytes are fetched with CORS from the window's allowed origin and
@@ -11,7 +12,7 @@ const cache = new Map<string, Promise<string>>();
 export function fetchBlobUrl(url: string): Promise<string> {
   let pending = cache.get(url);
   if (!pending) {
-    pending = fetch(url, { mode: "cors" }).then(async (response) => {
+    pending = fetchBackendResource(url, { mode: "cors" }).then(async (response) => {
       if (!response.ok) throw new Error(`Could not load the attachment (${response.status}).`);
       return URL.createObjectURL(await response.blob());
     });

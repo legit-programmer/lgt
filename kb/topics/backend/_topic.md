@@ -14,3 +14,5 @@ The Python package in `lgt/`: storage, orchestration, harness adapters, and the 
 - [Gateway HTTP API](gateway-http.md) — origin policy, errors, route map.
 - [WebSocket protocol](websocket-protocol.md) — handshake, frames, overflow.
 - [Live state frames](live-state.md) — summaries, statuses, context, usage, limits.
+
+- [Desktop daemon lifecycle](desktop-daemon.md) - discovery, detached launch, authentication, shutdown.

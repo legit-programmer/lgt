@@ -4,26 +4,19 @@ The contracts in the sections after "Open" are implemented. The original gap des
 
 ## Open: found while building the desktop app
 
-These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. The app skips each feature below rather than working around it, and states what it shows instead.
+These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. D1 is implemented. D2 through D6 remain open, and the app omits unsupported controls.
 
-### D1. Daemon handshake (blocks the shell owning the backend)
+### D1. Daemon handshake (implemented)
 
-The shell connects to an already running backend at `LGT_BACKEND_URL` (default `http://127.0.0.1:8000`). If the backend can't be reached, it shows a retry screen. To start, find, and stop the backend itself, the shell needs:
+The Tauri shell discovers an existing daemon through `data_dir/daemon.json`, verifies its identity and API version with an authenticated health request, or starts a detached backend on an available loopback port. The file is published atomically only after startup and binding, with owner-private access.
 
-| Contract | Purpose |
-| --- | --- |
-| `--port 0`, then write `data_dir/daemon.json` with `{pid, port, api_version, token, started_at}` after binding | The shell finds a running daemon without a fixed port. |
-| `api_version` in `GET /health` | A newer shell can restart an older daemon after an update instead of talking to it with a mismatched protocol. |
-| A per-launch token: `Authorization: Bearer` on HTTP, and a `token` field in the first WebSocket frame | Any local process can drive agents with full permissions today. |
-| `POST /shutdown`, token-protected | "Quit Lgt" stops runs cleanly instead of killing the process. |
-| A detached mode that logs to `data_dir/logs/daemon.log` and opens no console window | The daemon keeps running while the window is closed. |
+HTTP uses a per-launch Bearer token. WebSocket clients send the token in their first frame. `POST /shutdown` stops the runtime cleanly. Closing the window keeps the daemon running; **Quit Lgt** stops the managed daemon. Logs rotate in `data_dir/logs/daemon.log`.
 
-**Skipped until then:**
-- starting and stopping the backend from the shell;
-- a tray icon with the working count;
-- notifications when runs finish with the window closed;
-- start at login;
-- restarting the backend after an app update.
+The launch overlay shows **Setting up your Lgt workspace** until discovery and the initial state load finish. It uses CSS frost, an animated Lgt mark, and reduced-motion support. Failed startup offers Retry.
+
+The desktop release build bundles a real Python runtime and dependencies. See the [desktop README](../desktop/README.md) and [daemon lifecycle](../kb/topics/backend/desktop-daemon.md).
+
+Tray controls, notifications, start at login, and automatic restart of an incompatible daemon after updates remain separate follow-up work. An incompatible live daemon is reported rather than terminated by PID.
 
 ### D2. WebSocket head cursor
 
@@ -53,7 +46,7 @@ The design's live tool row has a × button. No endpoint stops one tool call whil
 
 ### Note: attachment media and the origin policy
 
-`<img>` and download navigations send no `Origin` header, so the backend rejects them as cross-site from `http://tauri.localhost` or a dev origin. The UI fetches thumbnails and downloads with CORS from its allowed origin and displays them as blob URLs. This uses the existing endpoints as documented. When the D1 launch token lands, short-lived signed attachment URLs would let the webview stream large files without buffering them in memory.
+`<img>` and download navigations send no `Origin` header, so the backend rejects them as cross-site from `http://tauri.localhost` or a dev origin. The UI fetches thumbnails and downloads with CORS from its allowed origin and displays them as blob URLs. This uses the existing endpoints as documented. The client now sends the daemon token on these fetches. Short-lived signed attachment URLs would let the webview stream large files without buffering them in memory.
 
 Capabilities remain explicit: unsupported tool policies, resume, native inputs, or plan-limit reporting are advertised as unavailable. Agent settings are validated against those capabilities and the harness model and tool catalogs. Custom argv commands have a separate probe endpoint for their catalogs.
 

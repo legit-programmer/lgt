@@ -3,7 +3,7 @@ id: 20261008-client-state
 title: Client state and socket
 tags: [desktop, api]
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-10
 related: [20261008-websocket-protocol, 20261008-timeline-model, 20261008-http-actions-ws-state, 20261008-desktop-architecture]
 summary: The Zustand workspace store (what it holds, how frames are applied, timeline paging), the socket's reconnect and resync logic, and the UI store with hash routing.
 ---
@@ -28,7 +28,7 @@ summary: The Zustand workspace store (what it holds, how frames are applied, tim
 
 ## Socket (`desktop/src/store/socket.ts`)
 
-- It sends `{last_id: lastEventId}` on open.
+- It sends `{last_id: lastEventId, token}` on open when connected to a daemon; manual mode omits the token. `api/client.ts` holds connection credentials only in memory.
 - It reconnects with exponential backoff, capped at 15 s, and refreshes summaries before each reconnect.
 - The connection state moves through `connecting`, `open`, `reconnecting` and `unreachable`.
 - `send()` exists, but every action goes over HTTP; see [the decision](../decisions/http-actions-ws-state.md).

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Unplug } from "lucide-react";
-import { backendUrl, resolveBackendUrl } from "./api/client";
+import { backendUrl, isTauri, resolveBackendUrl } from "./api/client";
 import { useWorkspace } from "./store/workspace";
 import { workspaceSocket } from "./store/socket";
 import { useUi } from "./store/ui";
@@ -13,21 +13,48 @@ import { CommandPalette } from "./features/palette/CommandPalette";
 import { NewChannelDialog } from "./features/channel/NewChannelDialog";
 import { Toasts } from "./components/Toasts";
 import { TopBar } from "./components/TopBar";
+import { StartupOverlay } from "./components/StartupOverlay";
 
 type Boot = "resolving" | "loading" | "ready" | "failed";
 
+// React StrictMode mounts effects twice in development. Share the in-flight
+// startup so the daemon handshake and workspace boot happen only once.
+let startupTask: Promise<void> | null = null;
+
+function startWorkspace(): Promise<void> {
+  if (startupTask) return startupTask;
+  const task = (async () => {
+    await resolveBackendUrl();
+    await useWorkspace.getState().boot();
+    workspaceSocket.start();
+  })();
+  startupTask = task;
+  void task.then(
+    () => { if (startupTask === task) startupTask = null; },
+    () => { if (startupTask === task) startupTask = null; },
+  );
+  return task;
+}
+
+function startupErrorText(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
 export function App() {
   const [boot, setBoot] = useState<Boot>("resolving");
+  const [startupError, setStartupError] = useState<string | null>(null);
   const bootError = useWorkspace((s) => s.bootError);
 
   const start = useCallback(async () => {
     setBoot("loading");
+    setStartupError(null);
     try {
-      await resolveBackendUrl();
-      await useWorkspace.getState().boot();
-      workspaceSocket.start();
+      await startWorkspace();
       setBoot("ready");
-    } catch {
+    } catch (error) {
+      setStartupError(startupErrorText(error));
       setBoot("failed");
     }
   }, []);
@@ -38,8 +65,8 @@ export function App() {
   }, [start]);
 
   let content;
-  if (boot === "failed") content = <Unreachable message={bootError} onRetry={start} />;
-  else if (boot !== "ready") content = <div className="app-splash" aria-busy="true" />;
+  if (boot === "failed") content = <Unreachable message={startupError ?? bootError} onRetry={start} />;
+  else if (boot !== "ready") content = <StartupOverlay />;
   else content = <Workspace />;
   // The shell carries the backdrop, so the top bar and the UI share one ground.
   return (
@@ -115,6 +142,7 @@ function Workspace() {
 }
 
 function Unreachable({ message, onRetry }: { message: string | null; onRetry: () => void }) {
+  const desktop = isTauri();
   let url = "";
   try {
     url = backendUrl();
@@ -125,16 +153,20 @@ function Unreachable({ message, onRetry }: { message: string | null; onRetry: ()
     <div className="app-splash">
       <div className="unreachable fv-glass">
         <Unplug className="unreachable-icon" />
-        <h1 className="fv-dialog-title">Lgt can't reach its backend</h1>
+        <h1 className="fv-dialog-title">Lgt couldn't open your workspace</h1>
         <p className="fv-dialog-desc">
-          {message ?? "The backend did not answer."} Start it, then retry.
+          {message ?? "Your local workspace did not answer."}
         </p>
+        {desktop ? (
+          <p className="fv-hint">Retry to reconnect or start your workspace again.</p>
+        ) : <>
         <pre className="unreachable-cmd">uv run python -m lgt --config config.local.json</pre>
         <p className="fv-hint">
           Looking for it at <span className="fv-mono">{url || "the configured URL"}</span>. Set{" "}
           <span className="fv-mono">LGT_BACKEND_URL</span> to use another address, and add this window's origin to{" "}
           <span className="fv-mono">settings.allowed_origins</span>.
         </p>
+        </>}
         <div className="fv-dialog-actions">
           <button className="fv-btn fv-btn--primary" onClick={onRetry}>
             <RotateCcw /> Retry

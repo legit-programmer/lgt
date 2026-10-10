@@ -18,6 +18,12 @@ The server binds to `127.0.0.1`. Requests use the same origin or an exact origin
 
 `config.local.json` must set the original runtime settings explicitly. Origin, upload quota, retention, and thumbnail settings have defaults for existing configurations. Set `checkpoint_mode` to `cli` to enable rolling context summaries, or `deferred` to turn them off.
 
+## Desktop startup
+
+After `uv sync`, run `pnpm install` and `pnpm tauri dev` from `desktop/`. The shell discovers or starts its backend automatically and shows a frosted launch screen until the workspace is ready. Closing the window keeps background runs alive. Use **Quit Lgt** in the sidebar to stop them and exit.
+
+An existing `config.local.json` is used in development and must allow the desktop origins. Without one, the shell writes an explicit configuration in its application config directory. See the [desktop README](desktop/README.md) for overrides and release packaging.
+
 ## Tests
 
 ```powershell

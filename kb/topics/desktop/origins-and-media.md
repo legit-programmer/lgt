@@ -3,7 +3,7 @@ id: 20261008-origins-and-media
 title: Origins, CSP and media loading
 tags: [desktop, security, attachments]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-10
 related: [20261008-gateway-http, 20261008-attachments, 20261008-running-locally, 20261008-desktop-architecture]
 summary: Which origins the backend must allow for each way of running the app, the Tauri CSP, and why attachment thumbnails and downloads are fetched with CORS into blob URLs.
 ---
@@ -36,7 +36,7 @@ Without the matching entry, every request gets `403 local_only` and the app show
 
 `<img src>` and download navigations send no `Origin` header. From a different site (`tauri.localhost` or `localhost:1420` versus `127.0.0.1`), `Sec-Fetch-Site: cross-site` then makes the backend reject them.
 
-So `useBlobUrl` and `downloadAttachment` instead fetch with `mode: "cors"`, which sends `Origin`, turn the response into a blob URL, cache it per URL, and render or save from there. This uses the documented endpoints and is not a workaround. Signed URLs are noted as a future option once a launch token exists.
+So `useBlobUrl` and `downloadAttachment` instead fetch with `mode: "cors"`, which sends `Origin`, turn the response into a blob URL, cache it per URL, and render or save from there. This uses the documented endpoints and is not a workaround. In daemon mode these fetches use `fetchBackendResource`, which adds the launch token as an Authorization header and rejects redirects and other origins. Signed URLs remain a future option.
 
 ## Related
 

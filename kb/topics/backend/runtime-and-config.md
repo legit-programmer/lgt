@@ -3,8 +3,8 @@ id: 20261008-runtime-and-config
 title: Runtime and configuration
 tags: [backend, config]
 created: 2026-10-08
-updated: 2026-10-08
-related: [20261008-explicit-configuration, 20261008-harness-adapters, 20261008-running-locally, 20261008-event-store]
+updated: 2026-10-10
+related: [20261008-explicit-configuration, 20261008-harness-adapters, 20261008-running-locally, 20261008-event-store, 20261010-desktop-daemon]
 summary: How the backend starts (entry point, config loading, lock, harness scan, orchestrator start), every setting, and the data directory layout.
 ---
 
@@ -24,6 +24,8 @@ summary: How the backend starts (entry point, config loading, lock, harness scan
    5. Builds the `Orchestrator` with the registry's runner factory and its `artifact_exists`.
    6. Calls `Orchestrator.start()`. That marks leftover active runs `failed` with code `orphaned`, replays the durable queue of every channel, and starts the attachment retention loop.
 4. `BackendRuntime.__getattr__` forwards to the orchestrator, so the gateway treats the runtime as an orchestrator.
+
+Desktop startup adds `--daemon --port 0`. The shell handles detached launch, while `lgt/daemon.py` publishes owner-private `daemon.json`, authenticates the API, and rotates daemon logs. See [Desktop daemon](desktop-daemon.md) for the lifecycle.
 
 ## Configuration file
 
@@ -66,6 +68,8 @@ Two further rules:
 | --- | --- |
 | `workspace.sqlite3` | The whole workspace state (WAL mode) |
 | `workspace.lock` | The single-writer lock |
+| `daemon.json` | Ready daemon PID, port, API version, launch token, and start time |
+| `logs/daemon.log` | Rotating daemon diagnostics |
 | `workspaces/<channel_id>/` | Managed channel directories |
 | `attachments/<attachment_id>/<file>` | Uploads |
 | `logs/<run_id>.stderr.log` | Per-run harness stderr, served by `GET /runs/{id}/log` |

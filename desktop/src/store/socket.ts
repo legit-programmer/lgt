@@ -1,4 +1,4 @@
-import { socketUrl } from "../api/client";
+import { socketHandshake, socketUrl } from "../api/client";
 import type { ClientCommand, ServerFrame } from "../api/types";
 import { useWorkspace } from "./workspace";
 
@@ -44,7 +44,7 @@ class WorkspaceSocket {
     }
     this.socket = socket;
     socket.onopen = () => {
-      socket.send(JSON.stringify({ last_id: useWorkspace.getState().lastEventId }));
+      socket.send(JSON.stringify(socketHandshake(useWorkspace.getState().lastEventId)));
       this.retry = 0;
       useWorkspace.getState().setConnection("open");
     };
