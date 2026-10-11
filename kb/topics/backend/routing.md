@@ -3,19 +3,40 @@ id: 20261008-routing
 title: Routing
 tags: [backend, routing]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-11
 related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol]
-summary: How unmentioned channel messages are routed (Claude, then Codex, then a random member), the routing_decision payload and reason codes, suggested outside agents, and starter-prompt suggestions.
+summary: Shared channel ownership, direct follow-ups, handoff versus delegation, router fallback during independent overlapping work, and model-routing contracts.
 ---
 
 # Routing
 
-> Summary: How unmentioned channel messages are routed (Claude, then Codex, then a random member), the routing_decision payload and reason codes, suggested outside agents, and starter-prompt suggestions.
+> Summary: Shared channel ownership, direct follow-ups, handoff versus delegation, router fallback during independent overlapping work, and model-routing contracts.
 
 ## Files
 
 - `lgt/router.py`: `CLIRouter`, prompt building, and output parsing.
-- `lgt/orchestrator.py`: `_route`, `_apply_route`, and `_mention_decision`.
+- `lgt/orchestrator.py`: `send_message`, `_set_owner`, `_route`, `_apply_route`, `_output`, and `_accept_handoffs`.
+- `lgt/store.py`: `routing_state`, `set_primary_agent`, and `transfer_task_owner`.
+- `lgt/transfers.py`: `parse_transfer`, the explicit transfer envelope shared by harnesses.
+- `lgt/context.py`: `render_turn`, the current roster/policy/assigned-message block.
+
+## Channel ownership
+
+- `channels.primary_agent_id`, `ownership_version`, and `allow_handoff` persist one shared owner for every participant. Completing a task leaves it in place.
+- Explicit user selection updates ownership; multiple mentions remember the last recipient. Mentions always dispatch directly.
+- Unmentioned messages dispatch directly to a valid primary, writing `method: "primary"` without an LLM router call. Busy-primary follow-ups queue normally.
+- Fresh or unavailable-owner channels use the router. Independent active user tasks across multiple owners also use it. `Store.routing_state` counts runs and pending agent deliveries, including those waiting on the global semaphore.
+- Delegation inherits `task_owner_id` from its parent. Multiple agents collaborating on one task do not activate router mode. Coalescing keeps deliveries with different task owners separate and gives each handoff its own turn.
+- A router assignment remembers the first eligible recipient. Once overlap ends, the remembered owner resumes, regardless of which agent finished last.
+- Only user selection, accepted handoff, and router assignment append `ownership_changed`. In-flight routing results cannot supersede a newer ownership version.
+
+## Handoff and delegation
+
+An agent emits a complete `lgt-transfer` fenced JSON message containing `mode` (`handoff` or `delegation`), `target` (member handle or ID), and `text` (the task and context). `parse_transfer` does not interpret quoted examples or human messages. Custom harnesses can alternatively send a structured `transfer` on `message`.
+
+Ordinary agent mentions and explicit delegation dispatch while preserving ownership. A handoff request must come from the current primary's current ownership version, with `allow_handoff` enabled and `routing_mode: primary`. Specialists delegate while router mode is active. It queues as part of the parent task. The receiver's `run_started` accepts the delivery for execution; `_accept_handoffs` then atomically updates ownership and the transferred chain's activity attribution. New selections, disabled policy, and removed receivers prevent a pending ownership transfer. Already delivered work remains delegation if superseded. Cancellation or failure before acceptance does not transfer ownership. Every transfer respects the hop limit.
+
+`allow_handoff` defaults to true; users toggle it through channel actions or `PATCH /channels/{id}`. The channel header displays `routing_mode` from the backend. `agent_transfer` logs requested, accepted, and rejected transfers; progress and completion never select owners. See [the exact API contract](../../../docs/backend-reference.md#channel-changes).
 - `lgt/oneshot.py`: `invoke_cli`, which runs the router CLIs without a shell and with bounded output.
 
 ## Model routing
@@ -30,7 +51,7 @@ summary: How unmentioned channel messages are routed (Claude, then Codex, then a
 
 ```json
 {"for_seqs": [12], "agents": ["…"], "suggested_agents": ["…"],
- "method": "router" | "mention", "reason_code": "router" | "mention" | "router_failed_random" | "none",
+ "method": "router" | "mention" | "primary", "reason_code": "router" | "mention" | "primary" | "router_failed_random" | "none",
  "reason": "free text", "error": "optional"}
 ```
 

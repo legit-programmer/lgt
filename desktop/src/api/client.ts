@@ -147,6 +147,8 @@ export const api = {
   createChannel: (body: { name: string; kind?: "channel" | "dm"; agent_ids?: string[]; cwd?: string | null }) =>
     post<Channel>("/channels", body),
   renameChannel: (channelId: string, name: string) => patch<Channel>(`/channels/${enc(channelId)}`, { name }),
+  setHandoff: (channelId: string, allow_handoff: boolean) =>
+    patch<Channel>(`/channels/${enc(channelId)}`, { allow_handoff }),
   archiveChannel: (channelId: string) => post<Channel>(`/channels/${enc(channelId)}/archive`),
   unarchiveChannel: (channelId: string) => post<Channel>(`/channels/${enc(channelId)}/unarchive`),
   markRead: (channelId: string, seq: number) => post<ChannelSummary>(`/channels/${enc(channelId)}/read`, { seq }),

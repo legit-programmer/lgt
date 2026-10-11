@@ -25,6 +25,7 @@ from .models import (
     TERMINAL_STATUSES, Turn, WorkspaceError, new_id, utc_now,
 )
 from .store import Store
+from .transfers import parse_transfer
 from .run_errors import duration_ms, failure_text, normalize_error
 
 log = logging.getLogger(__name__)
@@ -360,6 +361,7 @@ class Orchestrator:
         elif kind in {
             "message", "message_edit", "tool_call", "system", "context_checkpoint",
             "cwd_changed", "member_added", "member_removed",
+            "ownership_changed", "agent_transfer",
         }:
             events = self.store.events(channel_id)
             plan = cold_plan(events)
@@ -516,7 +518,7 @@ class Orchestrator:
         return retired
 
     async def patch_channel(self, channel_id: str, name: str | None = None,
-                            archived: bool | None = None) -> Channel:
+                            archived: bool | None = None, allow_handoff: bool | None = None) -> Channel:
         def patch() -> Channel:
             channel = self.store.get_channel(channel_id)
             if not any(member["member_kind"] == "human" and member["member_id"] == self.human_id
@@ -528,14 +530,15 @@ class Orchestrator:
                 if any(self.store.get_agent(agent_id).retired_at for agent_id in self._agent_ids(channel_id)):
                     raise WorkspaceError("a retired agent's DM cannot be unarchived")
             with self.store.transaction():
-                self.store.patch_channel(channel_id, name=name, archived=archived)
+                self.store.patch_channel(channel_id, name=name, archived=archived, allow_handoff=allow_handoff)
                 if archived:
                     for queued in self.store.queue(channel_id):
                         if queued.state in PENDING_QUEUE_STATES:
                             self.store.update_queue(queued.queue_id, state="cancelled")
                 event = self._append(channel_id, "channel_changed", "human", self.human_id,
                                      {"name": self.store.get_channel(channel_id).name,
-                                      "archived_at": self.store.get_channel(channel_id).archived_at})
+                                      "archived_at": self.store.get_channel(channel_id).archived_at,
+                                      **({"allow_handoff": allow_handoff} if allow_handoff is not None else {})})
             self._publish(event)
             self._pump(channel_id)
             return self.store.get_channel(channel_id)
@@ -673,13 +676,22 @@ class Orchestrator:
             with self.store.transaction():
                 event = self._append(channel_id, "message", "human", self.human_id, payload)
                 routing = self._mention_decision(event, targets) if targets else None
+                ownership = None
                 for attachment in files:
                     self.store.bind_attachment(attachment.attachment_id, event.seq)
                 if channel.kind == "dm":
                     self.store.enqueue(channel_id, event.seq, self._agent_ids(channel_id)[0])
                 elif targets:
+                    ownership = self._set_owner(event, targets[-1], "user_selection")
                     for agent_id in targets:
                         self.store.enqueue(channel_id, event.seq, agent_id)
+                elif self.store.routing_state(channel_id)["routing_mode"] == "primary":
+                    primary = self.store.get_channel(channel_id).primary_agent_id
+                    routing = self._append(channel_id, "routing_decision", "system", "router", {
+                        "for_seqs": [event.seq], "agents": [primary], "suggested_agents": [],
+                        "method": "primary", "reason_code": "primary", "reason": "channel primary agent",
+                    }, chain_id=event.chain_id)
+                    self.store.enqueue(channel_id, event.seq, primary)
                 else:
                     wait_for = ([r.run_id for r in self.store.list_runs(channel_id, active_only=True)]
                                 if self.settings.route_after_active else [])
@@ -687,6 +699,8 @@ class Orchestrator:
             self._publish(event)
             if routing:
                 self._publish(routing)
+            if ownership:
+                self._publish(ownership)
             self._pump(channel_id)
             return event
 
@@ -822,6 +836,24 @@ class Orchestrator:
             "method": "mention", "reason_code": "mention", "reason": "explicit mentions",
         }, chain_id=message.chain_id, hop=message.hop)
 
+    def _set_owner(self, trigger: Event, agent_id: str, reason: str) -> Event:
+        previous = self.store.get_channel(trigger.channel_id).primary_agent_id
+        self.store.set_primary_agent(trigger.channel_id, agent_id)
+        return self._append(trigger.channel_id, "ownership_changed", "system", "system", {
+            "primary_agent_id": agent_id, "previous_agent_id": previous, "reason": reason,
+            "primary_handle": self.store.get_agent(agent_id).handle,
+            "ownership_version": self.store.get_channel(trigger.channel_id).ownership_version,
+        }, chain_id=trigger.chain_id, hop=trigger.hop)
+
+    def _can_handoff(self, channel_id: str, source: str, ownership_version: int) -> bool:
+        channel = self.store.get_channel(channel_id)
+        return (channel.allow_handoff and not channel.archived_at
+                and channel.primary_agent_id == source
+                and channel.ownership_version == ownership_version
+                and source in self._agent_ids(channel_id)
+                and not self.store.get_agent(source).retired_at
+                and self.store.routing_state(channel_id)["routing_mode"] == "primary")
+
     def _pump(self, channel_id: str) -> None:
         try:
             self._pump_queue(channel_id)
@@ -861,6 +893,16 @@ class Orchestrator:
             elif queued.agent_id not in busy:
                 batches[queued.agent_id].append(queued)
         for agent_id, batch in batches.items():
+            # Keep independent user work separate from a delegated turn for
+            # the same recipient, while preserving normal busy-agent coalescing.
+            owner = batch[0].task_owner_id or agent_id
+            batch = [q for q in batch if (q.task_owner_id or agent_id) == owner]
+            handoff_index = next((i for i, q in enumerate(batch) if
+                self.store.get_event(channel_id, q.event_seq).payload.get("transfer", {}).get("mode") == "handoff"), None)
+            # Accept each handoff in its own turn. Otherwise a coalesced turn
+            # could transfer unrelated delegated work or accept two requests.
+            if handoff_index is not None:
+                batch = batch[:handoff_index] if handoff_index else batch[:1]
             self._dispatch(channel_id, agent_id, batch)
 
     async def _route(self, channel_id: str, batch: list[QueueItem], request: RoutingRequest) -> None:
@@ -874,7 +916,8 @@ class Orchestrator:
                 picks = [random.choice(members)["agent_id"]] if members else []
                 decision = RoutingDecision(picks, "Router failed; random member takes charge.", str(error),
                                            reason_code="router_failed_random" if picks else "none")
-            await self._call(channel_id, lambda: self._apply_route(channel_id, batch, decision))
+            await self._call(channel_id, lambda: self._apply_route(
+                channel_id, batch, decision, request.channel.ownership_version))
         except asyncio.CancelledError:
             raise
         finally:
@@ -882,7 +925,8 @@ class Orchestrator:
             if not self._closing:
                 await self._call(channel_id, lambda: self._pump(channel_id))
 
-    def _apply_route(self, channel_id: str, batch: list[QueueItem], decision: RoutingDecision) -> None:
+    def _apply_route(self, channel_id: str, batch: list[QueueItem], decision: RoutingDecision,
+                     ownership_version: int) -> None:
         # Deliveries may have been cancelled, or agents removed, while routing ran.
         batch = [q for q in batch if self.store.get_queue_item(q.queue_id).state == "awaiting_route"]
         if not batch:
@@ -903,11 +947,16 @@ class Orchestrator:
         with self.store.transaction():
             event = self._append(channel_id, "routing_decision", "system", "router", payload,
                                  chain_id=trigger.chain_id, hop=trigger.hop)
+            ownership = None
+            if decision.agents and self.store.get_channel(channel_id).ownership_version == ownership_version:
+                ownership = self._set_owner(trigger, decision.agents[0], "router_assignment")
             for queued in batch:
                 self.store.update_queue(queued.queue_id, state="dispatched" if decision.agents else "dropped")
                 for agent_id in dict.fromkeys(decision.agents):
                     self.store.enqueue(channel_id, queued.event_seq, agent_id)
         self._publish(event)
+        if ownership:
+            self._publish(ownership)
         self._pump(channel_id)
 
     def _dispatch(self, channel_id: str, agent_id: str, batch: list[QueueItem]) -> None:
@@ -918,7 +967,9 @@ class Orchestrator:
         plan = self._session_plan(agent, channel, end_seq)
         run = Run(new_id(), channel_id, agent_id, trigger_seq, plan.start_seq, end_seq,
                   plan.mode, agent.harness, channel.cwd,
-                  harness_session_id=plan.session.harness_session_id if plan.session else None)
+                  harness_session_id=plan.session.harness_session_id if plan.session else None,
+                  task_owner_id=batch[0].task_owner_id or agent_id,
+                  ownership_version=channel.ownership_version)
         queued_event: Event | None = None
         with self.store.transaction():
             created = self.store.create_run(run)
@@ -934,8 +985,9 @@ class Orchestrator:
         if created:
             self._publish(queued_event)
             files = tuple(self.store.message_attachments(channel_id, sorted({q.event_seq for q in batch})))
-            turn = Turn(run, agent, channel, render_turn(self.store, agent, channel, plan, end_seq),
-                        plan.session, files)
+            delivery_seqs = tuple(q.event_seq for q in batch)
+            turn = Turn(run, agent, channel, render_turn(self.store, agent, channel, plan, end_seq, delivery_seqs),
+                        plan.session, files, delivery_seqs)
             self._turns[run.run_id] = turn
             self._run_tasks[run.run_id] = asyncio.create_task(self._execute(turn))
 
@@ -1010,6 +1062,7 @@ class Orchestrator:
         if output.kind == "run_started":
             if data.get("harness_session_id"):
                 self.store.update_run(run.run_id, harness_session_id=data["harness_session_id"])
+            self._accept_handoffs(turn)
         elif output.kind == "text_delta":
             self._set_activity(run.run_id, "writing", "Writing response")
             self._partials[run.run_id] = self._partials.get(run.run_id, "") + data["text"]
@@ -1023,7 +1076,19 @@ class Orchestrator:
             payload = dict(data)
             payload["author_handle"] = turn.agent.handle
             if output.kind == "message":
-                payload["mentions"] = self._mentions(run.channel_id, payload["text"], None)
+                transfer = parse_transfer(payload["text"], payload.get("transfer"))
+                if transfer:
+                    targets = self._mentions(run.channel_id, "", [transfer["target"]])
+                    if targets == [run.agent_id]:
+                        raise WorkspaceError("an agent cannot transfer a task to itself")
+                    payload["text"] = transfer["text"]
+                    payload["transfer"] = {
+                        **transfer, "target": targets[0], "source": run.agent_id,
+                        "ownership_version": self.store.get_channel(run.channel_id).ownership_version,
+                    }
+                    payload["mentions"] = targets
+                else:
+                    payload["mentions"] = self._mentions(run.channel_id, payload["text"], None)
                 self._partials.pop(run.run_id, None)
             with self.store.transaction():
                 event = self._append(run.channel_id, output.kind, "agent", run.agent_id, payload,
@@ -1037,9 +1102,23 @@ class Orchestrator:
                             chain_id=trigger.chain_id, hop=hop,
                         ))
                     else:
-                        notices.append(self._mention_decision(event, payload["mentions"]))
-                        for agent_id in payload["mentions"]:
-                            self.store.enqueue(run.channel_id, event.seq, agent_id)
+                        handoff = payload.get("transfer", {}).get("mode") == "handoff"
+                        permitted = not handoff or self._can_handoff(run.channel_id, run.agent_id, run.ownership_version)
+                        if permitted:
+                            notices.append(self._mention_decision(event, payload["mentions"]))
+                            for agent_id in payload["mentions"]:
+                                self.store.enqueue(run.channel_id, event.seq, agent_id,
+                                                   task_owner_id=run.task_owner_id or run.agent_id)
+                            notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
+                                "mode": "handoff" if handoff else "delegation", "status": "requested",
+                                "source": run.agent_id, "targets": payload["mentions"], "message_seq": event.seq,
+                            }, chain_id=event.chain_id, hop=hop))
+                        else:
+                            notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
+                                "mode": "handoff", "status": "rejected", "source": run.agent_id,
+                                "targets": payload["mentions"], "message_seq": event.seq,
+                                "text": "Handoff rejected: disabled, ownership changed, or router mode is active. Use delegation instead.",
+                            }, chain_id=event.chain_id, hop=hop))
             self._publish(event)
             for notice in notices:
                 self._publish(notice)
@@ -1076,6 +1155,40 @@ class Orchestrator:
             cancelled = data.get("cancelled") or run.run_id in self._cancelled
             status = "cancelled" if cancelled else "completed" if data.get("ok") else "failed"
             self._finish(turn, status, data.get("error"), data.get("exit_code"))
+
+    def _accept_handoffs(self, turn: Turn) -> None:
+        for seq in turn.delivery_seqs:
+            message = self.store.get_event(turn.channel.channel_id, seq)
+            transfer = message.payload.get("transfer", {})
+            if transfer.get("mode") != "handoff" or transfer.get("target") != turn.agent.agent_id:
+                continue
+            # run_started is the receiver accepting the delivery for execution.
+            # A late start must not supersede a newer selection or assignment.
+            already = any(e.kind == "agent_transfer" and e.payload.get("message_seq") == seq
+                          and e.payload.get("status") in {"accepted", "rejected"}
+                          for e in self.store.events(turn.channel.channel_id, from_seq=seq + 1))
+            if already:
+                continue
+            channel = self.store.get_channel(turn.channel.channel_id)
+            accepted = (self._can_handoff(channel.channel_id, transfer["source"], transfer["ownership_version"])
+                        and turn.agent.agent_id in self._agent_ids(channel.channel_id)
+                        and not self.store.get_agent(turn.agent.agent_id).retired_at)
+            with self.store.transaction():
+                ownership = None
+                if accepted:
+                    self.store.transfer_task_owner(channel.channel_id, message.chain_id,
+                                                   transfer["source"], turn.agent.agent_id)
+                    ownership = self._set_owner(message, turn.agent.agent_id, "accepted_handoff")
+                    self.store.update_run(turn.run.run_id, ownership_version=
+                                          self.store.get_channel(channel.channel_id).ownership_version)
+                event = self._append(channel.channel_id, "agent_transfer", "system", "system", {
+                    "mode": "handoff", "status": "accepted" if accepted else "rejected",
+                    "source": transfer["source"], "targets": [turn.agent.agent_id], "message_seq": seq,
+                    "text": "Handoff accepted." if accepted else "Handoff ownership was superseded; work remains delegated.",
+                }, chain_id=message.chain_id, hop=message.hop)
+            if ownership:
+                self._publish(ownership)
+            self._publish(event)
 
     def _set_activity(self, run_id: str, kind: str, summary: str) -> None:
         previous = self._activities.get(run_id)

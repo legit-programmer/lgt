@@ -157,6 +157,7 @@ def build_routing_prompt(request: RoutingRequest) -> str:
         "channel_id": request.channel.channel_id,
         "kind": request.channel.kind,
         "name": request.channel.name,
+        "primary_agent_id": request.channel.primary_agent_id,
     }
     routing_input = {
         "channel": channel,
@@ -167,7 +168,9 @@ def build_routing_prompt(request: RoutingRequest) -> str:
     return (
         "You are a message router for a multi-agent workspace. Choose which listed agents "
         "should respond to the supplied human messages. Use each agent's description to "
-        "match the work. Busy agents remain eligible; their messages can be queued. An "
+        "match the work. Busy agents remain eligible; their messages can be queued. "
+        "Prefer the current primary for clear continuations and select the relevant task owner when work overlaps. "
+        "Order agents with the intended conversation owner first. An "
         "empty agents list is valid when no agent should respond. Return exactly one JSON "
         "object with keys agents (an array of agent_id strings for agents whose in_channel is true), reason "
         "(a short string), and suggested_agents (agent_id strings for suitable agents outside the channel). "

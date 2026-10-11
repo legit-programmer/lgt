@@ -80,4 +80,14 @@ describe("buildTimeline", () => {
     ], { r1: { status: "failed", agent_id: "a1" } });
     expect(blocks.map((b) => b.type)).toEqual(["run_end", "divider", "notice", "routing"]);
   });
+
+  it("keeps ownership and transfer notices in the conversation", () => {
+    const blocks = buildTimeline([
+      human(1, "Schedule a meeting"),
+      ev(2, "ownership_changed", { primary_agent_id: "a1", reason: "user_selection" }),
+      ev(3, "agent_transfer", { mode: "handoff", status: "accepted", source: "a1", targets: ["a2"] }),
+      ev(4, "ownership_changed", { primary_agent_id: "a2", reason: "accepted_handoff" }),
+    ], {});
+    expect(blocks.map((b) => b.type)).toEqual(["human", "notice", "notice", "notice"]);
+  });
 });

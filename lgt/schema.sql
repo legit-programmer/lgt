@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS channels (
     next_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_seq >= 1),
     rendered_chars_since_checkpoint INTEGER NOT NULL DEFAULT 0 CHECK (rendered_chars_since_checkpoint >= 0),
     created_at TEXT NOT NULL,
-    archived_at TEXT
+    archived_at TEXT,
+    primary_agent_id TEXT REFERENCES agents(agent_id),
+    ownership_version INTEGER NOT NULL DEFAULT 0,
+    allow_handoff INTEGER NOT NULL DEFAULT 1 CHECK (allow_handoff IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS channel_members (
@@ -68,6 +71,8 @@ CREATE TABLE IF NOT EXISTS runs (
     model_context_window INTEGER,
     context_tokens INTEGER,
     cost_usd REAL NOT NULL DEFAULT 0,
+    task_owner_id TEXT REFERENCES agents(agent_id),
+    ownership_version INTEGER NOT NULL DEFAULT 0,
     UNIQUE (channel_id, trigger_seq, agent_id)
 );
 
@@ -107,6 +112,7 @@ CREATE TABLE IF NOT EXISTS dispatch_queue (
     wait_for TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(wait_for)),
     state TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    task_owner_id TEXT REFERENCES agents(agent_id),
     FOREIGN KEY (channel_id, event_seq) REFERENCES events(channel_id, seq) ON DELETE RESTRICT
 );
 

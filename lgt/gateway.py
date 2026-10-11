@@ -68,7 +68,14 @@ class ReadBody(_StrictModel):
 
 
 class ChannelPatch(_StrictModel):
-    name: str = Field(min_length=1)
+    name: str | None = Field(default=None, min_length=1)
+    allow_handoff: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> ChannelPatch:
+        if self.name is None and self.allow_handoff is None:
+            raise ValueError("provide name or allow_handoff")
+        return self
 
 
 class BootstrapBody(_StrictModel):
@@ -558,7 +565,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     @app.patch("/channels/{channel_id}")
     async def patch_channel(channel_id: str, body: ChannelPatch):
         _require_channel(orch, channel_id)
-        return _plain(await orch.patch_channel(channel_id, name=body.name))
+        return _plain(await orch.patch_channel(channel_id, name=body.name, allow_handoff=body.allow_handoff))
 
     @app.post("/channels/{channel_id}/unarchive")
     async def unarchive_channel(channel_id: str):

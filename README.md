@@ -1,6 +1,6 @@
 # Lgt
 
-Lgt is a local workspace where one person talks to a team of AI coding agents. Each agent is backed by a coding CLI on your machine. Agents work in direct messages and in channels, where a router hands each message to the right agent. Every channel keeps an append-only event log that survives restarts.
+Lgt is a local workspace where one person talks to a team of AI coding agents. Each agent is backed by a coding CLI on your machine. Agents work in direct messages and in channels with a shared primary agent for follow-ups. Agents can hand off ownership or delegate work, and a router assigns fresh conversations and handles independent overlapping tasks. Every channel keeps an append-only event log that survives restarts.
 
 This repository holds the backend and the desktop app. The backend is a local FastAPI server with SQLite history, a WebSocket stream, and Codex, Claude Code, Gemini, and custom stdio agents. Codex uses the official `openai-codex` Python SDK. The desktop app in [`desktop/`](desktop/) is a Tauri shell with a React UI built from the design in [`design/`](design/).
 

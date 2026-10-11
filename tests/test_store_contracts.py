@@ -59,6 +59,33 @@ def test_default_bottts_avatars_move_to_critters_once(tmp_path):
     db.close()
 
 
+def test_ownership_columns_migrate_existing_database_without_changing_log(tmp_path):
+    path = tmp_path / "old-routing.db"
+    db = Store(path)
+    db.put_agent(agent("a"))
+    db.create_channel(Channel("c", "channel", "Old channel", str(tmp_path), False),
+                      [("human", "h"), ("agent", "a")])
+    message = db.append_event("c", "message", "human", "h", {"text": "Keep this history"})
+    db.enqueue("c", message.seq, "a")
+    db.create_run(Run("r", "c", "a", message.seq, 1, message.seq, "cold", "codex", str(tmp_path)))
+    for table, columns in {"channels": ["primary_agent_id", "ownership_version", "allow_handoff"],
+                           "runs": ["task_owner_id", "ownership_version"],
+                           "dispatch_queue": ["task_owner_id"]}.items():
+        for column in columns:
+            db.conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+    db.close()
+    reopened = Store(path)
+    try:
+        assert reopened.get_event("c", message.seq) == message
+        assert reopened.get_channel("c").primary_agent_id is None
+        assert reopened.get_channel("c").allow_handoff is True
+        assert reopened.get_run("r").task_owner_id is None
+        assert reopened.queue("c")[0].task_owner_id is None
+        assert reopened.routing_state("c") == {"routing_mode": "router", "active_task_agent_ids": ["a"]}
+    finally:
+        reopened.close()
+
+
 def test_summaries_read_cursor_edits_search_and_reopen(store):
     human = store.append_event("c", "message", "human", "h", {"text": "hello"})
     agent_message = store.append_event("c", "message", "agent", "a", {"text": "old answer"},

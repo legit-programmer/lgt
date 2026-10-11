@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-10
+updated: 2026-10-11
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,13 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-11
+
+- Persist one primary agent per channel. Follow-ups and new tasks stay with it after completion, without a router call. Explicit selections, accepted handoffs, and router assignments are the only ownership transitions.
+- Route ambiguous messages through the router while independent tasks overlap; delegated work stays attributed to its parent. Version checks protect newer selections from delayed transfers and routing results.
+- Add a shared agent transfer protocol, current roster/policy/assignment context, ownership and transfer history, and the channel header's primary/router indicator and automatic handoff toggle.
+- Migrate existing databases additively, preserve ownership through restarts, and test routing, delegation, delayed acceptance, concurrency, shared-user state and frontend snapshots. Two pre-existing POSIX process tests also fail on unchanged HEAD in this container.
 
 ## 2026-10-10
 

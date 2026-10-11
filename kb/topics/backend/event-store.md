@@ -3,7 +3,7 @@ id: 20261008-event-store
 title: Event store
 tags: [backend, storage]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-11
 related: [20261008-glossary, 20261008-dispatch-and-queue, 20261008-live-state, 20261008-attachments, 20261008-mutable-channel-cwd]
 summary: The SQLite schema, the append-only event log and its event kinds, triggers that enforce invariants, migrations, FTS search, and the summary and usage queries.
 ---
@@ -22,12 +22,12 @@ summary: The SQLite schema, the append-only event log and its event kinds, trigg
 | Table | Purpose |
 | --- | --- |
 | `agents` | Agent config. Later columns are `avatar`, `hue`, `extra_args`, `command`, `retired_at` and `dm_channel_id`. |
-| `channels` | Name, kind, cwd, `cwd_managed`, `next_seq`, the checkpoint counter and `archived_at`. |
+| `channels` | Name, kind, cwd, `cwd_managed`, `next_seq`, checkpoint counter, `archived_at`, shared `primary_agent_id`, `ownership_version`, and `allow_handoff`. |
 | `channel_members` | Human and agent memberships. A trigger requires agents to exist. |
 | `events` | The immutable log, unique on `(channel_id, seq)`. `id` is the global cursor. |
-| `runs` | Run rows, token counters, `duration_ms`, structured `error`, and context usage. |
+| `runs` | Run rows, token counters, `duration_ms`, structured `error`, context usage, `task_owner_id`, and the turn's ownership version. |
 | `agent_sessions` | Resumable session state per agent and channel. |
-| `dispatch_queue` | Durable deliveries with a `state`. |
+| `dispatch_queue` | Durable deliveries with a `state` and parent `task_owner_id` for delegation. |
 | `attachments` | Upload metadata and `message_seq` once sent. |
 | `read_cursors` | The last read seq per channel and human. |
 | `harness_limits` | The latest plan-limit snapshot per harness. |
@@ -56,6 +56,8 @@ The original `channels_cwd_immutable` trigger is dropped; see [mutable channel c
 | `tool_call`, `tool_result` | Agent | Normalized tool activity |
 | `run_status` | System | Run lifecycle |
 | `routing_decision` | Router | Who receives a message, and why |
+| `ownership_changed` | System | User selection, accepted handoff, or router assignment, with the new channel ownership version |
+| `agent_transfer` | System | Requested, accepted, or rejected handoff/delegation |
 | `context_reset`, `context_checkpoint` | Human, summarizer | Context boundaries |
 | `cwd_changed`, `member_added`, `member_removed`, `channel_changed` | Human | Channel changes |
 | `delivery_cancelled` | Human | Cancelled pending deliveries |
@@ -64,6 +66,8 @@ The original `channels_cwd_immutable` trigger is dropped; see [mutable channel c
 ## Migrations
 
 `Store._migrate` adds missing columns with `ALTER TABLE`, normalizes old run errors and durations, assigns hues and avatars to agents that lack them, and builds `search_fts` once. There is no migration version table: every migration step checks whether its change already exists before applying it.
+
+Ownership columns migrate additively. Existing channels start without an assigned primary and allow handoffs; their first eligible selection/assignment establishes ownership without editing old events. Legacy runs and deliveries with null task attribution fall back to their recipient as owner. New writes update the projection and append the ownership event in the same mailbox transaction.
 
 ## Query helpers
 

@@ -2,7 +2,7 @@ import { ProviderLogo } from "../../components/ProviderLogo";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Archive, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search,
+  Archive, ArrowRightLeft, Check, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
@@ -139,6 +139,8 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
   const setDetailOpen = useUi((s) => s.setDetailOpen);
   const setPaletteOpen = useUi((s) => s.setPaletteOpen);
   const [renaming, setRenaming] = useState(false);
+  const [savingHandoff, setSavingHandoff] = useState(false);
+  const primary = members.find((a) => a.agent_id === channel.primary_agent_id);
   const working = new Set(channel.active_runs.filter((r) => r.status !== "queued").map((r) => r.agent_id)).size;
   const idle = members.every((a) => statuses[a.agent_id]?.state !== "working");
 
@@ -156,6 +158,16 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
       reportError(error);
     }
   };
+  const toggleHandoff = async () => {
+    setSavingHandoff(true);
+    try {
+      await api.setHandoff(channel.channel_id, !channel.allow_handoff);
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setSavingHandoff(false);
+    }
+  };
 
   return (
     <>
@@ -166,6 +178,9 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
         {members.length === 0 ? "no agents" : working ? `${working} of ${members.length} working` : `${plural(members.length, "agent")} · ${idle ? "idle" : "busy"}`}
       </span>
       <CwdButton channel={channel} />
+      <span className="fv-chip topbar-passive" title="Unmentioned messages go here. Mention an agent to select it for the channel.">
+        <ArrowRightLeft /> {channel.routing_mode === "primary" && primary ? `Primary: ${primary.handle}` : "Router"}
+      </span>
     </TopBarSlot>
     <TopBarSlot target="actions">
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
@@ -180,6 +195,11 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
           <DropdownMenu.Content className="fv-menu fv-glass" align="end" sideOffset={6}>
             <DropdownMenu.Item className="fv-menu-item" onSelect={() => setRenaming(true)}><Pencil /> Rename channel</DropdownMenu.Item>
             <DropdownMenu.Item className="fv-menu-item" onSelect={fresh}><RotateCcw /> Fresh context</DropdownMenu.Item>
+            <DropdownMenu.CheckboxItem className="fv-menu-item" checked={channel.allow_handoff}
+              disabled={savingHandoff} onCheckedChange={() => void toggleHandoff()}>
+              <DropdownMenu.ItemIndicator><Check /></DropdownMenu.ItemIndicator>
+              Allow agents to hand off ownership
+            </DropdownMenu.CheckboxItem>
             <DropdownMenu.Separator className="fv-menu-sep" />
             <DropdownMenu.Item className="fv-menu-item fv-menu-item--danger" onSelect={archive}><Archive /> Archive channel</DropdownMenu.Item>
           </DropdownMenu.Content>

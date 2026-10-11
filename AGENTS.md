@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this project is
 
-Lgt is a local, single-user workspace where one person talks to a team of AI coding agents. Each agent runs a coding CLI already installed on the machine (Codex, Claude Code, Gemini, or a custom stdio command). Agents work in DMs and in channels, where a router picks who handles each unmentioned message.
+Lgt is a local, single-user workspace where one person talks to a team of AI coding agents. Each agent runs a coding CLI already installed on the machine (Codex, Claude Code, Gemini, or a custom stdio command). Agents work in DMs and in channels with shared primary ownership. Unmentioned messages use the primary; a router handles initial assignments and independent overlapping work.
 
 The repo has two halves:
 

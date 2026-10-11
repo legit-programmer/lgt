@@ -103,6 +103,8 @@ async def test_routing_records_mentions_and_suggests_outside_members(workspace):
     factory.started[0].finish()
     await eventually(lambda: not store.list_runs(channel.channel_id, active_only=True))
     router.picks = ["beta"]
+    fresh = orch.create_channel("outside routing", agent_ids=["alpha"])
+    channel = fresh
     outside = await orch.send_message(channel.channel_id, "need beta expertise")
     await eventually(lambda: any(event.kind == "routing_decision" and outside.seq in event.payload["for_seqs"]
                                  for event in store.events(channel.channel_id)))

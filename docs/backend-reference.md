@@ -16,7 +16,9 @@ The backend supports one local human, identified as `local`. HTTP and WebSocket 
 | Process host | Per-run stderr logs, bounded stdout lines, Windows Job Objects, and POSIX process groups. |
 | Checkpoints | Asynchronous rolling summaries through an injected summarizer. CLI generation is enabled only by explicit configuration. |
 
-Unmentioned messages route immediately, including while agents are running. A router decision that selects a busy agent adds durable work to that agent's queue. Messages for the same busy agent coalesce into its next turn. The session advances to the captured `delta_end_seq` after the terminal event commits.
+Channels have one persistent primary agent shared by every channel participant. Unmentioned messages go directly to that primary, including after task completion and while it is busy. Fresh channels, channels whose primary is unavailable, and channels with independent user tasks active across multiple agents use the router. Routing remains immediate. A busy recipient gets durable queued work; messages with the same recipient and task owner coalesce into its next turn. Handoff requests get separate turns so acceptance cannot transfer other queued tasks. The session advances to the captured `delta_end_seq` after the terminal event commits.
+
+Ownership changes only on explicit user selection, accepted handoff, or router assignment. A single mention selects that agent; for multiple explicit mentions, the last recipient is remembered as primary and all receive work. A router assignment remembers its first eligible recipient. While independent tasks overlap, `routing_mode` is `router`; when overlap ends, the remembered primary resumes regardless of completion order. Delegated runs and deliveries count toward their parent task owner, so internal collaboration alone does not activate router mode. Explicit mentions always bypass the router. All transitions commit through the channel mailbox, with version checks preventing delayed handoffs or router replies from superseding a newer selection.
 
 The Codex SDK receives `ApprovalMode.deny_all`, whose wire value is `approvalPolicy: never`, together with `Sandbox.full_access`. Claude specialist agents with a tool allowlist receive `--tools`, `--allowedTools`, `--permission-mode dontAsk`, and an MCP deny rule. Other Claude agents bypass interactive permissions. Gemini agents use `--approval-mode yolo`. The Claude router and summarizer receive `--tools ""` and `--dangerously-skip-permissions`. Their Codex fallbacks receive `--dangerously-bypass-approvals-and-sandbox`.
 
@@ -55,7 +57,7 @@ Logs rotate at 5 MiB with three backups in `data_dir/logs/daemon.log`. Manual st
 | GET, PUT | `/agents/{agent_id}` | Read or replace agent configuration. |
 | POST, DELETE | `/agents/{agent_id}/retire`, `/agents/{agent_id}` | Soft retirement. The POST uses the `/retire` path; DELETE uses the agent path. |
 | GET, POST | `/channels` | List or create channels and DMs. |
-| PATCH | `/channels/{channel_id}` | Rename a channel with `{"name": "..."}`. |
+| PATCH | `/channels/{channel_id}` | Rename with `{"name": "..."}` or set automatic handoffs with `{"allow_handoff": false}`; either or both fields are allowed. |
 | POST | `/channels/{channel_id}/unarchive` | Restore an archived channel. A retired agent's DM stays archived. |
 | POST | `/channels/{channel_id}/read` | Advance the server read cursor with `{"seq": 12}`. |
 | GET | `/channels/{channel_id}/context?agent_id=` | Session mode, message count, reported context tokens, window size, and checkpoint. |
@@ -101,11 +103,13 @@ The harness catalog reports `resume`, `interrupt`, `text_delta`, `allowed_tools`
 
 `GET /channels` returns each channel with `members`, `last_activity_at`, a `preview`, `unread_count`, and `active_runs`. The preview contains `seq`, `kind`, `author_id`, and `text_excerpt`. Edits change previews and search hits; deletions hide the original text. Unread counts include agent messages after the local read cursor. Read cursors advance monotonically and survive restarts.
 
+Channels also persist `primary_agent_id` (nullable), `ownership_version` (monotonically increasing), and `allow_handoff` (defaults to true for new and existing channels). Summaries include backend-computed `routing_mode: "primary" | "router" | "dm"` and `active_task_agent_ids`, covering active runs and pending agent deliveries. `primary_agent_id` retains the last assignment even if that agent leaves or retires; such an unavailable primary uses router mode until the next assignment. These fields arrive through `channel_summary` frames and survive reconnects and restarts. DMs retain their single-recipient behavior. The desktop displays the current destination and a channel action to enable or disable ownership handoffs.
+
 `GET /agents/status` returns `idle`, `working`, `queued`, or `failed`. An activity has `kind`, `summary`, and `since`. A terminal `run_status` includes `agent_id`, `started_at`, `ended_at`, and `duration_ms`. Failure errors contain `code`, `message`, `exit_code`, and `signal`. The server supplies the human-readable failure `text`.
 
 Tool calls contain `tool_call_id`, normalized `tool`, `label`, `summary`, and `input`. Results contain `tool_call_id`, `is_error`, `exit_code`, `duration_ms`, `bytes`, `lines`, `truncated`, and `output`. Byte and line counts describe the full output before truncation.
 
-Mention routing writes `method: "mention"`, `reason_code: "mention"`, and `reason: "explicit mentions"`. The model router sees agents outside the channel and can return `suggested_agents`. Outside agents are suggestions only. Reason codes are `mention`, `router`, `router_failed_random`, and `none`; random fallback selects only channel members.
+Mention routing writes `method: "mention"`, `reason_code: "mention"`, and `reason: "explicit mentions"`. Direct primary delivery uses `method: "primary"` and `reason_code: "primary"`. The model router sees agents outside the channel and can return `suggested_agents`. Outside agents are suggestions only. Reason codes are `mention`, `primary`, `router`, `router_failed_random`, and `none`; random fallback selects only channel members.
 
 Context reports `mode`, `start_seq`, `messages_in_context`, `context_tokens`, `model_context_window`, and `checkpoint_seq`. Usage and window fields are null when the harness has not reported them for the current context. A reset invalidates the previous context usage. Multi-agent channels require `agent_id` on this endpoint.
 
@@ -154,6 +158,20 @@ After replay, the server sends current `channel_summary`, `agent_status`, `conte
 A deletion uses `deleted: true` in `edit_message`. Commands produce durable event frames. Errors produce an error frame. Text deltas are live only. A subscriber whose live buffer overflows receives `resync` and closes with code `1013`.
 
 ## Channel changes
+
+**Agent transfers.** Every channel turn includes current ownership, handoff policy, member handles/IDs/descriptions, and the messages assigned to this turn in `<channel_routing>`. Agents use this complete message to transfer work through any harness:
+
+````text
+```lgt-transfer
+{"mode":"handoff","target":"assistant","text":"Schedule the requested meeting tomorrow. Include the agreed participants."}
+```
+````
+
+`mode: "delegation"` dispatches work while preserving ownership; ordinary agent `@mentions` also delegate. `mode: "handoff"` is available only to the current primary in `routing_mode: primary` when `allow_handoff` is true and its turn's ownership version is still current. The receiver's normalized `run_started` accepts the task for execution and atomically transfers ownership and activity attribution. A queued, cancelled, failed-before-start, or removed receiver does not acquire ownership. A newer selection, assignment, disabled policy, unavailable source, or router mode rejects the ownership transfer; already delivered work continues as delegation. Handoff control messages are parsed only from agent outputs and only when the complete text matches the control envelope. The stored message contains readable task text plus transfer metadata; quoted examples cannot change ownership. Invalid transfers fail the run, and transfers respect membership and the hop limit. Custom harnesses may send structured transfer metadata; see their [protocol](custom-harness.md).
+
+The append-only log records `ownership_changed` with `primary_agent_id`, `previous_agent_id`, `primary_handle`, `reason` (`user_selection`, `accepted_handoff`, or `router_assignment`), and `ownership_version`. `agent_transfer` records `mode`, `status` (`requested`, `accepted`, or `rejected`), `source`, `targets`, `message_seq`, and optional explanatory `text`. Agent progress, completion, and delegation messages never change ownership.
+
+Direct primary delivery writes `routing_decision` with `method: "primary"`, `reason_code: "primary"`, and `reason: "channel primary agent"`. Mention and model-router payloads retain their existing fields. Run and queue persistence includes `task_owner_id`; run responses also expose the ownership version captured for the turn. These are task attribution fields; the channel summary remains authoritative for the current destination.
 
 **Working directory.** A channel's cwd can change only while none of its runs is active. The change appends a `cwd_changed` event with `cwd`, `previous_cwd` and `managed`. Sessions are keyed to the old cwd, so they fail resume validation and rebuild cold from the log. The rebuilt prompt states the new directory. The old directory stays on disk. This replaces the original spec's rule that cwd is immutable.
 

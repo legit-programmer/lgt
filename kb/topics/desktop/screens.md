@@ -3,7 +3,7 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-10
+updated: 2026-10-11
 related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
@@ -17,7 +17,7 @@ summary: Which desktop/src/features file implements each screen of Lgt Screens.p
 | Design screen | Files | Backend |
 | --- | --- | --- |
 | Sidebar: DMs, channels, footer | `features/sidebar/Sidebar.tsx`, `ProfileDialog.tsx` | Channel summaries, agent statuses, `PATCH /me` |
-| 1. Channel view and detail panel | `features/channel/ChannelScreen.tsx` (headers, cwd menu), `Timeline.tsx`, `blocks.tsx`, `Composer.tsx`, `DetailPanel.tsx` (Agents and Run tabs), `RenameDialog.tsx` | Events, messages, members, cwd, queue, cancel delivery, runs, run logs, limits, rename, archive |
+| 1. Channel view and detail panel | `features/channel/ChannelScreen.tsx` (headers, cwd menu, primary/router indicator and handoff toggle), `Timeline.tsx`, `blocks.tsx`, `Composer.tsx`, `DetailPanel.tsx` (Agents and Run tabs), `RenameDialog.tsx` | Events, messages, members, cwd, queue, cancel delivery, runs, run logs, limits, rename, archive, server-computed routing state and `allow_handoff` channel patch |
 | 2. DM view | `ChannelScreen.tsx` (`DmHeader`) | `context` frames (messages in context, tokens), `/new` |
 | 3. New or edit agent | `features/agents/AgentForm.tsx` | `/harnesses`, `/harnesses/scan`, `/harnesses/custom/probe`, `POST /agents`, `PUT /agents/{id}`, `/agents/{id}/retire` |
 | 4. Empty channel | `features/channel/EmptyChannel.tsx` | `/channels/{id}/suggestions`, `/cwd` |

@@ -3,7 +3,7 @@ id: 20261008-context-and-sessions
 title: Context and sessions
 tags: [backend, context]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-11
 related: [20261008-run-lifecycle, 20261008-mutable-channel-cwd, 20261008-glossary, 20261008-live-state]
 summary: How a turn's prompt is rendered from the log, when a harness session is resumed versus rebuilt cold, how resets and edits invalidate sessions, and how checkpoints summarize old context.
 ---
@@ -31,6 +31,8 @@ summary: How a turn's prompt is rendered from the log, when a harness session is
 - `cwd_changed`, `member_added`, `member_removed` and `system` events render as `[system]` lines.
 - Attachment paths are resolved at render time, so the log never stores data-directory paths.
 - `render_turn` prepends `<context_checkpoint>` summary text when the plan uses a checkpoint.
+- Channel turns also prepend `<channel_routing>` with current primary, handoff policy, member handles/IDs/descriptions, and `assigned_messages` for the delivered queue batch. Assigned text respects edits, deletion and context-reset boundaries. This block refreshes on resumed turns as well as cold ones; DMs retain their original prompt shape.
+- Ownership and transfer events render as system history. Ownership notices save the selected handle so later renaming cannot change historical prompts. Transfer envelopes are explicit messages; ordinary agent mentions delegate.
 
 ## Resume or cold (`resolve_session`)
 

@@ -333,7 +333,10 @@ class CustomRunner(StreamingRunner):
         if kind == "run_started":
             return [NormalizedEvent("run_started", {"harness_session_id": event.get("session_id")})]
         if kind in ("text_delta", "message"):
-            return [NormalizedEvent(kind, {"text": str(event.get("text", ""))})]
+            data = {"text": str(event.get("text", ""))}
+            if kind == "message" and "transfer" in event:
+                data["transfer"] = event["transfer"]
+            return [NormalizedEvent(kind, data)]
         if kind == "tool_call":
             call = tool_call(event.get("tool_call_id"), event.get("tool", "tool"), event.get("input", {}))
             if isinstance(event.get("label"), str):

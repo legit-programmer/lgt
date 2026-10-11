@@ -77,6 +77,7 @@ export interface RunState {
 const ACTIVE: ReadonlySet<RunStatus> = new Set(["queued", "starting", "running"]);
 const NOTICE_KINDS = new Set([
   "member_added", "member_removed", "cwd_changed", "channel_changed", "delivery_cancelled", "system",
+  "ownership_changed", "agent_transfer",
 ]);
 
 function as<P>(event: WorkspaceEvent): WorkspaceEvent<P> {

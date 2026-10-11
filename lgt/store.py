@@ -23,7 +23,7 @@ _RUN_UPDATE_FIELDS = frozenset({
     "harness_session_id", "cwd", "pgid", "status", "error", "exit_code",
     "started_at", "ended_at", "duration_ms", "tokens_in", "tokens_out",
     "tokens_cached_in", "tokens_cache_creation", "tokens_reasoning", "tokens_total",
-    "model_context_window", "context_tokens",
+    "model_context_window", "context_tokens", "task_owner_id", "ownership_version",
 })
 
 
@@ -66,6 +66,8 @@ def _channel(row: sqlite3.Row) -> Channel:
         cwd_managed=bool(row["cwd_managed"]), next_seq=row["next_seq"],
         rendered_chars_since_checkpoint=row["rendered_chars_since_checkpoint"],
         created_at=row["created_at"], archived_at=row["archived_at"],
+        primary_agent_id=row["primary_agent_id"], ownership_version=row["ownership_version"],
+        allow_handoff=bool(row["allow_handoff"]),
     )
 
 
@@ -101,6 +103,8 @@ def _run(row: sqlite3.Row) -> Run:
         tokens_cache_creation=row["tokens_cache_creation"],
         tokens_reasoning=row["tokens_reasoning"], tokens_total=row["tokens_total"],
         model_context_window=row["model_context_window"], context_tokens=row["context_tokens"],
+        task_owner_id=row["task_owner_id"],
+        ownership_version=row["ownership_version"],
     )
 
 
@@ -118,6 +122,7 @@ def _queue_item(row: sqlite3.Row) -> QueueItem:
         queue_id=row["queue_id"], channel_id=row["channel_id"],
         event_seq=row["event_seq"], agent_id=row["agent_id"],
         wait_for=_load(row["wait_for"]), state=row["state"], created_at=row["created_at"],
+        task_owner_id=row["task_owner_id"],
     )
 
 
@@ -159,12 +164,20 @@ class Store:
                 "retired_at": "TEXT", "dm_channel_id": "TEXT REFERENCES channels(channel_id)",
             },
             "runs": {
+                "task_owner_id": "TEXT REFERENCES agents(agent_id)",
+                "ownership_version": "INTEGER NOT NULL DEFAULT 0",
                 "duration_ms": "INTEGER", "tokens_cached_in": "INTEGER NOT NULL DEFAULT 0",
                 "tokens_cache_creation": "INTEGER NOT NULL DEFAULT 0",
                 "tokens_reasoning": "INTEGER NOT NULL DEFAULT 0",
                 "tokens_total": "INTEGER NOT NULL DEFAULT 0", "model_context_window": "INTEGER",
                 "context_tokens": "INTEGER",
             },
+            "channels": {
+                "primary_agent_id": "TEXT REFERENCES agents(agent_id)",
+                "ownership_version": "INTEGER NOT NULL DEFAULT 0",
+                "allow_handoff": "INTEGER NOT NULL DEFAULT 1 CHECK (allow_handoff IN (0, 1))",
+            },
+            "dispatch_queue": {"task_owner_id": "TEXT REFERENCES agents(agent_id)"},
         }
         with self.transaction():
             for table, columns in additions.items():
@@ -312,13 +325,15 @@ class Store:
             self.conn.execute(
                 """INSERT INTO channels (
                        channel_id, kind, name, cwd, cwd_managed, next_seq,
-                       rendered_chars_since_checkpoint, created_at, archived_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       rendered_chars_since_checkpoint, created_at, archived_at,
+                       primary_agent_id, ownership_version, allow_handoff
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     channel.channel_id, channel.kind, channel.name, channel.cwd,
                     int(channel.cwd_managed), channel.next_seq,
                     channel.rendered_chars_since_checkpoint, channel.created_at,
-                    channel.archived_at,
+                    channel.archived_at, channel.primary_agent_id, channel.ownership_version,
+                    int(channel.allow_handoff),
                 ),
             )
             for member_kind, member_id in members:
@@ -401,7 +416,7 @@ class Store:
                 raise KeyError(channel_id)
 
     def patch_channel(self, channel_id: str, *, name: str | None = None,
-                      archived: bool | None = None) -> Channel:
+                      archived: bool | None = None, allow_handoff: bool | None = None) -> Channel:
         with self.transaction():
             channel = self.get_channel(channel_id)
             if name is not None:
@@ -412,7 +427,46 @@ class Store:
                 self.conn.execute("UPDATE channels SET archived_at = ? WHERE channel_id = ?",
                                   (utc_now() if archived and channel.archived_at is None else
                                    channel.archived_at if archived else None, channel_id))
+            if allow_handoff is not None:
+                self.conn.execute("UPDATE channels SET allow_handoff = ? WHERE channel_id = ?",
+                                  (int(allow_handoff), channel_id))
             return self.get_channel(channel_id)
+
+    def set_primary_agent(self, channel_id: str, agent_id: str) -> None:
+        with self.transaction():
+            self.conn.execute(
+                "UPDATE channels SET primary_agent_id = ?, ownership_version = ownership_version + 1 WHERE channel_id = ?",
+                (agent_id, channel_id),
+            )
+
+    def routing_state(self, channel_id: str) -> dict[str, Any]:
+        channel = self.get_channel(channel_id)
+        members = {m["member_id"] for m in self.members(channel_id) if m["member_kind"] == "agent"
+                   and not self.get_agent(m["member_id"]).retired_at}
+        owners = {r.task_owner_id or r.agent_id for r in self.list_runs(channel_id, active_only=True)}
+        owners.update(q.task_owner_id or q.agent_id for q in self.queue(channel_id, "awaiting_agent"))
+        owners.intersection_update(members)
+        primary = channel.primary_agent_id if channel.primary_agent_id in members else None
+        return {"routing_mode": "dm" if channel.kind == "dm" else
+                "primary" if primary and len(owners) <= 1 else "router",
+                "active_task_agent_ids": sorted(owners)}
+
+    def transfer_task_owner(self, channel_id: str, chain_id: int, source: str, target: str) -> None:
+        """Attribute the transferred task and its delegated work to its receiver."""
+        with self.transaction():
+            self.conn.execute(
+                """UPDATE runs SET task_owner_id = ? WHERE channel_id = ?
+                   AND COALESCE(task_owner_id, agent_id) = ?
+                   AND status NOT IN ('completed', 'failed', 'cancelled')
+                   AND trigger_seq IN (SELECT seq FROM events WHERE channel_id = ? AND chain_id = ?)""",
+                (target, channel_id, source, channel_id, chain_id),
+            )
+            self.conn.execute(
+                """UPDATE dispatch_queue SET task_owner_id = ? WHERE channel_id = ?
+                   AND COALESCE(task_owner_id, agent_id) = ? AND state = 'awaiting_agent'
+                   AND event_seq IN (SELECT seq FROM events WHERE channel_id = ? AND chain_id = ?)""",
+                (target, channel_id, source, channel_id, chain_id),
+            )
 
     def append_event(
         self,
@@ -595,13 +649,14 @@ class Store:
         agent_id: str | None = None,
         wait_for: list[str] | None = None,
         state: str = "awaiting_agent",
+        task_owner_id: str | None = None,
     ) -> QueueItem:
         with self.transaction():
             cursor = self.conn.execute(
                 """INSERT INTO dispatch_queue
-                   (channel_id, event_seq, agent_id, wait_for, state, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (channel_id, event_seq, agent_id, _dump(wait_for or []), state, utc_now()),
+                   (channel_id, event_seq, agent_id, wait_for, state, created_at, task_owner_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (channel_id, event_seq, agent_id, _dump(wait_for or []), state, utc_now(), task_owner_id),
             )
             row = self.conn.execute(
                 "SELECT * FROM dispatch_queue WHERE queue_id = ?", (cursor.lastrowid,),
@@ -675,8 +730,8 @@ class Store:
                        cwd, pgid, status, error, exit_code, started_at, ended_at,
                        tokens_in, tokens_out, duration_ms, tokens_cached_in,
                        tokens_cache_creation, tokens_reasoning, tokens_total,
-                       model_context_window, context_tokens
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       model_context_window, context_tokens, task_owner_id, ownership_version
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(channel_id, trigger_seq, agent_id) DO NOTHING""",
                 (
                     run.run_id, run.channel_id, run.agent_id, run.trigger_seq,
@@ -687,7 +742,7 @@ class Store:
                     run.ended_at, run.tokens_in, run.tokens_out, run.duration_ms,
                     run.tokens_cached_in, run.tokens_cache_creation,
                     run.tokens_reasoning, run.tokens_total, run.model_context_window,
-                    run.context_tokens,
+                    run.context_tokens, run.task_owner_id, run.ownership_version,
                 ),
             )
             return cursor.rowcount == 1
@@ -902,7 +957,7 @@ class Store:
                 (channel_id,),
             )
         ]
-        return {**asdict(channel), "members": members, "last_activity_at": last["ts"] if last else channel.created_at,
+        return {**asdict(channel), **self.routing_state(channel_id), "members": members, "last_activity_at": last["ts"] if last else channel.created_at,
                 "preview": preview, "unread_count": unread, "active_runs": active_runs}
 
     def list_channel_summaries(self, human_id: str) -> list[dict[str, Any]]:

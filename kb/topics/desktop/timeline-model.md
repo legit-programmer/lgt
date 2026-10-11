@@ -3,7 +3,7 @@ id: 20261008-timeline-model
 title: Timeline model
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-11
 related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle]
 summary: The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
 ---
@@ -27,7 +27,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 | `routing` | `routing_decision` | "routed → chips · reason". For `none`, Add buttons for suggested agents that aren't members. |
 | `run_end` | Terminal `run_status` that is `failed` or `cancelled` | Failure uses the server's `text`. Cancellation shows the duration. |
 | `divider` | `context_reset`, `context_checkpoint` | |
-| `notice` | `member_added`, `member_removed`, `cwd_changed`, `channel_changed`, `delivery_cancelled`, `system` | |
+| `notice` | `member_added`, `member_removed`, `cwd_changed`, `channel_changed`, `delivery_cancelled`, `ownership_changed`, `agent_transfer`, `system` | Ownership selections and transfer outcomes stay visible in history. |
 
 - **Live segment:** the last segment of a run whose status is `queued`, `starting` or `running` is live. It shows the working badge with an elapsed clock, the partial text with a caret, the last three tool rows, and Stop.
 - **Tool groups:** finished segments with two or more tools collapse into "ran N tools · read · bash ×2 · pass/err · duration". Each child row expands to its output.

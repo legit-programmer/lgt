@@ -39,4 +39,12 @@ Attachment paths refer to server storage. A harness can pass supported files int
 
 Tool calls and results are normalized before they enter the event log. The backend measures output bytes and lines before applying `tool_output_cap`. Token usage events are increments for the current run. `message` commits text to history; `text_delta` is live only. A successful run requires a terminal event with `ok: true` and a zero process exit. The terminal event must be the last stdout line. A failed terminal can include `error` and `cancelled`.
 
+Channel prompts include a `<channel_routing>` block with current ownership, the handoff policy, the channel roster and `assigned_messages`. A custom harness can transfer work with the same complete `lgt-transfer` fenced message supported by the other harnesses, or with structured metadata on a message:
+
+```json
+{"type":"message","text":"Passing the calendar task to the assistant.","transfer":{"mode":"handoff","target":"assistant","text":"Schedule the requested meeting tomorrow with the agreed participants."}}
+```
+
+The `transfer` object requires exactly `mode`, `target`, and nonempty `text`. Targets must be channel-member handles or IDs. Delegation preserves ownership. Handoff is permitted only for the current primary and when the channel allows it. Emit `run_started` before executing a received handoff: that event accepts the delivery and allows the backend to transfer ownership atomically. A failure before `run_started` does not transfer ownership. Pending handoffs superseded by a newer ownership selection remain delegated work. Do not infer ownership from the last speaker. See [agent transfers](backend-reference.md#channel-changes).
+
 The executable is responsible for honoring its advertised capabilities. Unsupported event types fail the run.

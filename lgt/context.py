@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -69,6 +70,11 @@ def render_delta(
             lines.append(f"[system] {event.payload['handle']} joined the channel")
         elif event.kind == "member_removed":
             lines.append(f"[system] {event.payload['handle']} left the channel")
+        elif event.kind == "ownership_changed":
+            lines.append(f"[system] Channel ownership assigned to {event.payload.get('primary_handle', event.payload['primary_agent_id'])}")
+        elif event.kind == "agent_transfer":
+            lines.append(f"[system] {event.payload['mode']} {event.payload['status']}: "
+                         f"{event.payload['source']} to {', '.join(event.payload['targets'])}")
 
     name = html.escape(channel.name, quote=True)
     return f'<channel name="{name}" new_since="{from_seq - 1}">\n' + "\n".join(lines) + "\n</channel>"
@@ -175,10 +181,43 @@ def rendered_size(store: Store, channel_id: str, from_seq: int, to_seq: int) -> 
 
 def render_turn(
     store: Store, agent: Agent, channel: Channel, plan: SessionPlan, end_seq: int,
+    delivery_seqs: tuple[int, ...] = (),
 ) -> str:
     delta = render_delta(
         store, agent.agent_id, channel.channel_id, plan.start_seq, end_seq, plan.mode,
     )
     if plan.summary:
-        return f"<context_checkpoint>\n{plan.summary}\n</context_checkpoint>\n{delta}"
-    return delta
+        delta = f"<context_checkpoint>\n{plan.summary}\n</context_checkpoint>\n{delta}"
+    if channel.kind == "dm":
+        return delta
+    members = {m["member_id"] for m in store.members(channel.channel_id) if m["member_kind"] == "agent"}
+    roster = [{"agent_id": a.agent_id, "handle": a.handle, "description": a.description}
+              for a in store.list_agents() if a.agent_id in members]
+    state = {"primary_agent_id": channel.primary_agent_id, "ownership_version": channel.ownership_version,
+             "allow_handoff": channel.allow_handoff,
+             **store.routing_state(channel.channel_id), "agents": roster}
+    edits: dict[int, dict] = {}
+    for event in store.events(channel.channel_id, to_seq=end_seq):
+        if event.kind == "message_edit":
+            edits.setdefault(event.payload["target_seq"], {}).update(event.payload)
+    state["assigned_messages"] = [
+        {"seq": seq, "author_id": message.author_id,
+         "text": edits.get(seq, {}).get("text", message.payload.get("text", "")),
+         "transfer": message.payload.get("transfer")}
+        for seq in delivery_seqs if seq >= plan.start_seq and not edits.get(seq, {}).get("deleted")
+        for message in [store.get_event(channel.channel_id, seq)]
+    ]
+    instructions = (
+        "You are a member of this channel. Handle requests within your capabilities. "
+        "The backend owns channel-wide conversation ownership. Task completion never changes it. "
+        "For work requiring another listed agent, emit a complete message using this format:\n"
+        '```lgt-transfer\n{"mode":"delegation","target":"agent handle or ID","text":"Task and relevant context"}\n```\n'
+        "Delegation keeps the primary owner; ordinary @mentions also delegate. "
+        "Only the current primary may use mode handoff when routing_mode is primary and allow_handoff is true, "
+        "to transfer the user's task and ownership. The receiver accepts when its harness starts the turn. "
+        "If this turn receives a handoff, you become primary at turn start unless a newer selection superseded it. "
+        "If handoff is disabled, delegate. Do not execute tasks outside your capabilities. "
+        "Include relevant paths, decisions, constraints, and attachment references in the transfer text. "
+        "Use only agents in the roster. Act on assigned_messages; other channel messages provide background.\n"
+    )
+    return f"<channel_routing>\n{instructions}{json.dumps(state, ensure_ascii=False)}\n</channel_routing>\n{delta}"

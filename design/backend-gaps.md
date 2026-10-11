@@ -58,6 +58,7 @@ This compares `Lgt Screens.pdf` with the backend as of 2026-10-08. Each gap is a
 
 | UI element | Backend contract | Reference |
 | --- | --- | --- |
+| Channel primary/router indicator and automatic handoff toggle | Persisted channel ownership, computed `routing_mode` / `active_task_agent_ids`, `PATCH /channels/{id}` with `allow_handoff`, ownership and transfer events | [backend reference](../docs/backend-reference.md#channel-changes) |
 | Change working directory | `PUT /channels/{id}/cwd`, `cwd_changed` event, cold rebuild of affected sessions | [backend reference](../docs/backend-reference.md#channel-changes) |
 | Remove an agent from a channel (× in the detail panel) | `DELETE /channels/{id}/members/{agent_id}`, `member_removed` / `member_added` events | same |
 | Queued message, "sends when it's free", Cancel | `GET /channels/{id}/queue`, live `queue` frame, `POST /channels/{id}/messages/{seq}/cancel`, `cancel_delivery` WS command, `delivery_cancelled` event | same |

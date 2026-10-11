@@ -32,6 +32,17 @@ def wait_for_run(client, cid, count):
     pytest.fail("run did not start")
 
 
+def test_channel_handoff_setting_and_authoritative_routing_state(routes):
+    client, _, _, cid = routes
+    assert client.patch(f"/channels/{cid}", json={"allow_handoff": False}).json()["allow_handoff"] is False
+    assert client.patch(f"/channels/{cid}", json={}).status_code == 422
+    client.post(f"/channels/{cid}/messages", json={"text": "Code", "mentions": ["alpha"]})
+    summary = next(c for c in client.get("/channels").json() if c["channel_id"] == cid)
+    assert summary["primary_agent_id"] == "alpha" and summary["ownership_version"] == 1
+    assert summary["routing_mode"] == "primary" and summary["active_task_agent_ids"] == ["alpha"]
+    assert summary["allow_handoff"] is False
+
+
 def test_attachment_upload_download_send_and_delete(routes):
     client, _, _, cid = routes
     uploaded = client.post(f"/channels/{cid}/attachments", params={"filename": "page.html"},

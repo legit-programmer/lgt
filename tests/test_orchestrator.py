@@ -54,14 +54,15 @@ async def test_busy_agent_messages_coalesce_without_advancing_to_current_max(wor
 
 
 @pytest.mark.asyncio
-async def test_unmentioned_message_routes_immediately_and_selects_busy_agent(workspace):
+async def test_unmentioned_message_queues_to_busy_primary_without_router(workspace):
     orch, store, factory, router, channel = workspace
     await orch.send_message(channel.channel_id, "start", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     routed = await orch.send_message(channel.channel_id, "more work")
-    await eventually(lambda: bool(router.calls) and bool(store.queue(channel.channel_id, "awaiting_agent")))
+    await eventually(lambda: bool(store.queue(channel.channel_id, "awaiting_agent")))
     assert len(factory.started) == 1
-    assert next(a for a in router.calls[0].roster if a["agent_id"] == "alpha")["busy"]
+    assert not router.calls
+    assert store.get_channel(channel.channel_id).primary_agent_id == "alpha"
     assert store.queue(channel.channel_id, "awaiting_agent")[0].event_seq == routed.seq
     factory.started[0].finish()
     await eventually(lambda: len(factory.started) == 2)

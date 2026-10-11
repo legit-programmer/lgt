@@ -115,9 +115,14 @@ export interface Channel {
   next_seq: number;
   created_at: string;
   archived_at: string | null;
+  primary_agent_id: string | null;
+  ownership_version: number;
+  allow_handoff: boolean;
 }
 
 export interface ChannelSummary extends Channel {
+  routing_mode: "router" | "primary" | "dm";
+  active_task_agent_ids: string[];
   members: Member[];
   last_activity_at: string;
   preview: Preview | null;
@@ -144,6 +149,8 @@ export interface TokenCounters {
 }
 
 export interface Run extends TokenCounters {
+  task_owner_id: string | null;
+  ownership_version: number;
   run_id: string;
   channel_id: string;
   agent_id: string;
@@ -313,8 +320,8 @@ export interface RoutingPayload {
   for_seqs: number[];
   agents: string[];
   suggested_agents: string[];
-  method: "mention" | "router";
-  reason_code: "mention" | "router" | "router_failed_random" | "none";
+  method: "mention" | "router" | "primary";
+  reason_code: "mention" | "router" | "primary" | "router_failed_random" | "none";
   reason: string;
   error?: string;
 }

@@ -343,6 +343,12 @@ export function Notice({ event, ctx }: { event: WorkspaceEvent; ctx: BlockContex
   const payload = event.payload as Record<string, unknown>;
   const handle = (id: unknown, fallback: unknown) => (typeof id === "string" && ctx.agents[id]?.handle) || String(fallback ?? "agent");
   switch (event.kind) {
+    case "ownership_changed":
+      return <div className="fv-notice"><ArrowRight /><span>{handle(payload.primary_agent_id, "agent")} is now the channel primary</span></div>;
+    case "agent_transfer": {
+      const targets = (payload.targets as string[]).map((id) => handle(id, id)).join(", ");
+      return <div className="fv-notice"><ArrowRight /><span>{String(payload.mode)} {String(payload.status)} · {handle(payload.source, "agent")} → {targets}{payload.status === "rejected" ? ` · ${String(payload.text ?? "")}` : ""}</span></div>;
+    }
     case "member_added":
       return <div className="fv-notice"><UserPlus /><span>{handle(payload.agent_id, payload.handle)} joined the channel</span></div>;
     case "member_removed":
@@ -359,7 +365,8 @@ export function Notice({ event, ctx }: { event: WorkspaceEvent; ctx: BlockContex
       return (
         <div className="fv-notice">
           <Hash />
-          <span>{payload.archived_at ? "channel archived" : `channel is now #${String(payload.name)}`}</span>
+          <span>{payload.archived_at ? "channel archived" : payload.allow_handoff !== undefined ?
+            `agent handoffs ${payload.allow_handoff ? "enabled" : "disabled"}` : `channel is now #${String(payload.name)}`}</span>
         </div>
       );
     case "delivery_cancelled": {

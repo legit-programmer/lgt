@@ -7,7 +7,7 @@ The Python package in `lgt/`: storage, orchestration, harness adapters, and the 
 - [Dispatch and queue](dispatch-and-queue.md) — mailboxes, queue states, coalescing, dispatch.
 - [Run lifecycle](run-lifecycle.md) — statuses, output handling, cancellation, errors, orphan recovery.
 - [Context and sessions](context-and-sessions.md) — prompt rendering, resume or cold, checkpoints.
-- [Routing](routing.md) — model routing, reason codes, suggestions.
+- [Routing](routing.md) — shared ownership, handoff/delegation, direct follow-ups, overlapping tasks, model routing and suggestions.
 - [Harness adapters](harness-adapters.md) — registry, Codex, Claude, Gemini, custom.
 - [Process hosting](process-hosting.md) — process trees, Job Objects, SDK host, one-shot calls.
 - [Attachments](attachments.md) — storage, limits, binding, serving, native inputs.

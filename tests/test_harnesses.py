@@ -148,6 +148,14 @@ def test_claude_allowlist_restricts_tools_in_command(tmp_path):
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
 
 
+def test_custom_adapter_preserves_structured_transfer_metadata(tmp_path):
+    runner = CustomRunner((sys.executable, FIXTURE), tool_output_cap=100,
+                          line_limit=8192, cancel_grace_seconds=.1, log_dir=tmp_path)
+    handoff = {"mode": "handoff", "target": "assistant", "text": "Schedule the meeting"}
+    output, = runner.translate({"type": "message", "text": "Passing the task along", "transfer": handoff})
+    assert output.kind == "message" and output.data["transfer"] == handoff
+
+
 @pytest.mark.asyncio
 async def test_registry_scan_finds_cli_without_model_call(tmp_path, monkeypatch):
     monkeypatch.setenv("LGT_FAKE_HARNESS", "claude")

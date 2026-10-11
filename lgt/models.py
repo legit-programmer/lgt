@@ -16,7 +16,7 @@ EVENT_KINDS = frozenset({
     "message", "tool_call", "tool_result", "run_status", "routing_decision",
     "context_reset", "context_checkpoint", "message_edit", "system",
     "cwd_changed", "member_added", "member_removed", "delivery_cancelled",
-    "channel_changed", "agent_retired",
+    "channel_changed", "agent_retired", "ownership_changed", "agent_transfer",
 })
 PENDING_QUEUE_STATES = frozenset({"awaiting_route", "awaiting_agent"})
 
@@ -88,6 +88,9 @@ class Channel:
     rendered_chars_since_checkpoint: int = 0
     created_at: str = field(default_factory=utc_now)
     archived_at: str | None = None
+    primary_agent_id: str | None = None
+    ownership_version: int = 0
+    allow_handoff: bool = True
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,8 @@ class Run:
     model_context_window: int | None = None
     context_tokens: int | None = None
     duration_ms: int | None = None
+    task_owner_id: str | None = None
+    ownership_version: int = 0
 
 
 @dataclass(frozen=True)
@@ -159,6 +164,7 @@ class QueueItem:
     wait_for: list[str]
     state: str
     created_at: str
+    task_owner_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +197,7 @@ class Turn:
     # Files attached to the messages that triggered this turn. Adapters pass
     # images the harness can view as native inputs; the prompt names every file.
     attachments: tuple[Attachment, ...] = ()
+    delivery_seqs: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
