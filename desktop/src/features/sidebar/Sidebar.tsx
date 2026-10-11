@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { Hash, Moon, Plus, Power, Search, Sun } from "lucide-react";
-import { isTauri, quitWorkspace } from "../../api/client";
+import { useEffect, useState, type ReactNode } from "react";
+import { Hash, Link, Moon, Plus, Power, Search, Settings, Sun } from "lucide-react";
+import { api, isRemoteConnection, isTauri, quitWorkspace } from "../../api/client";
 import type { Agent, AgentStatus, ChannelSummary } from "../../api/types";
 import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
 import { activeAgents } from "../../lib/agents";
@@ -9,6 +9,8 @@ import { useNow } from "../../lib/useNow";
 import { useUi } from "../../store/ui";
 import { reportError, useWorkspace } from "../../store/workspace";
 import { ProfileDialog } from "./ProfileDialog";
+import { DevicesDialog } from "../settings/DevicesDialog";
+import { ConnectionDialog } from "../settings/ConnectionDialog";
 
 export function Sidebar() {
   const agentsById = useWorkspace((s) => s.agents);
@@ -25,6 +27,14 @@ export function Sidebar() {
   const now = useNow(30_000);
   const [editingProfile, setEditingProfile] = useState(false);
   const [quitting, setQuitting] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [localAdmin, setLocalAdmin] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void api.connectionInfo().then((info) => { if (current) setLocalAdmin(info.local_admin); }, reportError);
+    return () => { current = false; };
+  }, []);
 
   const quit = async () => {
     setQuitting(true);
@@ -91,6 +101,12 @@ export function Sidebar() {
           </span>
         </button>
         <ProfileDialog open={editingProfile} onOpenChange={setEditingProfile} />
+        <DevicesDialog open={devicesOpen} onOpenChange={setDevicesOpen} />
+        <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
+        {localAdmin ? <button className="fv-icon-btn" aria-label="Settings" title="Settings · Devices"
+          onClick={() => setDevicesOpen(true)}><Settings /></button> : null}
+        <button className="fv-icon-btn" aria-label="Connect to a workspace" title="Connect to a workspace"
+          onClick={() => setConnectionOpen(true)}><Link /></button>
         <button className="fv-icon-btn" onClick={toggleTheme}
           aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
           {theme === "dark" ? <Sun /> : <Moon />}
@@ -98,7 +114,7 @@ export function Sidebar() {
         {isTauri() ? (
           <button className="fv-icon-btn" disabled={quitting} onClick={() => void quit()}
             aria-label={quitting ? "Quitting Lgt" : "Quit Lgt"}
-            title="Quit Lgt and stop background runs">
+            title={isRemoteConnection() ? "Quit Lgt" : "Quit Lgt and stop background runs"}>
             <Power />
           </button>
         ) : null}

@@ -70,14 +70,19 @@ def test_daemon_requires_token_before_http_or_socket_state(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_daemon_subprocess_discovery_duplicate_lock_and_graceful_shutdown(tmp_path):
+@pytest.mark.parametrize("remote", [False, True])
+async def test_daemon_subprocess_discovery_duplicate_lock_and_graceful_shutdown(tmp_path, remote):
     repo = Path(__file__).resolve().parents[1]
     raw = json.loads((repo / "config.example.json").read_text(encoding="utf-8"))
     data_dir = tmp_path / "data"
     raw["settings"]["data_dir"] = str(data_dir)
+    if remote:
+        raw["settings"]["listen_host"] = "0.0.0.0"
     config = tmp_path / "config.json"
     config.write_text(json.dumps(raw), encoding="utf-8")
-    argv = [sys.executable, "-m", "lgt", "--config", str(config), "--port", "0", "--daemon"]
+    argv = [sys.executable, "-m", "lgt", "--config", str(config), "--port", "0"]
+    if not remote:
+        argv.append("--daemon")
     tree = await spawn_command(argv, str(repo), line_limit=1048576)
     duplicate = None
     try:

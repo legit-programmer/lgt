@@ -40,7 +40,17 @@ Configuration is selected in this order:
 2. The repository's `config.local.json`, in development only.
 3. `backend.json` in Tauri's application config directory, generated from `config.example.json` with the application data directory and desktop origins.
 
-Existing configuration files are never rewritten. Set `LGT_BACKEND_URL` to use an externally managed loopback server instead of automatic launch. If that server uses daemon authentication, also set `LGT_BACKEND_TOKEN`. Quitting the desktop leaves an external server running. In a plain browser, `pnpm dev` uses `VITE_LGT_BACKEND_URL` and requires a manually started backend.
+Existing configuration files are never rewritten. Set `LGT_BACKEND_URL` to an externally managed HTTP(S) server instead of automatic launch and `LGT_BACKEND_TOKEN` to its credential when authentication is enabled. Quitting the desktop leaves an external server running. In a plain browser, `pnpm dev` uses `VITE_LGT_BACKEND_URL` and requires a manually started backend.
+
+## Pair devices
+
+Configure the host backend's `listen_host: "0.0.0.0"`, a stable `listen_port`, and a reachable `advertised_url`. The launcher uses that configured port for remote access; local-only desktop launches retain their dynamically allocated port. Restart the backend after changing these settings. See [remote access configuration](../docs/backend-reference.md#device-pairing-and-remote-access).
+
+**Settings → Devices** is available only to a desktop authenticated as the local administrator. Name a connection and choose **Pair device**. The QR contains the address and persistent device credential; **Copy pairing code** copies the same JSON. The code is returned only when created, and cannot be recovered from the device list. Revocation disconnects all sockets using that credential and rejects future requests.
+
+**Connect to a workspace** verifies a pasted code and stores it under `lgt.pairedConnection` in local storage. Stored pairing takes precedence over local daemon startup and environment overrides. HTTP, media fetches, and the WebSocket handshake authenticate with that device credential. **Use local workspace** forgets it and reloads the default connection. Quitting a paired client exits that client without stopping a daemon. Remote workspace folder paths refer to the host computer.
+
+Native mobile scanning is a future client feature; the versioned QR payload and backend protocol are ready for it.
 
 See [Desktop daemon lifecycle](../kb/topics/backend/desktop-daemon.md) for authentication and diagnostics. `--daemon` keeps Python in the foreground internally; the Tauri launcher detaches it and opens no console.
 

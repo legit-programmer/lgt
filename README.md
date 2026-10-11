@@ -14,7 +14,7 @@ uv run python -m lgt --config config.local.json
 
 The API documentation is then at <http://127.0.0.1:8000/docs>. `GET /harnesses` lists detected CLIs, models, and capabilities. Create an agent with one of those models; the server assigns its ID, avatar seed, hue, and DM. `GET /templates` and `POST /bootstrap` create starter agents and a general channel.
 
-The server binds to `127.0.0.1`. Requests use the same origin or an exact origin in `settings.allowed_origins`, such as `tauri://localhost` or `http://localhost:5173`. It reuses your existing CLI sign-ins. The router calls the Claude CLI and falls back to the bundled Codex CLI.
+The server binds to `127.0.0.1` by default. Requests use the same origin or an exact origin in `settings.allowed_origins`, such as `tauri://localhost` or `http://localhost:1420`. Remote listening requires device authentication; see [device pairing](docs/backend-reference.md#device-pairing-and-remote-access). It reuses your existing CLI sign-ins. The router calls the Claude CLI and falls back to the bundled Codex CLI.
 
 `config.local.json` must set the original runtime settings explicitly. Origin, upload quota, retention, and thumbnail settings have defaults for existing configurations. Set `checkpoint_mode` to `cli` to enable rolling context summaries, or `deferred` to turn them off.
 
@@ -23,6 +23,14 @@ The server binds to `127.0.0.1`. Requests use the same origin or an exact origin
 After `uv sync`, run `pnpm install` and `pnpm tauri dev` from `desktop/`. The shell discovers or starts its backend automatically and shows a frosted launch screen until the workspace is ready. Closing the window keeps background runs alive. Use **Quit Lgt** in the sidebar to stop them and exit.
 
 An existing `config.local.json` is used in development and must allow the desktop origins. Without one, the shell writes an explicit configuration in its application config directory. See the [desktop README](desktop/README.md) for overrides and release packaging.
+
+## Connect another device
+
+Set `settings.listen_host` to `0.0.0.0`, choose a stable `listen_port`, and set `advertised_url` to the HTTP(S) origin reachable by your clients. Include their browser/webview origins in `allowed_origins`, then restart the daemon. Remote listeners automatically use authenticated daemon mode, even without `--daemon`.
+
+On the host desktop, open **Settings → Devices**, name the connection, and generate its QR code. A mobile client can scan the JSON payload; another desktop can use **Connect to a workspace** and paste the copied pairing code. The credential is stored in client local storage and survives daemon restarts. Revoke it from the host's Devices settings to reject future requests and disconnect active sockets. Device administration and shutdown require the host's local daemon token over loopback.
+
+The daemon accepts inbound connections; routing through a VPN or a public HTTPS endpoint is configured separately. Use an encrypted network or HTTPS for bearer credentials. Pairing does not establish network reachability.
 
 ## Tests
 

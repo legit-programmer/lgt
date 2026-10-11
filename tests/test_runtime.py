@@ -62,6 +62,37 @@ def test_configuration_rejects_boolean_run_limit(tmp_path):
         load_config(path)
 
 
+@pytest.mark.parametrize("key,value", [
+    ("listen_host", "attacker.example"), ("listen_host", []),
+    ("listen_port", True), ("listen_port", -1), ("listen_port", 65536),
+    ("advertised_url", "http://user:secret@host"), ("advertised_url", "http://host/path"),
+    ("advertised_url", "http://0.0.0.0:8000"), ("advertised_url", "http://host:0"),
+    ("advertised_url", "http://host?token=secret"), ("advertised_url", "file:///tmp"),
+])
+def test_remote_connection_configuration_is_validated(tmp_path, key, value):
+    path = config_file(tmp_path)
+    raw = json.loads(path.read_text())
+    raw["settings"][key] = value
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match=key):
+        load_config(path)
+
+
+def test_remote_configuration_keeps_old_configs_compatible(tmp_path):
+    path = config_file(tmp_path)
+    raw = json.loads(path.read_text())
+    for key in ("listen_host", "listen_port", "advertised_url"):
+        raw["settings"].pop(key)
+    path.write_text(json.dumps(raw))
+    config = load_config(path)
+    assert config.settings.listen_host == "127.0.0.1"
+    assert config.settings.listen_port == 8000
+    assert config.settings.advertised_url is None
+    raw["settings"].update(listen_host="0.0.0.0", listen_port=9000, advertised_url="https://lgt.example/")
+    path.write_text(json.dumps(raw))
+    assert load_config(path).settings.advertised_url == "https://lgt.example"
+
+
 def test_real_runtime_http_and_ws_use_database_on_server_thread(tmp_path, monkeypatch):
     async def probe(self):
         return {"version": "fixture", "capabilities": {"app_server": True}}

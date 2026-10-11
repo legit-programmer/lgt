@@ -3,8 +3,8 @@ id: 20261008-desktop-architecture
 title: Desktop architecture
 tags: [desktop]
 created: 2026-10-08
-updated: 2026-10-10
-related: [20261010-desktop-daemon, 20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model]
+updated: 2026-10-12
+related: [20261010-desktop-daemon, 20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model, 20261012-device-pairing]
 summary: How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
 ---
 
@@ -22,12 +22,12 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
                                                │ HTTP actions (fetch)
                                                │ WebSocket /ws (state)
                                                ▼
-                                         Lgt backend on 127.0.0.1
+                                         Lgt backend: local or paired remote host
 ```
 
 - **The shell owns backend startup.** `src-tauri/src/lib.rs` registers `ensure_backend` and `quit_workspace`, implemented in `src-tauri/src/daemon.rs`. Discovery verifies the private `daemon.json` descriptor over authenticated HTTP or starts a detached backend. Closing the window preserves the daemon; **Quit Lgt** shuts it down. See [Desktop daemon](../backend/desktop-daemon.md).
 - **Security:**
-  - `src-tauri/tauri.conf.json` sets a strict CSP: `connect-src` and `img-src` allow only loopback.
+  - `src-tauri/tauri.conf.json` sets a strict CSP: `connect-src` permits HTTP(S) and WS(S) for configurable remote backends. Images use local/data/blob sources; authenticated media fetches reject other origins and redirects.
   - `capabilities/default.json` grants folder picking, URL opening, and title-bar window controls. Daemon launch stays in Rust commands; the frontend gets no arbitrary shell execution permission.
 - **Identifier and window:** the identifier is `com.lgt.desktop`, and the main window label is `main`.
 - **Top bar (title bar and app chrome in one row):**
@@ -39,7 +39,7 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 
 ## Boot sequence (`src/App.tsx`)
 
-1. `StartupOverlay` shows the frosted loading screen. `resolveBackendUrl()` (`src/api/client.ts`) awaits the Tauri `ensure_backend` command and stores its URL and launch token in memory. In a plain browser it reads `VITE_LGT_BACKEND_URL`.
+1. `StartupOverlay` shows the frosted loading screen. `resolveBackendUrl()` (`src/api/client.ts`) awaits the Tauri `ensure_backend` command and stores its URL and launch token in memory. Stored pairing takes precedence in both Tauri and a browser, skipping local daemon discovery. In a plain browser without pairing it reads `VITE_LGT_BACKEND_URL`.
 2. `useWorkspace.boot()` loads agents, channel summaries, agent statuses and the profile in parallel.
 3. `workspaceSocket.start()` opens `/ws` with the cursor and launch token in its first frame.
 4. The workspace renders. With no agents it opens onboarding; otherwise the most recent conversation, unless the URL hash names a view.
@@ -59,6 +59,7 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 | `lib/format.ts`, `lib/agents.ts`, `lib/media.ts`, `lib/folder.ts`, `lib/useNow.ts` | Formatting, hues and CLI labels, blob media, folder dialog, ticking clock |
 | `components/StartupOverlay.tsx`, `StartupOverlay.css` | Frosted launch screen, animated mark, reduced-motion styles |
 | `components/` | `Avatar` (DiceBear), `Status` (dots, badges, elapsed), `Markdown` (mentions), `Toasts` |
+| `features/settings/` | Local Devices administration, QR display, and pairing-code import |
 | `features/` | Screens; see [screens](screens.md) |
 | `styles/` | `tokens.css`, `components.css`, `app.css` ([design system](design-system.md)) |
 
@@ -83,3 +84,5 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 - [Design system](design-system.md) — tokens and component classes.
 - [Origins and media](origins-and-media.md) — CSP, allowed origins, blob media.
 - [No frontend workarounds](../decisions/no-frontend-workarounds.md) — the rule behind the data layer.
+
+- [Device pairing and remote access](../backend/device-pairing.md) — persistent credentials and local device administration.

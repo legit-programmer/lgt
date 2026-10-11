@@ -10,7 +10,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             daemon::ensure_backend,
-            daemon::quit_workspace
+            daemon::quit_workspace,
+            daemon::quit_client
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Lgt shell");

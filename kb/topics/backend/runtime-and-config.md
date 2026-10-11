@@ -3,8 +3,8 @@ id: 20261008-runtime-and-config
 title: Runtime and configuration
 tags: [backend, config]
 created: 2026-10-08
-updated: 2026-10-10
-related: [20261008-explicit-configuration, 20261008-harness-adapters, 20261008-running-locally, 20261008-event-store, 20261010-desktop-daemon]
+updated: 2026-10-12
+related: [20261008-explicit-configuration, 20261008-harness-adapters, 20261008-running-locally, 20261008-event-store, 20261010-desktop-daemon, 20261012-device-pairing]
 summary: How the backend starts (entry point, config loading, lock, harness scan, orchestrator start), every setting, and the data directory layout.
 ---
 
@@ -14,7 +14,7 @@ summary: How the backend starts (entry point, config loading, lock, harness scan
 
 ## Startup sequence
 
-1. `python -m lgt --config <path> [--port 8000]` (`lgt/__main__.py`) runs Uvicorn bound to `127.0.0.1`, with one worker and `proxy_headers=False`.
+1. `python -m lgt --config <path> [--port 8000]` (`lgt/__main__.py`) runs Uvicorn bound to `settings.listen_host` (default `127.0.0.1`), on `settings.listen_port` unless `--port` overrides it, with one worker and `proxy_headers=False`.
 2. `runtime.application` calls `load_config`, then wraps a `BackendRuntime` in `gateway.create_app`.
 3. On app startup, `BackendRuntime.start` (`lgt/runtime.py`) runs these steps:
    1. Acquires `RuntimeLock` on `data_dir/workspace.lock` (`lgt/locking.py`). A second backend on the same data directory fails to start.
@@ -25,7 +25,7 @@ summary: How the backend starts (entry point, config loading, lock, harness scan
    6. Calls `Orchestrator.start()`. That marks leftover active runs `failed` with code `orphaned`, replays the durable queue of every channel, and starts the attachment retention loop.
 4. `BackendRuntime.__getattr__` forwards to the orchestrator, so the gateway treats the runtime as an orchestrator.
 
-Desktop startup adds `--daemon --port 0`. The shell handles detached launch, while `lgt/daemon.py` publishes owner-private `daemon.json`, authenticates the API, and rotates daemon logs. See [Desktop daemon](desktop-daemon.md) for the lifecycle.
+Desktop startup adds `--daemon`, plus `--port 0` only for a local-only listener. Remote listeners use the configured stable port. The CLI automatically enables daemon authentication for non-loopback listeners. The shell handles detached launch, while `lgt/daemon.py` publishes owner-private `daemon.json`, authenticates the API, and rotates daemon logs. See [Desktop daemon](desktop-daemon.md) for the lifecycle.
 
 ## Configuration file
 
@@ -55,6 +55,9 @@ Desktop startup adds `--daemon --port 0`. The shell handles detached launch, whi
 | `attachment_channel_quota_bytes` | `262144000` |
 | `attachment_retention_seconds` | `86400` |
 | `thumbnail_max_dimension` | `512` |
+| `listen_host` | `127.0.0.1` (or `0.0.0.0` for remote clients) |
+| `listen_port` | `8000` (0–65535) |
+| `advertised_url` | `null` (reachable HTTP(S) origin for pairing) |
 
 Two further rules:
 - `route_after_active` is fixed to `false`. Setting it in the file is an error.
@@ -66,7 +69,7 @@ Two further rules:
 
 | Path | Contents |
 | --- | --- |
-| `workspace.sqlite3` | The whole workspace state (WAL mode) |
+| `workspace.sqlite3` | The whole workspace state, including hashed device credentials and revocations (WAL mode) |
 | `workspace.lock` | The single-writer lock |
 | `daemon.json` | Ready daemon PID, port, API version, launch token, and start time |
 | `logs/daemon.log` | Rotating daemon diagnostics |
@@ -80,3 +83,5 @@ Two further rules:
 - [Harness adapters](harness-adapters.md) — what the startup scan discovers.
 - [Running locally](../operations/running-locally.md) — a working config for development.
 - [Event store](event-store.md) — what `Store` creates and migrates.
+
+- [Device pairing and remote access](device-pairing.md) — persistent credentials and local device administration.

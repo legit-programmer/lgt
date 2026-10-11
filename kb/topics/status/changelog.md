@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-11
+updated: 2026-10-12
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,13 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-12
+
+- Reuse the FastAPI gateway for authenticated remote clients, with configurable inbound listening and advertised pairing addresses.
+- Persist named device credential hashes; local desktop administration creates, lists, renames and revokes connections. Revocation immediately closes device sockets and survives restarts.
+- Add Settings → Devices with QR codes and verified pairing-code import into local storage. Paired clients skip local launch, use host filesystem paths, and quit without stopping the backend.
+- Preserve loopback-only development and local-only launch tokens, device administration, and shutdown.
 
 ## 2026-10-11
 

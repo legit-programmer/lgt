@@ -57,8 +57,15 @@ class WorkspaceSocket {
       }
       useWorkspace.getState().applyFrame(frame);
     };
-    socket.onclose = () => {
-      if (this.socket === socket) this.socket = null;
+    socket.onclose = (event) => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      if (event.code === 1008) {
+        this.stopped = true;
+        useWorkspace.getState().setConnection("unreachable");
+        useWorkspace.getState().toast(event.reason || "This workspace rejected the connection. Pair again to reconnect.");
+        return;
+      }
       if (!this.stopped) this.schedule();
     };
   }

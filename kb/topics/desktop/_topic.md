@@ -8,3 +8,4 @@ The Tauri v2 and React app in `desktop/`.
 - [Screens and features](screens.md) — design screen to file to backend routes, plus omissions.
 - [Ember design system](design-system.md) — tokens, components and rules.
 - [Origins, CSP and media loading](origins-and-media.md) — allowed origins, CSP, blob media.
+- [Device pairing](../backend/device-pairing.md) — Devices settings, QR codes, and remote client connections.

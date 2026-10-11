@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 from .models import (
     DEFAULT_AVATAR_STYLE, Agent, Attachment, Channel, Event, QueueItem, Run, Session,
-    WorkspaceError, utc_now,
+    WorkspaceError, new_id, utc_now,
 )
 from .run_errors import duration_ms as calculate_duration_ms, normalize_error
 
@@ -153,6 +153,57 @@ class Store:
         self.conn.executescript(schema)
         self._savepoint_counter = 0
         self._migrate()
+
+    def create_device(self, name: str, credential_hash: str) -> dict[str, Any]:
+        device_id = new_id()
+        with self.transaction():
+            self.conn.execute(
+                "INSERT INTO devices(device_id, name, credential_hash, created_at) VALUES (?, ?, ?, ?)",
+                (device_id, name, credential_hash, utc_now()),
+            )
+        return self.get_device(device_id)
+
+    def get_device(self, device_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT device_id, name, created_at, last_used_at, revoked_at FROM devices WHERE device_id = ?",
+            (device_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(device_id)
+        return dict(row)
+
+    def list_devices(self) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT device_id, name, created_at, last_used_at, revoked_at FROM devices ORDER BY created_at, device_id",
+        )]
+
+    def device_for_credential(self, credential_hash: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT device_id, name, created_at, last_used_at, revoked_at FROM devices "
+            "WHERE credential_hash = ? AND revoked_at IS NULL", (credential_hash,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def touch_device(self, device_id: str) -> None:
+        # Last connection is minute-granular to avoid writes for every media fetch.
+        self.conn.execute(
+            "UPDATE devices SET last_used_at = ? WHERE device_id = ? AND revoked_at IS NULL "
+            "AND (last_used_at IS NULL OR julianday(?) - julianday(last_used_at) >= 1.0 / 1440)",
+            (now := utc_now(), device_id, now),
+        )
+
+    def rename_device(self, device_id: str, name: str) -> dict[str, Any]:
+        self.get_device(device_id)
+        self.conn.execute("UPDATE devices SET name = ? WHERE device_id = ?", (name, device_id))
+        return self.get_device(device_id)
+
+    def revoke_device(self, device_id: str) -> dict[str, Any]:
+        self.get_device(device_id)
+        self.conn.execute(
+            "UPDATE devices SET revoked_at = COALESCE(revoked_at, ?) WHERE device_id = ?",
+            (utc_now(), device_id),
+        )
+        return self.get_device(device_id)
 
     def _migrate(self) -> None:
         """Add columns to databases created before the current schema."""

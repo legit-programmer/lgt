@@ -328,6 +328,28 @@ export interface RoutingPayload {
 
 // WebSocket frames --------------------------------------------------------
 
+export interface Device {
+  device_id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface DevicePairing {
+  type: "lgt-device";
+  version: 1;
+  url: string;
+  device_id: string;
+  name: string;
+  token: string;
+}
+
+export interface ConnectionInfo {
+  device_id: string | null;
+  local_admin: boolean;
+}
+
 export type ServerFrame =
   | { type: "event"; event: WorkspaceEvent }
   | { type: "delta"; run_id: string; channel_id: string; text: string }

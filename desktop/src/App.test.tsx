@@ -29,6 +29,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./api/client", () => ({
   isTauri: () => true,
+  isRemoteConnection: () => false,
+  forgetPairedConnection: vi.fn(),
+  savePairedConnection: vi.fn(),
   backendUrl: mocks.backendUrl,
   resolveBackendUrl: mocks.resolveBackendUrl,
 }));

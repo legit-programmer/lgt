@@ -212,3 +212,12 @@ WHEN OLD.message_seq IS NOT NULL
 BEGIN
     SELECT RAISE(ABORT, 'a sent attachment is immutable');
 END;
+-- Device credentials are independent of the append-only workspace event log.
+CREATE TABLE IF NOT EXISTS devices (
+    device_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    credential_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+);

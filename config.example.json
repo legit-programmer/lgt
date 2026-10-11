@@ -20,7 +20,10 @@
     "attachment_channel_quota_bytes": 262144000,
     "attachment_retention_seconds": 86400,
     "thumbnail_max_dimension": 512,
-    "allowed_origins": []
+    "allowed_origins": [],
+    "listen_host": "127.0.0.1",
+    "listen_port": 8000,
+    "advertised_url": null
   },
   "checkpoint_mode": "deferred",
   "codex_bin": null,

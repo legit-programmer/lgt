@@ -156,6 +156,13 @@ fn stop_managed(
     }
 }
 
+#[tauri::command]
+pub fn quit_client(app: AppHandle) {
+    // A paired frontend can bypass discovery even after a local window reload.
+    // Never stop an old managed daemon while viewing another workspace.
+    app.exit(0);
+}
+
 fn http_client() -> Result<Client, String> {
     Client::builder()
         .no_proxy()
@@ -168,15 +175,9 @@ fn http_client() -> Result<Client, String> {
 
 fn validate_url(value: &str) -> Result<String, String> {
     let url = url::Url::parse(value.trim())
-        .map_err(|_| "LGT_BACKEND_URL must be a loopback HTTP URL".to_string())?;
-    let loopback = match url.host() {
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        None => false,
-    };
-    if !loopback
-        || url.scheme() != "http"
+        .map_err(|_| "LGT_BACKEND_URL must be an HTTP(S) URL".to_string())?;
+    if url.host().is_none()
+        || !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
@@ -184,7 +185,7 @@ fn validate_url(value: &str) -> Result<String, String> {
         || url.path() != "/"
     {
         return Err(
-            "LGT_BACKEND_URL must be a loopback HTTP origin without credentials or a path"
+            "LGT_BACKEND_URL must be an HTTP(S) origin without credentials or a path"
                 .to_string(),
         );
     }
@@ -295,10 +296,14 @@ fn ensure(app: &AppHandle, client: &Client) -> Result<BackendConnection, String>
         .open(&log_path)
         .map_err(|error| format!("Could not open {}: {error}", log_path.display()))?;
     let mut command = backend_command(app)?;
-    command
-        .arg("--config")
-        .arg(&paths.config)
-        .args(["--port", "0", "--daemon"]);
+    command.arg("--config").arg(&paths.config).arg("--daemon");
+    // Local desktop daemons keep their dynamic port. Remote pairing needs the
+    // configured listen_port to survive restarts and match advertised_url.
+    let config: Value = serde_json::from_slice(&fs::read(&paths.config).map_err(|error| error.to_string())?)
+        .map_err(|error| format!("Invalid backend configuration: {error}"))?;
+    if config["settings"]["listen_host"].as_str().unwrap_or("127.0.0.1") == "127.0.0.1" {
+        command.args(["--port", "0"]);
+    }
     launch_and_wait(
         client,
         &descriptor,
@@ -686,17 +691,17 @@ finally:
         fs::remove_dir(directory).unwrap();
     }
     #[test]
-    fn backend_override_requires_a_loopback_origin() {
+    fn backend_override_requires_an_http_origin_without_secrets() {
         for value in [
             "http://127.0.0.1:9000/",
             "http://localhost:8000",
             "http://[::1]:8000",
+            "https://example.org",
+            "http://example.org",
         ] {
             assert!(validate_url(value).is_ok(), "{value}");
         }
         for value in [
-            "https://example.org",
-            "http://example.org",
             "http://127.0.0.1/path",
             "http://user@localhost",
             "http://localhost?token=secret",

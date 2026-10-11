@@ -1,4 +1,4 @@
-"""Local HTTP and WebSocket API for the multi-agent workspace."""
+"""HTTP and WebSocket API for local and paired workspace clients."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from lgt.attachments import VIEWABLE_IMAGE_TYPES, AttachmentTooLarge
+from lgt.device_auth import DeviceAuth
 from lgt.models import Agent, Attachment, Event, WorkspaceError, new_id
 from lgt.services import COMMANDS, template_catalog
 from lgt.run_errors import duration_ms, failure_text, normalize_error
@@ -85,6 +86,10 @@ class BootstrapBody(_StrictModel):
 
 class ProfilePatch(_StrictModel):
     display_name: str = Field(min_length=1, max_length=100)
+
+
+class DeviceName(_StrictModel):
+    name: str = Field(min_length=1, max_length=100)
 
 
 class CustomProbeBody(_StrictModel):
@@ -229,7 +234,7 @@ def _loopback_host(host: str | None) -> bool:
         return False
 
 
-def _authority_parts(authority: str, scheme: str) -> tuple[str, int] | None:
+def _authority_parts(authority: str, scheme: str, *, local_only: bool = True) -> tuple[str, int] | None:
     try:
         parsed = urlsplit(f"{scheme}://{authority}")
         if (
@@ -244,16 +249,22 @@ def _authority_parts(authority: str, scheme: str) -> tuple[str, int] | None:
         port = parsed.port
     except ValueError:
         return None
-    if not _loopback_host(host):
+    if not host or (local_only and not _loopback_host(host)):
         return None
     normalized_scheme = {"ws": "http", "wss": "https"}.get(scheme, scheme)
     default_port = 443 if normalized_scheme == "https" else 80
     return host.lower().rstrip("."), port or default_port
 
 
-def _scope_is_local_and_same_origin(scope: Mapping[str, Any], allowed_origins: tuple[str, ...] = ()) -> bool:
+def _scope_is_loopback(scope: Mapping[str, Any]) -> bool:
     client = scope.get("client")
-    if not isinstance(client, (tuple, list)) or not client or not _loopback_host(str(client[0])):
+    return isinstance(client, (tuple, list)) and bool(client) and _loopback_host(str(client[0]))
+
+
+def _scope_has_approved_origin(
+    scope: Mapping[str, Any], allowed_origins: tuple[str, ...] = (), *, remote: bool = False,
+) -> bool:
+    if not remote and not _scope_is_loopback(scope):
         return False
 
     headers = {
@@ -271,7 +282,7 @@ def _scope_is_local_and_same_origin(scope: Mapping[str, Any], allowed_origins: t
             return False
         host, port = str(server[0]), int(server[1])
         request_authority = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
-    request_parts = _authority_parts(request_authority, normalized_request_scheme)
+    request_parts = _authority_parts(request_authority, normalized_request_scheme, local_only=not remote)
     if request_parts is None:
         return False
 
@@ -300,7 +311,7 @@ def _scope_is_local_and_same_origin(scope: Mapping[str, Any], allowed_origins: t
 
     if normalized_request_scheme != origin_scheme:
         return False
-    origin_parts = _authority_parts(origin_authority, origin_scheme)
+    origin_parts = _authority_parts(origin_authority, origin_scheme, local_only=not remote)
     return request_parts is not None and request_parts == origin_parts
 
 
@@ -386,7 +397,18 @@ def _command_error(error: BaseException) -> dict[str, Any]:
 
 
 def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -> FastAPI:
-    """Create the local API around an injected, already configured orchestrator."""
+    """Create the API; remote listeners always require authenticated daemon mode."""
+    remote = getattr(orch.settings, "listen_host", "127.0.0.1") != "127.0.0.1"
+    if remote and daemon is None:
+        raise ValueError("Remote access requires authenticated daemon mode.")
+    device_auth = DeviceAuth()
+
+    def authenticate(scope: Mapping[str, Any], token: Any) -> tuple[bool, str | None]:
+        if (daemon is not None and _scope_is_loopback(scope) and isinstance(token, str)
+                and secrets.compare_digest(token.encode(), daemon.token.encode())):
+            return True, None
+        device = device_auth.authenticate(orch.store, token)
+        return False, device["device_id"] if device is not None else None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -402,10 +424,10 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     app.state.orchestrator = orch
 
     @app.middleware("http")
-    async def require_loopback_origin(request: Request, call_next):
+    async def require_origin_and_credentials(request: Request, call_next):
         allowed = getattr(orch.settings, "allowed_origins", ())
-        if not _scope_is_local_and_same_origin(request.scope, allowed):
-            return _http_error(403, "local_only", "This workspace accepts approved local origins only.")
+        if not _scope_has_approved_origin(request.scope, allowed, remote=remote):
+            return _http_error(403, "forbidden_origin" if remote else "local_only", "This workspace accepts approved origins only.")
         origin = request.headers.get("origin")
         if request.method == "OPTIONS" and request.headers.get("access-control-request-method"):
             requested_method = request.headers["access-control-request-method"].upper()
@@ -420,8 +442,15 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         else:
             supplied = request.headers.get("authorization", "")
-            if daemon is not None and not secrets.compare_digest(supplied.encode(), ("Bearer " + daemon.token).encode()):
+            token = supplied[7:] if supplied.startswith("Bearer ") else None
+            admin, device_id = authenticate(request.scope, token) if daemon is not None else (False, None)
+            request.state.local_admin = admin
+            request.state.device_id = device_id
+            administration = request.url.path == "/shutdown" or request.url.path == "/devices" or request.url.path.startswith("/devices/")
+            if daemon is not None and not admin and device_id is None:
                 response = _http_error(401, "unauthorized", "A valid workspace token is required.")
+            elif administration and daemon is not None and not admin:
+                response = _http_error(403, "local_only", "Device administration and shutdown require the local daemon token over loopback.")
             else:
                 response = await call_next(request)
         if origin is not None:
@@ -452,6 +481,46 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     @app.get("/health")
     async def health():
         return {"status": "ok", "application": "lgt", "api_version": 1, "pid": os.getpid()}
+
+    @app.get("/connection")
+    async def connection(request: Request):
+        return {"device_id": request.state.device_id, "local_admin": request.state.local_admin}
+
+    @app.get("/devices")
+    async def list_devices():
+        if daemon is None:
+            raise HTTPException(status_code=404, detail="Daemon mode is required.")
+        return orch.store.list_devices()
+
+    @app.post("/devices", status_code=201)
+    async def pair_device(body: DeviceName):
+        if daemon is None:
+            raise HTTPException(status_code=404, detail="Daemon mode is required.")
+        url = getattr(orch.settings, "advertised_url", None)
+        if not remote or url is None:
+            return _http_error(409, "pairing_unavailable", "Configure listen_host=0.0.0.0 and advertised_url before pairing a device.")
+        device, token = device_auth.create(orch.store, body.name)
+        response = JSONResponse(status_code=201, content={"device": device, "pairing": {
+            "type": "lgt-device", "version": 1, "url": url,
+            "device_id": device["device_id"], "name": device["name"], "token": token,
+        }})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.patch("/devices/{device_id}")
+    async def rename_device(device_id: str, body: DeviceName):
+        if daemon is None:
+            raise HTTPException(status_code=404, detail="Daemon mode is required.")
+        name = body.name.strip()
+        if not name or not name.isprintable():
+            raise ValueError("Device name must contain printable characters.")
+        return orch.store.rename_device(device_id, name)
+
+    @app.post("/devices/{device_id}/revoke")
+    async def revoke_device(device_id: str):
+        if daemon is None:
+            raise HTTPException(status_code=404, detail="Daemon mode is required.")
+        return device_auth.revoke(orch.store, device_id)
 
     @app.post("/shutdown")
     async def shutdown():
@@ -808,10 +877,10 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        if not _scope_is_local_and_same_origin(
-            websocket.scope, getattr(orch.settings, "allowed_origins", ()),
+        if not _scope_has_approved_origin(
+            websocket.scope, getattr(orch.settings, "allowed_origins", ()), remote=remote,
         ):
-            await websocket.close(code=1008, reason="local same-origin access required")
+            await websocket.close(code=1008, reason="approved origin required")
             return
         await websocket.accept()
         subscription = None
@@ -819,14 +888,28 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
         receive_task: asyncio.Task[Any] | None = None
         event_task: asyncio.Task[Any] | None = None
         error_task: asyncio.Task[Any] | None = None
+        revoke_task: asyncio.Task[Any] | None = None
+        device_id: str | None = None
+        revoked: asyncio.Event | None = None
+
+        async def send_frame(frame: Any) -> None:
+            if revoked is not None and revoked.is_set():
+                await websocket.close(code=1008, reason="Device credential revoked.")
+                raise WebSocketDisconnect(code=1008)
+            await websocket.send_json(frame)
+
         try:
             try:
                 initial = await asyncio.wait_for(websocket.receive_json(), timeout=5) if daemon is not None else await websocket.receive_json()
                 if daemon is not None:
                     supplied_token = initial.get("token") if isinstance(initial, dict) else None
-                    if not isinstance(supplied_token, str) or not secrets.compare_digest(supplied_token.encode(), daemon.token.encode()):
+                    admin, device_id = authenticate(websocket.scope, supplied_token)
+                    if not admin and device_id is None:
                         await websocket.close(code=1008, reason="A valid workspace token is required.")
                         return
+                    if device_id is not None:
+                        revoked = device_auth.subscribe(device_id)
+                        revoke_task = asyncio.create_task(revoked.wait())
                     initial = dict(initial)
                     initial.pop("token")
                 if (
@@ -835,7 +918,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                     or type(initial.get("last_id")) is not int
                     or initial["last_id"] < 0
                 ):
-                    await websocket.send_json({
+                    await send_frame({
                         "type": "error",
                         "error": {"code": "invalid_cursor", "message": "First frame must contain a nonnegative integer last_id."},
                     })
@@ -845,7 +928,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                 await websocket.close(code=1008, reason="Workspace authentication timed out.")
                 return
             except (ValueError, WebSocketDisconnect):
-                await websocket.send_json({
+                await send_frame({
                     "type": "error",
                     "error": {"code": "invalid_cursor", "message": "First frame must contain a nonnegative integer last_id."},
                 })
@@ -862,10 +945,10 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             state_frames = orch.snapshot_frames(channel_ids) if hasattr(orch, "snapshot_frames") else []
             replay_max = max([last_id, *(event.id for event in replay)])
             if len(replay) > replay_cap:
-                await websocket.send_json({"type": "resync", "channels": sorted(channel_ids)})
+                await send_frame({"type": "resync", "channels": sorted(channel_ids)})
             else:
                 for event in replay:
-                    await websocket.send_json({"type": "event", "event": _event_payload(event, orch.store)})
+                    await send_frame({"type": "event", "event": _event_payload(event, orch.store)})
 
             seen_snapshots: set[Any] = set()
             for snapshot in snapshots:
@@ -877,11 +960,11 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                         seen_snapshots.add(snapshot_id)
                     except TypeError:
                         pass
-                await websocket.send_json(_plain(snapshot))
+                await send_frame(_plain(snapshot))
             for queue in queues:
-                await websocket.send_json(queue)
+                await send_frame(queue)
             for frame in state_frames:
-                await websocket.send_json(_plain(frame))
+                await send_frame(_plain(frame))
 
             command_errors: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
@@ -900,10 +983,16 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             event_task = asyncio.create_task(subscription.queue.get())
             error_task = asyncio.create_task(command_errors.get())
             while True:
+                waiting = {receive_task, event_task, error_task}
+                if revoke_task is not None:
+                    waiting.add(revoke_task)
                 done, _ = await asyncio.wait(
-                    {receive_task, event_task, error_task},
+                    waiting,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
+                if revoke_task in done:
+                    await websocket.close(code=1008, reason="Device credential revoked.")
+                    return
                 if receive_task in done:
                     try:
                         incoming = receive_task.result()
@@ -912,7 +1001,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                     if incoming.get("type") == "websocket.disconnect":
                         return
                     if incoming.get("type") != "websocket.receive":
-                        await websocket.send_json({
+                        await send_frame({
                             "type": "error",
                             "error": {"code": "invalid_command", "message": "Expected a JSON command object."},
                         })
@@ -925,7 +1014,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                         except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
                             raw = None
                         if raw is None:
-                            await websocket.send_json({
+                            await send_frame({
                                 "type": "error",
                                 "error": {"code": "invalid_command", "message": "Command frame must contain valid JSON."},
                             })
@@ -936,7 +1025,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                     receive_task = asyncio.create_task(websocket.receive())
 
                 if error_task in done:
-                    await websocket.send_json(error_task.result())
+                    await send_frame(error_task.result())
                     error_task = asyncio.create_task(command_errors.get())
 
                 if event_task in done:
@@ -945,7 +1034,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                     if durable_id is None or durable_id > replay_max:
                         if durable_id is not None:
                             replay_max = max(replay_max, durable_id)
-                        await websocket.send_json(_plain(message))
+                        await send_frame(_plain(message))
                     if isinstance(message, Mapping) and message.get("type") == "resync":
                         await websocket.close(code=1013, reason="event queue overflow; resync required")
                         return
@@ -960,8 +1049,10 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             with anyio.CancelScope(shield=True):
                 if subscription is not None:
                     orch.bus.unsubscribe(subscription)
+                if device_id is not None and revoked is not None:
+                    device_auth.unsubscribe(device_id, revoked)
                 transient_tasks = tuple(
-                    task for task in (receive_task, event_task, error_task)
+                    task for task in (receive_task, event_task, error_task, revoke_task)
                     if task is not None
                 )
                 for task in transient_tasks:

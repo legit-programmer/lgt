@@ -32,8 +32,18 @@ class Settings:
     attachment_channel_quota_bytes: int = 262144000
     attachment_retention_seconds: float = 86400
     thumbnail_max_dimension: int = 512
+    listen_host: str = "127.0.0.1"
+    listen_port: int = 8000
+    advertised_url: str | None = None
 
     def __post_init__(self) -> None:
+        # Wildcard IPv4 also keeps loopback available for host administration.
+        if not isinstance(self.listen_host, str) or self.listen_host not in {"127.0.0.1", "0.0.0.0"}:
+            raise ValueError("listen_host must be 127.0.0.1 or 0.0.0.0")
+        if type(self.listen_port) is not int or not 0 <= self.listen_port <= 65535:
+            raise ValueError("listen_port must be an integer between 0 and 65535")
+        if self.advertised_url is not None:
+            object.__setattr__(self, "advertised_url", connection_origin(self.advertised_url))
         if not isinstance(self.data_dir, Path) or not self.data_dir.is_absolute():
             raise ValueError("data_dir must be an absolute Path")
         for name in (
@@ -102,3 +112,21 @@ class Settings:
     @property
     def attachment_dir(self) -> Path:
         return self.data_dir / "attachments"
+
+
+def connection_origin(value: str) -> str:
+    """A pairing address is an HTTP(S) origin, never a URL containing secrets."""
+    if not isinstance(value, str) or any(ord(char) < 33 for char in value):
+        raise ValueError("advertised_url must be an HTTP(S) origin")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.hostname in {"0.0.0.0", "::", "*"}
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+                or port == 0 or "\\" in value):
+            raise ValueError
+    except ValueError:
+        raise ValueError("advertised_url must be a reachable HTTP(S) origin without credentials or a path") from None
+    return value.rstrip("/")

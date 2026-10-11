@@ -10,7 +10,7 @@ The repo has two halves:
 
 | Half | Path | Stack |
 | --- | --- | --- |
-| Backend | `lgt/` | Python 3.13, FastAPI, SQLite. Binds `127.0.0.1`; HTTP + WebSocket; runs agents as subprocesses. |
+| Backend | `lgt/` | Python 3.13, FastAPI, SQLite. Local or authenticated remote HTTP + WebSocket; runs agents as subprocesses. |
 | Desktop app | `desktop/` | Tauri v2 shell, with a React 19 + TypeScript + Vite UI built from the Ember design in `design/`. |
 
 The backend owns all state, in an append-only event log. The desktop app only displays backend state.
@@ -40,7 +40,7 @@ If a KB note disagrees with the code, trust the code and fix the note.
 - **All channel writes go through the orchestrator's mailbox** (`Orchestrator._call`), which keeps each channel strictly ordered.
 - **Desktop actions use HTTP; the WebSocket delivers state.** Don't apply optimistic state; wait for the event.
 - **Configuration is explicit.** The original settings have no defaults. Follow `kb/topics/decisions/explicit-configuration.md` when you add one.
-- **Agents run with full permissions** on a local, unauthenticated API. Never bind to anything other than loopback.
+- **Agents run with full permissions.** Loopback-only manual mode may be unauthenticated. Remote listening always requires daemon authentication; paired devices use persistent credentials. Device administration and shutdown require the local launch token over actual loopback. Never trust forwarding headers for that boundary.
 - **Use the design system.** Use `fv-` classes and Ember tokens (`desktop/src/styles/`), and never hard-code colours. The amber accent is only for "act here", and every status pairs a glyph, a word and a colour.
 
 ## Commands

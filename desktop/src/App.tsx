@@ -14,6 +14,7 @@ import { NewChannelDialog } from "./features/channel/NewChannelDialog";
 import { Toasts } from "./components/Toasts";
 import { TopBar } from "./components/TopBar";
 import { StartupOverlay } from "./components/StartupOverlay";
+import { ConnectionDialog } from "./features/settings/ConnectionDialog";
 
 type Boot = "resolving" | "loading" | "ready" | "failed";
 
@@ -142,6 +143,7 @@ function Workspace() {
 }
 
 function Unreachable({ message, onRetry }: { message: string | null; onRetry: () => void }) {
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const desktop = isTauri();
   let url = "";
   try {
@@ -171,7 +173,9 @@ function Unreachable({ message, onRetry }: { message: string | null; onRetry: ()
           <button className="fv-btn fv-btn--primary" onClick={onRetry}>
             <RotateCcw /> Retry
           </button>
+          <button className="fv-btn fv-btn--ghost" onClick={() => setConnectionOpen(true)}>Connect to a workspace</button>
         </div>
+        <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
       </div>
     </div>
   );

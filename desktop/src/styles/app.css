@@ -354,6 +354,7 @@
 
 .sidebar-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-300);
   padding: var(--space-300) var(--space-300) var(--space-300) var(--space-400);
@@ -1382,7 +1383,7 @@ button.fv-attachment {
   display: flex;
   align-items: center;
   gap: var(--space-300);
-  flex: 1;
+  flex: 1 0 100%;
   min-width: 0;
   padding: var(--space-100);
   margin: calc(-1 * var(--space-100));

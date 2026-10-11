@@ -32,6 +32,7 @@ Format: `id` — **Title** — `path` — description.
 - `20261008-system-overview` — **System overview** — `topics/overview/system-overview.md` — What Lgt is, its two halves (Python backend and Tauri desktop app), and how a message flows from the composer to an agent and back.
 
 ### backend
+- `20261012-device-pairing` — **Device pairing and remote access** — `topics/backend/device-pairing.md` — Persistent named device credentials, QR payloads, inbound remote listening, local administration, and immediate socket revocation.
 - `20261010-desktop-daemon` - **Desktop daemon lifecycle** - `topics/backend/desktop-daemon.md` - Discovery, detached launch, tokens, shutdown, and the frosted startup screen.
 - `20261008-attachments` — **Attachments** — `topics/backend/attachments.md` — Upload storage outside channel directories, size and quota limits, retention of unsent files, binding to exactly one message, thumbnails, and how files reach each harness.
 - `20261008-context-and-sessions` — **Context and sessions** — `topics/backend/context-and-sessions.md` — How a turn's prompt is rendered from the log, when a harness session is resumed versus rebuilt cold, how resets and edits invalidate sessions, and how checkpoints summarize old context.

@@ -1,6 +1,6 @@
 # Backend reference
 
-The backend supports one local human, identified as `local`. HTTP and WebSocket clients connect through the same loopback origin or an explicitly configured origin. The command entry point binds to `127.0.0.1`, uses one Uvicorn worker, and disables proxy header trust. A file lock prevents a second orchestrator from opening the same data directory.
+The backend supports one human, identified as `local`, shared by multiple desktop and mobile clients. HTTP and WebSocket clients connect through the same origin or an explicitly configured origin. The command entry point binds to `settings.listen_host` (default `127.0.0.1`), uses one Uvicorn worker, and disables proxy header trust. A file lock prevents a second orchestrator from opening the same data directory.
 
 ## Implemented behavior
 
@@ -36,11 +36,55 @@ After application startup and socket binding succeed, the server atomically writ
 
 The descriptor has owner-only access on POSIX and a protected owner-and-SYSTEM DACL on Windows. The shell verifies the application, API version, and PID with an authenticated health request before reusing it. The existing workspace lock remains authoritative for duplicate launches. Shutdown removes only the current daemon's descriptor, before releasing that lock.
 
-In daemon mode, every HTTP request except an allowed CORS preflight requires `Authorization: Bearer <token>`. This includes health, attachments, and API documentation. Missing or invalid credentials return `401 unauthorized`. Origin and loopback checks still apply. The first WebSocket frame must include the token within five seconds; authentication failure closes the socket with code 1008 before replay or snapshots.
+In daemon mode, every HTTP request except an allowed CORS preflight requires `Authorization: Bearer <token>`. This includes health, attachments, and API documentation. The per-launch token is accepted only from a loopback peer; persistent paired-device credentials work locally and remotely when remote listening is enabled. Missing or invalid credentials return `401 unauthorized`. Origin checks still apply. The first WebSocket frame must include the token within five seconds; authentication failure closes the socket with code 1008 before replay or snapshots.
 
-`POST /shutdown` returns `{"status":"stopping"}` and requests graceful shutdown. The runtime stops active runs and closes SQLite. Closing the desktop window preserves the background server. The sidebar's **Quit Lgt** action shuts down the managed daemon and exits the shell. Explicit external backend connections are not shut down by the desktop.
+`POST /shutdown` requires the local launch token over loopback, returns `{"status":"stopping"}`, and requests graceful shutdown. The runtime stops active runs and closes SQLite. Closing the desktop window preserves the background server. The sidebar's **Quit Lgt** action shuts down the managed daemon and exits the shell. Paired and explicitly external clients do not shut down the backend.
 
-Logs rotate at 5 MiB with three backups in `data_dir/logs/daemon.log`. Manual startup without `--daemon` retains the unauthenticated local API, and `/shutdown` returns 404.
+Logs rotate at 5 MiB with three backups in `data_dir/logs/daemon.log`. Manual loopback startup without `--daemon` retains the unauthenticated local API; device administration and `/shutdown` return 404. Non-loopback startup automatically enables daemon mode. Constructing a remote gateway without daemon authentication is rejected.
+
+## Device pairing and remote access
+
+Remote access reuses the same gateway and orchestrator. The daemon establishes no outbound tunnel or relay. Clients need a route to the advertised origin, for example over a private VPN or an independently configured HTTPS reverse proxy. Browser origins must be explicitly allowed; pairing does not grant CORS access.
+
+Configure these settings, then restart the daemon:
+
+```json
+{
+  "listen_host": "0.0.0.0",
+  "listen_port": 8000,
+  "advertised_url": "http://workspace-vpn-host:8000",
+  "allowed_origins": ["http://tauri.localhost", "tauri://localhost", "http://localhost:1420"]
+}
+```
+
+This is a fragment of the existing `settings` object. The advertised address must be reachable from the client; the wildcard listen address is not a destination. Use an encrypted network for HTTP, or an HTTPS endpoint. Only IPv4 loopback and wildcard listeners are supported, so local administration remains reachable at `127.0.0.1`. `--port` overrides the configured port. Choose a stable port for direct connections; an ephemeral port needs external routing that tracks it. HTTPS termination, VPN setup, router forwarding, and client scanning are separate from the daemon.
+
+All `/devices` routes require the current daemon launch token and an actual loopback peer. Device tokens cannot administer devices even when used locally. Forwarding headers never authorize local administration. A local reverse proxy still presents a loopback peer, but a remote device's credential does not become an administrator credential.
+
+`POST /devices` accepts `{"name":"iPhone"}` and returns `201` with `Cache-Control: no-store`:
+
+```json
+{
+  "device": {
+    "device_id": "<generated-id>", "name": "iPhone", "created_at": "<UTC timestamp>",
+    "last_used_at": null, "revoked_at": null
+  },
+  "pairing": {
+    "type": "lgt-device", "version": 1, "url": "http://workspace-vpn-host:8000",
+    "device_id": "<generated-id>", "name": "iPhone", "token": "<device-credential>"
+  }
+}
+```
+
+Encode the `pairing` object as JSON in the QR code. The credential has the prefix `lgt_device_` followed by 43 base64url characters generated from 32 random bytes. The phone stores this payload in local storage. It verifies `GET /connection` using `Authorization: Bearer <device-credential>`; the response is `{"device_id":"<generated-id>","local_admin":false}`. The local launch token receives `{"device_id":null,"local_admin":true}`. Manual development mode reports `false`.
+
+The QR grants access directly and is not single-use or expiring. The raw credential is returned once and only its SHA-256 hash is persisted in `devices`. Listing and renaming never expose it. A name is trimmed and must contain 1–100 printable characters. Missing remote-listening or advertised-address configuration returns `409 pairing_unavailable` without creating a device.
+
+Every HTTP request, including media, sends the credential in the Authorization header. WebSockets send `{"last_id":0,"token":"<device-credential>"}` as the first frame. Credentials never go into URLs. Client implementations should disable redirects for authenticated fetches and send credentials only to the selected backend origin.
+
+`GET /devices` returns public device records, including revoked ones. `PATCH /devices/{id}` accepts `{"name":"Work phone"}`. `POST /devices/{id}/revoke` returns the device with `revoked_at` set; repeating it is idempotent. Revocation immediately rejects subsequent HTTP requests and WebSocket handshakes and closes every existing socket for that device with code 1008, including idle sockets. Other devices stay connected. Previously accepted workspace actions and agent runs continue. Credentials and revocations survive restarts; `last_used_at` updates at most once per minute on authenticated HTTP requests and socket handshakes.
+
+All devices act as the same workspace human. Read cursors, profile, agents, history, and channel state are shared, not per-device user accounts.
 
 ## HTTP API
 
@@ -48,6 +92,10 @@ Logs rotate at 5 MiB with three backups in `data_dir/logs/daemon.log`. Manual st
 | --- | --- | --- |
 | GET | `/health` | `{status: "ok", application: "lgt", api_version: 1, pid}`. |
 | POST | `/shutdown` | Token-protected graceful shutdown in daemon mode. |
+| GET | `/connection` | Authenticated device identity and local-administration capability. |
+| GET, POST | `/devices` | Local administration: list devices or create a named credential and QR payload. |
+| PATCH | `/devices/{device_id}` | Local administration: rename a connection. |
+| POST | `/devices/{device_id}/revoke` | Local administration: revoke access and disconnect its sockets. |
 | GET | `/harnesses` | Detected CLI paths, versions, auth state, capabilities, model choices, and tools. |
 | POST | `/harnesses/scan` | Refresh CLI discovery. |
 | POST | `/harnesses/custom/probe` | Probe custom `command` and optional `extra_args` argv before model and tool selection. |
@@ -117,13 +165,13 @@ Run token counters are `tokens_in`, `tokens_out`, `tokens_cached_in`, `tokens_ca
 
 ## WebSocket frames
 
-The socket path is `/ws`. In daemon mode the first client frame contains a cursor and launch token:
+The socket path is `/ws`. In daemon mode the first client frame contains a cursor and launch or device token:
 
 ```json
-{"last_id": 0, "token": "<launch-token>"}
+{"last_id": 0, "token": "<launch-or-device-token>"}
 ```
 
-Manual mode omits `token` and sends only `last_id`.
+Manual loopback mode omits `token` and sends only `last_id`.
 
 The server captures replay rows and partial snapshots before sending frames. Durable events have this envelope:
 
@@ -183,9 +231,11 @@ Direct primary delivery writes `routing_decision` with `method: "primary"`, `rea
 
 ## Configuration
 
-`config.example.json` contains the settings. The original numeric runtime settings remain required. `route_after_active` is fixed to `false` by the user's routing override. New settings have defaults: `allowed_origins: []`, `attachment_channel_quota_bytes: 262144000`, `attachment_retention_seconds: 86400`, and `thumbnail_max_dimension: 512`.
+`config.example.json` contains the settings. The original numeric runtime settings remain required. `route_after_active` is fixed to `false` by the user's routing override. New settings have defaults: `allowed_origins: []`, `attachment_channel_quota_bytes: 262144000`, `attachment_retention_seconds: 86400`, `thumbnail_max_dimension: 512`, `listen_host: "127.0.0.1"`, `listen_port: 8000`, and `advertised_url: null`.
 
-`allowed_origins` contains exact origins without paths, credentials, queries, or fragments. It can include `tauri://localhost`, a development HTTP origin, or the literal `file://`. Wildcards and opaque `null` origins are rejected. Loopback client and Host checks still apply to HTTP and WebSockets. Allowed HTTP origins receive CORS headers; preflight permits the API methods, `Content-Type`, and `Authorization`.
+`allowed_origins` contains exact origins without paths, credentials, queries, or fragments. It can include `tauri://localhost`, a development HTTP origin, or the literal `file://`. Wildcards and opaque `null` origins are rejected. Loopback client and Host checks apply only when remote listening is disabled. Remote mode accepts authenticated peers without subnet restrictions. Allowed HTTP origins receive CORS headers; preflight permits the API methods, `Content-Type`, and `Authorization`.
+
+`listen_host` accepts `127.0.0.1` or `0.0.0.0`; `listen_port` is an integer from 0 through 65535. `advertised_url` is a reachable HTTP(S) origin without credentials, paths, query strings, or fragments, and cannot be a wildcard address or port zero.
 
 `attachment_max_bytes` caps each upload; the channel quota counts sent and unsent files. Concurrent uploads share the same quota check. Unsent uploads expire after the retention window. Cleanup runs at startup and periodically. Sent files stay immutable. Thumbnails reject invalid images and excessive dimensions.
 

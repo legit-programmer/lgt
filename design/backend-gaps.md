@@ -18,6 +18,8 @@ The desktop release build bundles a real Python runtime and dependencies. See th
 
 Tray controls, notifications, start at login, and automatic restart of an incompatible daemon after updates remain separate follow-up work. An incompatible live daemon is reported rather than terminated by PID.
 
+Device pairing now reuses the gateway with named persistent credentials, local-only administration, and immediate socket revocation. The host desktop displays QR codes in Settings → Devices. A native mobile scanner remains client work; see [the pairing contract](../docs/backend-reference.md#device-pairing-and-remote-access).
+
 ### D2. WebSocket head cursor
 
 The first connection has no way to learn the current global event id, so it sends `{"last_id": 0}`. The server then replays the whole history, or sends `resync` once the history exceeds `replay_cap`. The client ignores replayed events for timelines that aren't open, which is correct but wasteful at startup.

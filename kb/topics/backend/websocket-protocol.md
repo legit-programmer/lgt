@@ -3,8 +3,8 @@ id: 20261008-websocket-protocol
 title: WebSocket protocol
 tags: [backend, api]
 created: 2026-10-08
-updated: 2026-10-10
-related: [20261008-live-state, 20261008-client-state, 20261008-gateway-http, 20261008-open-gaps, 20261010-desktop-daemon]
+updated: 2026-10-12
+related: [20261008-live-state, 20261008-client-state, 20261008-gateway-http, 20261008-open-gaps, 20261010-desktop-daemon, 20261012-device-pairing]
 summary: The /ws cursor handshake, replay and snapshot order, every server frame type, client commands, and overflow/resync behavior of the event bus.
 ---
 
@@ -14,11 +14,13 @@ summary: The /ws cursor handshake, replay and snapshot order, every server frame
 
 ## Handshake and order (`gateway.websocket_endpoint`)
 
-1. The client sends `{"last_id": n}` first in manual mode. Daemon mode requires `{"last_id": n, "token": "<launch-token>"}` within five seconds. Missing or invalid credentials close the socket with 1008 before any workspace data is sent. Anything else gets an `invalid_cursor` error and a 1008 close.
+1. The client sends `{"last_id": n}` first in manual mode. Daemon mode requires `{"last_id": n, "token": "<launch-or-device-token>"}` within five seconds. Missing or invalid credentials close the socket with 1008 before any workspace data is sent. Anything else gets an `invalid_cursor` error and a 1008 close.
 2. The server subscribes to the bus for every channel the human belongs to (`broadcast.EventBus`). Then it captures replay rows, partial snapshots, queue snapshots and state frames.
 3. It sends the replayed `event` frames with id greater than `last_id`. If there are more than `replay_cap`, it sends one `resync` frame instead.
 4. It sends `partial_snapshot` for each run that is streaming, `queue` for each channel with pending deliveries, then the state frames: `channel_summary`, `agent_status`, `context`, `usage`, `harness_limits` and `me` ([live state](live-state.md)).
 5. It streams live frames. Durable events already sent in the replay are de-duplicated by id.
+
+Device sockets register an `asyncio.Event` with `device_auth.DeviceAuth`. Revocation signals all sockets for that device; idle sockets wake and close with 1008, and replay/live sends check the same signal. Cleanup cancels the revocation waiter and unregisters it. The local desktop and other devices stay connected.
 
 ## Server frames
 
@@ -57,3 +59,5 @@ There is no way to start from "now". The first connection sends `last_id: 0` and
 - [Open gaps](../status/open-gaps.md) — head cursor (D2).
 
 - [Desktop daemon](desktop-daemon.md) - discovery, launch tokens, and shutdown.
+
+- [Device pairing and remote access](device-pairing.md) — persistent credentials and local device administration.

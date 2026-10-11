@@ -3,8 +3,8 @@ id: 20261008-system-overview
 title: System overview
 tags: [overview]
 created: 2026-10-08
-updated: 2026-10-11
-related: [20261008-repo-map, 20261008-glossary, 20261008-desktop-architecture, 20261008-dispatch-and-queue, 20261008-no-frontend-workarounds, 20261008-event-store, 20261008-context-and-sessions, 20261008-gateway-http]
+updated: 2026-10-12
+related: [20261008-repo-map, 20261008-glossary, 20261008-desktop-architecture, 20261008-dispatch-and-queue, 20261008-no-frontend-workarounds, 20261008-event-store, 20261008-context-and-sessions, 20261008-gateway-http, 20261012-device-pairing]
 summary: What Lgt is, its two halves (Python backend and Tauri desktop app), and how a message flows from the composer to an agent and back.
 ---
 
@@ -22,7 +22,7 @@ Lgt is a local, single-user workspace where one person talks to a team of AI cod
 
 | Half | Location | Stack | Role |
 | --- | --- | --- | --- |
-| Backend | `lgt/` | Python 3.13, FastAPI, Uvicorn, SQLite | Owns all state, runs agents as subprocesses, and serves HTTP and WebSocket on `127.0.0.1` |
+| Backend | `lgt/` | Python 3.13, FastAPI, Uvicorn, SQLite | Owns all state, runs agents as subprocesses, and serves HTTP and WebSocket on a configured listener (loopback by default) |
 | Desktop app | `desktop/` | Tauri v2 (Rust), React 19, TypeScript, Vite | Renders the Ember screens, sends actions over HTTP, and receives live state over WebSocket |
 
 The backend is the source of truth. The desktop app derives nothing on its own; see [no frontend workarounds](../decisions/no-frontend-workarounds.md).
@@ -45,7 +45,7 @@ The backend is the source of truth. The desktop app derives nothing on its own; 
 - **Append-only log:** an edit is a new `message_edit` event; nothing is updated in place ([event store](../backend/event-store.md)).
 - **One run per agent per channel:** messages that arrive while the agent is busy queue up and coalesce into its next turn ([dispatch](../backend/dispatch-and-queue.md)).
 - **Session resume when valid, otherwise a cold rebuild from the log** ([context and sessions](../backend/context-and-sessions.md)).
-- **Local only:** loopback binding plus an origin allowlist ([gateway](../backend/gateway-http.md)).
+- **Local or paired access:** loopback by default; remote listeners require persistent device credentials and an origin allowlist. Administration stays local ([pairing](../backend/device-pairing.md)).
 
 ## Related
 
@@ -53,3 +53,5 @@ The backend is the source of truth. The desktop app derives nothing on its own; 
 - [Glossary](glossary.md) — prerequisite: terms used throughout the KB.
 - [Desktop architecture](../desktop/desktop-architecture.md) — the client half in detail.
 - [Dispatch and queue](../backend/dispatch-and-queue.md) — the core backend loop.
+
+- [Device pairing and remote access](../backend/device-pairing.md) — persistent credentials and local device administration.

@@ -16,6 +16,7 @@ def settings(data_dir: Path, **overrides) -> Settings:
         cancel_grace_seconds=0.1, checkpoint_threshold=100000,
         checkpoint_tail_chars=25000, checkpoint_summary_chars=10000,
         attachment_max_bytes=1048576,
+        listen_host="127.0.0.1", listen_port=8000, advertised_url=None,
     )
     values.update(overrides)
     return Settings(**values)

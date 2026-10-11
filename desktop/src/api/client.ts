@@ -1,6 +1,6 @@
 import type {
   Agent, AgentInput, AgentStatus, Attachment, ChannelSummary, Channel, Command, ContextStats,
-  Harness, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
+  ConnectionInfo, Device, DevicePairing, Harness, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
   UsageRow, WorkspaceEvent,
 } from "./types";
 
@@ -8,6 +8,56 @@ const FALLBACK_URL = "http://127.0.0.1:8000";
 let baseUrl: string | null = null;
 let launchToken: string | null = null;
 let resolving: Promise<string> | null = null;
+const PAIRED_CONNECTION_KEY = "lgt.pairedConnection";
+let pairedConnection = false;
+
+export function parsePairing(raw: string): DevicePairing {
+  const data = JSON.parse(raw) as DevicePairing;
+  if (!data || data.type !== "lgt-device" || data.version !== 1
+      || typeof data.url !== "string" || typeof data.device_id !== "string" || !data.device_id
+      || typeof data.name !== "string" || !data.name.trim()
+      || typeof data.token !== "string" || !/^lgt_device_[A-Za-z0-9_-]{43}$/.test(data.token)
+      || /[\s\\]/.test(data.url)) throw new Error("Invalid Lgt pairing code.");
+  const url = new URL(data.url);
+  if (!["http:", "https:"].includes(url.protocol) || !url.hostname
+      || ["0.0.0.0", "[::]"].includes(url.hostname) || url.port === "0"
+      || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("The pairing address must be an HTTP(S) origin.");
+  }
+  return { type: "lgt-device", version: 1, url: url.origin,
+    device_id: data.device_id, name: data.name, token: data.token };
+}
+
+function storedPairing(): DevicePairing | null {
+  try {
+    const raw = localStorage.getItem(PAIRED_CONNECTION_KEY);
+    return raw ? parsePairing(raw) : null;
+  } catch { return null; }
+}
+
+/** Verify a scanned/pasted QR payload before persisting its device credential. */
+export async function savePairedConnection(raw: string): Promise<void> {
+  const pairing = parsePairing(raw);
+  const response = await fetch(pairing.url + "/connection", {
+    headers: { Authorization: `Bearer ${pairing.token}` }, redirect: "error",
+  });
+  if (!response.ok) throw new Error("The device credential was rejected by the workspace.");
+  const info = await response.json() as ConnectionInfo;
+  if (info.device_id !== pairing.device_id || info.local_admin !== false) {
+    throw new Error("The workspace did not recognize this paired device.");
+  }
+  localStorage.setItem(PAIRED_CONNECTION_KEY, JSON.stringify(pairing));
+}
+
+export function forgetPairedConnection(): void {
+  localStorage.removeItem(PAIRED_CONNECTION_KEY);
+}
+
+export function isRemoteConnection(): boolean {
+  if (pairedConnection) return true;
+  if (!baseUrl) return false;
+  return !["127.0.0.1", "localhost", "[::1]"].includes(new URL(baseUrl).hostname);
+}
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -19,7 +69,12 @@ export function resolveBackendUrl(): Promise<string> {
   resolving = (async () => {
     let url = import.meta.env.VITE_LGT_BACKEND_URL as string | undefined;
     let token: string | null = null;
-    if (isTauri()) {
+    const pairing = storedPairing();
+    pairedConnection = pairing !== null;
+    if (pairing) {
+      url = pairing.url;
+      token = pairing.token;
+    } else if (isTauri()) {
       const { invoke } = await import("@tauri-apps/api/core");
       const connection = await invoke<{ url: string; token: string | null; managed: boolean }>("ensure_backend");
       url = connection.url;
@@ -34,10 +89,10 @@ export function resolveBackendUrl(): Promise<string> {
 
 export async function quitWorkspace(): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("quit_workspace");
+  await invoke(isRemoteConnection() ? "quit_client" : "quit_workspace");
 }
 
-/** Keep credentials in memory and out of URLs, storage, and cross-origin requests. */
+/** Send credentials only to the selected backend, with redirects disabled. */
 export function fetchBackendResource(url: string, init?: RequestInit): Promise<Response> {
   if (new URL(url).origin !== new URL(backendUrl()).origin) {
     return Promise.reject(new Error("The resource is outside this Lgt backend."));
@@ -123,6 +178,11 @@ const enc = encodeURIComponent;
 
 export const api = {
   health: () => get<{ status: string; application: string; api_version: number; pid: number }>("/health"),
+  connectionInfo: () => get<ConnectionInfo>("/connection"),
+  devices: () => get<Device[]>("/devices"),
+  pairDevice: (name: string) => post<{ device: Device; pairing: DevicePairing }>("/devices", { name }),
+  renameDevice: (deviceId: string, name: string) => patch<Device>(`/devices/${enc(deviceId)}`, { name }),
+  revokeDevice: (deviceId: string) => post<Device>(`/devices/${enc(deviceId)}/revoke`),
 
   harnesses: () => get<Harness[]>("/harnesses"),
   scanHarnesses: () => post<Harness[]>("/harnesses/scan"),

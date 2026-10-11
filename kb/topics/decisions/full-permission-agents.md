@@ -3,8 +3,8 @@ id: 20261008-full-permission-agents
 title: "Decision: agents run with full permissions"
 tags: [decision, security, harness]
 created: 2026-10-08
-updated: 2026-10-10
-related: [20261008-harness-adapters, 20261008-gateway-http, 20261008-open-gaps, 20261010-desktop-daemon]
+updated: 2026-10-12
+related: [20261008-harness-adapters, 20261008-gateway-http, 20261008-open-gaps, 20261010-desktop-daemon, 20261012-device-pairing]
 summary: Why every specialist run bypasses interactive approvals, what each harness is passed, how tool allowlists still restrict Claude, and the security consequences for the local API.
 ---
 
@@ -30,8 +30,8 @@ Runs are headless; no one is there to approve a prompt. The cwd is a home base, 
 
 ## Consequences
 
-- The local API is effectively remote code execution for any local process. Manual mode is guarded by loopback binding and the origin policy. Desktop daemon mode additionally requires a per-launch token, protected by an owner-private discovery file. Processes running as the same OS user can read that file; the token is not a sandbox.
-- Never bind the backend to a non-loopback address.
+- The API controls agents with full filesystem permissions. Manual development mode is guarded by loopback binding and the origin policy. Daemon mode requires credentials: an owner-private per-launch token for the local desktop, or a revocable device credential for paired clients. Processes running as the same OS user can read that file; the token is not a sandbox.
+- Remote listening is explicitly configurable and always authenticated. Device administration and shutdown require the launch token over actual loopback. Pairing grants full workspace access; clients share the same human identity. See [device pairing](../backend/device-pairing.md).
 
 ## Related
 
@@ -40,3 +40,5 @@ Runs are headless; no one is there to approve a prompt. The cwd is a home base, 
 - [Open gaps](../status/open-gaps.md) — the launch token.
 
 - [Desktop daemon](../backend/desktop-daemon.md) - discovery, launch tokens, and shutdown.
+
+- [Device pairing and remote access](../backend/device-pairing.md) — persistent credentials and local device administration.

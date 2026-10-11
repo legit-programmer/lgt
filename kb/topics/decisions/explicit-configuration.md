@@ -3,7 +3,7 @@ id: 20261008-explicit-configuration
 title: "Decision: explicit configuration"
 tags: [decision, config]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-12
 related: [20261008-runtime-and-config]
 summary: Why the original runtime settings have no implicit defaults, why later additions do, and the rule for adding a new setting.
 ---
@@ -20,7 +20,7 @@ The spec left many numeric values open, such as hop limits, caps and timeouts. H
 
 - Every original `Settings` field must appear in the config file; `load_config` lists any missing or unknown fields. `config.example.json` holds the proposed values.
 - `attachment_max_bytes` was added the same way and is required.
-- The desktop-era settings have documented defaults, so existing config files keep working: `allowed_origins`, `attachment_channel_quota_bytes`, `attachment_retention_seconds` and `thumbnail_max_dimension`.
+- The desktop-era settings have documented defaults, so existing config files keep working: `allowed_origins`, `attachment_channel_quota_bytes`, `attachment_retention_seconds` `thumbnail_max_dimension`, `listen_host`, `listen_port` and `advertised_url`.
 - `route_after_active` is fixed to `false` by the owner's routing override and may not be set.
 
 ## Adding a setting
