@@ -117,11 +117,20 @@ class SendMessageBody(_StrictModel):
     text: str = ""
     mentions: list[str] | None = None
     attachments: list[str] | None = None
+    reply_to_seq: int | None = Field(default=None, gt=0)
+    reply_selection: str | None = None
 
     @model_validator(mode="after")
     def require_content(self) -> SendMessageBody:
         _require_content(self.text, self.attachments)
+        if self.reply_selection is not None and (self.reply_to_seq is None or not self.reply_selection.strip()):
+            raise ValueError("reply_selection requires reply_to_seq and nonempty text")
         return self
+
+
+class ReplyPreviewBody(_StrictModel):
+    reply_to_seq: int = Field(gt=0)
+    reply_selection: str | None = None
 
 
 class ChannelCwdBody(_StrictModel):
@@ -149,10 +158,14 @@ class _WSSendMessage(_StrictModel):
     text: str = ""
     mentions: list[str] | None = None
     attachments: list[str] | None = None
+    reply_to_seq: int | None = Field(default=None, gt=0)
+    reply_selection: str | None = None
 
     @model_validator(mode="after")
     def require_content(self) -> _WSSendMessage:
         _require_content(self.text, self.attachments)
+        if self.reply_selection is not None and (self.reply_to_seq is None or not self.reply_selection.strip()):
+            raise ValueError("reply_selection requires reply_to_seq and nonempty text")
         return self
 
 
@@ -843,8 +856,14 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     @app.post("/channels/{channel_id}/messages", status_code=201)
     async def send_message(channel_id: str, body: SendMessageBody):
         _require_channel(orch, channel_id)
-        event = await orch.send_message(channel_id, body.text, body.mentions, body.attachments)
+        event = await orch.send_message(channel_id, body.text, body.mentions, body.attachments,
+                                       body.reply_to_seq, body.reply_selection)
         return _event_payload(event, orch.store)
+
+    @app.post("/channels/{channel_id}/reply-preview")
+    async def preview_reply(channel_id: str, body: ReplyPreviewBody):
+        _require_channel(orch, channel_id)
+        return orch.preview_reply(channel_id, body.reply_to_seq, body.reply_selection)
 
     @app.post("/channels/{channel_id}/messages/{seq}/cancel")
     async def cancel_delivery(channel_id: str, seq: int, body: CancelDeliveryBody | None = None):
@@ -1079,7 +1098,8 @@ async def _dispatch_ws_command(orch: Any, raw: Any) -> None:
         raise ValueError("Command fields are invalid or incomplete.") from None
 
     if isinstance(command, _WSSendMessage):
-        await orch.send_message(command.channel_id, command.text, command.mentions, command.attachments)
+        await orch.send_message(command.channel_id, command.text, command.mentions, command.attachments,
+                                command.reply_to_seq, command.reply_selection)
     elif isinstance(command, _WSEditMessage):
         await orch.edit_message(
             command.channel_id,

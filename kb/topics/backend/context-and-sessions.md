@@ -3,8 +3,8 @@ id: 20261008-context-and-sessions
 title: Context and sessions
 tags: [backend, context]
 created: 2026-10-08
-updated: 2026-10-11
-related: [20261008-run-lifecycle, 20261008-mutable-channel-cwd, 20261008-glossary, 20261008-live-state]
+updated: 2026-10-12
+related: [20261008-run-lifecycle, 20261008-mutable-channel-cwd, 20261008-glossary, 20261008-live-state, 20261012-message-replies]
 summary: How a turn's prompt is rendered from the log, when a harness session is resumed versus rebuilt cold, how resets and edits invalidate sessions, and how checkpoints summarize old context.
 ---
 
@@ -26,6 +26,7 @@ summary: How a turn's prompt is rendered from the log, when a harness session is
 ```
 
 - Edits are applied as of `to_seq`. Deleted messages are skipped.
+- Replies carry a text-only, bounded snapshot as labeled reference context before the actual reply, even when the source is outside this delta. Channel `assigned_messages` includes the same quote metadata.
 - Tool calls collapse to one line per run, and raw tool output is never rendered.
 - In `resume` mode, the agent's own messages and tools are omitted, because its session already has them.
 - `cwd_changed`, `member_added`, `member_removed` and `system` events render as `[system]` lines.
@@ -68,6 +69,8 @@ Otherwise `cold_plan` starts from the newest valid checkpoint, or from the event
 A reset, a cwd change or an earlier edit makes the usage numbers unknown (null). They are pushed as `context` frames.
 
 ## Related
+
+- [Message replies](message-replies.md) — source snapshots, selection and truncation.
 
 - [Run lifecycle](run-lifecycle.md) — where sessions are marked clean or dirty.
 - [Mutable channel cwd](../decisions/mutable-channel-cwd.md) — why a cwd change forces cold rebuilds.

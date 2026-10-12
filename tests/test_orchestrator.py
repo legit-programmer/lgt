@@ -8,6 +8,7 @@ import pytest
 from lgt.models import Agent, Run, Session, WorkspaceError
 from lgt.orchestrator import Orchestrator
 from lgt.context import render_delta
+from lgt.replies import REPLY_QUOTE_MAX_CHARS
 from lgt.store import Store
 from tests.support import ControlledFactory, FakeRouter, eventually, settings
 
@@ -26,6 +27,114 @@ async def workspace(tmp_path):
     yield orch, store, factory, router, channel
     await orch.close()
     store.close()
+
+
+def append_reply_source(store, channel, text):
+    question = store.append_event(channel.channel_id, "message", "human", "local", {"text": "question"})
+    return store.append_event(channel.channel_id, "message", "agent", "beta",
+                              {"text": text, "author_handle": "beta"}, chain_id=question.chain_id)
+
+
+@pytest.mark.asyncio
+async def test_reply_targets_author_and_includes_text_only_after_context_reset(workspace):
+    orch, store, factory, router, channel = workspace
+    source = append_reply_source(store, channel, "Use this approach. @alpha")
+    store.append_event(channel.channel_id, "tool_call", "agent", "beta",
+                       {"tool_call_id": "read", "name": "Read", "input": {"path": "private"}},
+                       chain_id=source.chain_id)
+    store.append_event(channel.channel_id, "tool_result", "agent", "beta",
+                       {"tool_call_id": "read", "output": "RAW TOOL OUTPUT"}, chain_id=source.chain_id)
+    await orch.new_context(channel.channel_id)
+    reply = await orch.send_message(channel.channel_id, "explain that", reply_to_seq=source.seq)
+    await eventually(lambda: len(factory.started) == 1)
+    assert reply.payload["mentions"] == ["beta"]
+    assert reply.payload["text"] == "explain that"
+    assert reply.payload["reply"]["text"] == "Use this approach. @alpha"
+    assert store.get_channel(channel.channel_id).primary_agent_id == "beta"
+    assert not router.calls
+    turn = factory.started[0].turn
+    assert turn.agent.agent_id == "beta"
+    assert '"reply":' in turn.prompt  # assigned_messages carries the quote too
+    assert "Use this approach. @alpha" in turn.prompt and "explain that" in turn.prompt
+    assert "RAW TOOL OUTPUT" not in turn.prompt and "private" not in turn.prompt
+    resumed = render_delta(store, "beta", channel.channel_id, reply.seq, reply.seq, "resume")
+    assert "Use this approach. @alpha" in resumed and "Actual reply: explain that" in resumed
+
+
+@pytest.mark.asyncio
+async def test_reply_selection_and_explicit_mentions_override_author(workspace):
+    orch, store, factory, _, channel = workspace
+    source = append_reply_source(store, channel, "Choose **option B**. @beta")
+    reply = await orch.send_message(channel.channel_id, "@alpha implement this", reply_to_seq=source.seq,
+                                    reply_selection="option B")
+    await eventually(lambda: len(factory.started) == 1)
+    assert reply.payload["mentions"] == ["alpha"]
+    assert factory.started[0].turn.agent.agent_id == "alpha"
+    assert reply.payload["reply"]["text"] == "option B"
+    assert reply.payload["reply"]["selected"] is True
+    explicit = await orch.send_message(channel.channel_id, "handle this", mentions=["alpha"], reply_to_seq=source.seq)
+    assert explicit.payload["mentions"] == ["alpha"]
+    bounded = orch.preview_reply(channel.channel_id, source.seq, "B" * (REPLY_QUOTE_MAX_CHARS + 1))
+    assert len(bounded["text"]) == REPLY_QUOTE_MAX_CHARS and bounded["text"].endswith("truncated..")
+
+
+@pytest.mark.asyncio
+async def test_reply_snapshot_uses_current_edit_is_bounded_and_does_not_nest_quotes(workspace):
+    orch, store, _, _, channel = workspace
+    source = store.append_event(channel.channel_id, "message", "human", "local",
+                                {"text": "old", "reply": {"text": "NESTED QUOTE"}})
+    await orch.edit_message(channel.channel_id, source.seq, text="x" * (REPLY_QUOTE_MAX_CHARS + 1))
+    preview = orch.preview_reply(channel.channel_id, source.seq)
+    assert len(preview["text"]) == REPLY_QUOTE_MAX_CHARS
+    assert preview["text"].endswith("truncated..") and preview["truncated"] is True
+    reply = await orch.send_message(channel.channel_id, "why?", reply_to_seq=source.seq)
+    assert reply.payload["reply"] == preview
+    assert reply.payload["mentions"] == []  # human-message replies use ordinary routing
+    await orch.edit_message(channel.channel_id, source.seq, text="later edit")
+    assert store.get_event(channel.channel_id, reply.seq).payload["reply"] == preview
+    assert "NESTED QUOTE" not in str(reply.payload)
+    assert orch.preview_reply(channel.channel_id, source.seq)["text"] == "later edit"
+    exact_cap = orch.preview_reply(channel.channel_id, source.seq, "x" * REPLY_QUOTE_MAX_CHARS)
+    assert exact_cap["truncated"] is False and len(exact_cap["text"]) == REPLY_QUOTE_MAX_CHARS
+
+
+@pytest.mark.asyncio
+async def test_invalid_reply_creates_no_message_or_delivery(workspace):
+    orch, store, _, _, channel = workspace
+    source = store.append_event(channel.channel_id, "message", "human", "local", {"text": "gone"})
+    await orch.edit_message(channel.channel_id, source.seq, deleted=True)
+    tool = store.append_event(channel.channel_id, "tool_result", "agent", "alpha",
+                              {"tool_call_id": "read", "output": "tool only"}, chain_id=source.chain_id)
+    end = store.get_channel(channel.channel_id).next_seq
+    for seq, selection, error in [(source.seq, None, WorkspaceError), (tool.seq, None, WorkspaceError),
+                                   (999, None, KeyError), (None, "excerpt", WorkspaceError),
+                                   (tool.seq, "   ", WorkspaceError), (0, None, WorkspaceError)]:
+        with pytest.raises(error):
+            await orch.send_message(channel.channel_id, "reply", reply_to_seq=seq, reply_selection=selection)
+    assert store.get_channel(channel.channel_id).next_seq == end
+    assert store.queue(channel.channel_id) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unavailable", ["removed", "retired"])
+async def test_reply_to_unavailable_agent_fails_instead_of_routing_elsewhere(workspace, unavailable):
+    orch, store, _, _, channel = workspace
+    source = append_reply_source(store, channel, "answer")
+    if unavailable == "removed":
+        store.remove_member(channel.channel_id, "agent", "beta")
+    else:
+        store.retire_agent("beta")
+    with pytest.raises(WorkspaceError, match="no longer available"):
+        await orch.send_message(channel.channel_id, "reply", reply_to_seq=source.seq)
+
+
+@pytest.mark.asyncio
+async def test_reply_text_that_looks_like_a_command_is_sent_as_a_reply(workspace):
+    orch, store, factory, _, channel = workspace
+    source = append_reply_source(store, channel, "Try /new")
+    reply = await orch.send_message(channel.channel_id, "/new", reply_to_seq=source.seq)
+    await eventually(lambda: len(factory.started) == 1)
+    assert reply.kind == "message" and reply.payload["text"] == "/new"
 
 
 @pytest.mark.asyncio

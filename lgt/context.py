@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from .models import Agent, Channel, Event, Session, SessionMode
+from .replies import render_reply
 
 if TYPE_CHECKING:
     from .store import Store
@@ -48,7 +49,7 @@ def render_delta(
             if edit.get("deleted", False):
                 continue
             text = edit.get("text", event.payload.get("text", ""))
-            lines.append(f"[{label}] {text}")
+            lines.append(f"[{label}] {render_reply(event.payload.get('reply'))}{text}")
             for attachment in event.payload.get("attachments", ()):
                 lines.append(_attachment_line(store, attachment))
         elif event.kind == "tool_call":
@@ -203,6 +204,7 @@ def render_turn(
     state["assigned_messages"] = [
         {"seq": seq, "author_id": message.author_id,
          "text": edits.get(seq, {}).get("text", message.payload.get("text", "")),
+         **({"reply": message.payload["reply"]} if message.payload.get("reply") else {}),
          "transfer": message.payload.get("transfer")}
         for seq in delivery_seqs if seq >= plan.start_seq and not edits.get(seq, {}).get("deleted")
         for message in [store.get_event(channel.channel_id, seq)]

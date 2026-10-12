@@ -20,6 +20,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 - Persist named device credential hashes; local desktop administration creates, lists, renames and revokes connections. Revocation immediately closes device sockets and survives restarts.
 - Add Settings → Devices with QR codes and verified pairing-code import into local storage. Paired clients skip local launch, use host filesystem paths, and quit without stopping the backend.
 - Preserve loopback-only development and local-only launch tokens, device administration, and shutdown.
+- Add whole-message and selected-text replies with backend quote previews, immutable text-only snapshots, a 4,000-character cap ending in `truncated..`, automatic author targeting, composer removal/draft retention and prompt context. Explicit reply mentions override the author; quoted mentions/tools never route work.
 
 ## 2026-10-11
 

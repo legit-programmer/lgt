@@ -1,13 +1,13 @@
 import { ProviderLogo } from "../../components/ProviderLogo";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight, Ban, Bookmark, ChevronDown, ChevronRight, Clock, CornerDownLeft, FileText, Folder,
-  Hash, RotateCcw, Square, UserMinus, UserPlus, X,
+  Hash, Reply, RotateCcw, Square, UserMinus, UserPlus, X,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
   Agent, AttachmentSummary, RoutingPayload, RunStatusPayload, ToolCallPayload, ToolResultPayload,
-  WorkspaceEvent,
+  WorkspaceEvent, MessagePayload,
 } from "../../api/types";
 import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
 import { Markdown } from "../../components/Markdown";
@@ -17,6 +17,8 @@ import { bytes, clockTime, dayTime, displayPath, duration } from "../../lib/form
 import { toolGroupSummary, toolName, type HumanBlock, type RunBlock, type ToolEntry } from "../../lib/timeline";
 import { downloadAttachment, useBlobUrl } from "../../lib/media";
 import { reportError, useWorkspace, type RunInfo } from "../../store/workspace";
+import { replySelection } from "../../lib/reply-selection";
+import { ReplyQuoteView } from "./ReplyQuote";
 
 export interface BlockContext {
   channelId: string;
@@ -25,6 +27,32 @@ export interface BlockContext {
   handles: ReadonlySet<string>;
   displayName: string;
   runs: Record<string, RunInfo>;
+  onReply: (seq: number, selection?: string) => void;
+}
+
+function MessageContent({ message, text, ctx }: { message: WorkspaceEvent<MessagePayload>; text: string; ctx: BlockContext }) {
+  const body = useRef<HTMLDivElement>(null);
+  const [selection, setSelection] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => setSelection(replySelection(body.current, window.getSelection()));
+    document.addEventListener("selectionchange", update);
+    return () => document.removeEventListener("selectionchange", update);
+  }, []);
+  return (
+    <div className="fv-reply-message" data-seq={message.seq}>
+      {message.payload.reply ? <ReplyQuoteView quote={message.payload.reply} displayName={ctx.displayName} /> : null}
+      <div ref={body} className="fv-message-text"><Markdown text={text} handles={ctx.handles} /></div>
+      <div className="fv-reply-actions">
+        <button className="fv-btn fv-btn--ghost fv-btn--sm" aria-label={`Reply to message #${message.seq}`}
+          onClick={() => ctx.onReply(message.seq)}><Reply /> Reply</button>
+        {selection ? (
+          <button className="fv-btn fv-btn--ghost fv-btn--sm" aria-label={`Reply to selected text in message #${message.seq}`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => ctx.onReply(message.seq, selection)}><Reply /> Reply to selection</button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function AgentChip({ agent, fallback }: { agent: Agent | undefined; fallback?: string }) {
@@ -76,7 +104,7 @@ export function HumanMessage({ block, ctx }: { block: HumanBlock; ctx: BlockCont
           </div>
         ) : null}
         <div className="fv-msg-body">
-          {block.text ? <Markdown text={block.text} handles={ctx.handles} /> : null}
+          <MessageContent message={block.event} text={block.text} ctx={ctx} />
           <Attachments items={block.attachments} />
         </div>
       </div>
@@ -165,7 +193,7 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
         ) : null}
         <div className="fv-msg-body">
           {block.messages.map((message) => (
-            <Markdown key={message.seq} text={message.payload.text} handles={ctx.handles} />
+            <MessageContent key={message.seq} message={message} text={message.payload.text} ctx={ctx} />
           ))}
           {live && partial ? (
             <p className="partial-text">{partial}<span className="fv-caret" /></p>

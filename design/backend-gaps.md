@@ -2,6 +2,8 @@
 
 The contracts in the sections after "Open" are implemented. The original gap descriptions are retained as the acceptance checklist. See the [backend reference](../docs/backend-reference.md) and [custom harness protocol](../docs/custom-harness.md) for the current API.
 
+Message replies are implemented through optional `reply_to_seq`/`reply_selection` fields and `POST /channels/{id}/reply-preview`. The backend owns quote snapshots, truncation and automatic author targeting; the desktop supplies the user's selection and displays the returned quote. See [Message replies](../kb/topics/backend/message-replies.md).
+
 ## Open: found while building the desktop app
 
 These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. D1 is implemented. D2 through D6 remain open, and the app omits unsupported controls.

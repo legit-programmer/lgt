@@ -3,8 +3,8 @@ id: 20261008-routing
 title: Routing
 tags: [backend, routing]
 created: 2026-10-08
-updated: 2026-10-11
-related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol]
+updated: 2026-10-12
+related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol, 20261012-message-replies]
 summary: Shared channel ownership, direct follow-ups, handoff versus delegation, router fallback during independent overlapping work, and model-routing contracts.
 ---
 
@@ -24,6 +24,7 @@ summary: Shared channel ownership, direct follow-ups, handoff versus delegation,
 
 - `channels.primary_agent_id`, `ownership_version`, and `allow_handoff` persist one shared owner for every participant. Completing a task leaves it in place.
 - Explicit user selection updates ownership; multiple mentions remember the last recipient. Mentions always dispatch directly.
+- Replying to an agent automatically selects its author unless explicit recipients/known mentions in the actual reply override it. Quoted text never supplies mentions; unavailable source agents reject the send. See [Message replies](message-replies.md) for snapshots and selected text.
 - Unmentioned messages dispatch directly to a valid primary, writing `method: "primary"` without an LLM router call. Busy-primary follow-ups queue normally.
 - Fresh or unavailable-owner channels use the router. Independent active user tasks across multiple owners also use it. `Store.routing_state` counts runs and pending agent deliveries, including those waiting on the global semaphore.
 - Delegation inherits `task_owner_id` from its parent. Multiple agents collaborating on one task do not activate router mode. Coalescing keeps deliveries with different task owners separate and gives each handoff its own turn.

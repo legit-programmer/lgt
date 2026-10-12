@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Archive, ArrowRightLeft, Check, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { Agent, ChannelSummary } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
@@ -21,6 +21,9 @@ import { DetailPanel } from "./DetailPanel";
 import { EmptyChannel } from "./EmptyChannel";
 import { RenameDialog } from "./RenameDialog";
 import { Timeline } from "./Timeline";
+import type { ReplyDraft } from "./ReplyQuote";
+
+const replyDrafts = new Map<string, ReplyDraft>();
 
 export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anchorSeq?: number }) {
   const channel = useWorkspace((s) => s.channels[channelId]);
@@ -30,6 +33,32 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
   const detailOpen = useUi((s) => s.detailOpen);
   const pane = useRef<HTMLElement>(null);
   const composerArea = useRef<HTMLDivElement>(null);
+  const [reply, setReply] = useState<ReplyDraft | null>(() => replyDrafts.get(channelId) ?? null);
+  const [replyLoading, setReplyLoading] = useState(false);
+  const replyRequest = useRef(0);
+  useEffect(() => {
+    if (reply) replyDrafts.set(channelId, reply);
+    else replyDrafts.delete(channelId);
+  }, [channelId, reply]);
+  useEffect(() => () => { replyRequest.current++; }, []);
+  const clearReply = useCallback(() => {
+    replyRequest.current++;
+    setReply(null);
+    setReplyLoading(false);
+  }, []);
+  const onReply = useCallback(async (seq: number, selection?: string) => {
+    const request = ++replyRequest.current;
+    setReplyLoading(true);
+    try {
+      const body = { reply_to_seq: seq, ...(selection !== undefined ? { reply_selection: selection } : {}) };
+      const quote = await api.previewReply(channelId, body);
+      if (request === replyRequest.current) setReply({ ...body, quote });
+    } catch (error) {
+      if (request === replyRequest.current) reportError(error);
+    } finally {
+      if (request === replyRequest.current) setReplyLoading(false);
+    }
+  }, [channelId]);
 
   // The composer floats over the timeline as frosted glass; the timeline reserves
   // its live height at the bottom so the newest message is never covered.
@@ -62,7 +91,8 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
     handles: new Set(Object.values(agentsById).map((a) => a.handle)),
     displayName: me?.display_name ?? "You",
     runs,
-  }), [channelId, agentsById, members, me?.display_name, runs]);
+    onReply,
+  }), [channelId, agentsById, members, me?.display_name, runs, onReply]);
 
   if (!channel) return null;
   const isDm = channel.kind === "dm";
@@ -83,6 +113,10 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
             channelId={channelId}
             members={members}
             allowMentions={!isDm}
+            reply={reply}
+            replyLoading={replyLoading}
+            displayName={ctx.displayName}
+            onClearReply={clearReply}
             placeholder={isDm ? `Message ${agent?.handle ?? channel.name} — / for commands` : `Message #${channel.name} — @ to mention, / for commands`}
           />
         </div>

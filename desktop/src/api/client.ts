@@ -1,7 +1,7 @@
 import type {
   Agent, AgentInput, AgentStatus, Attachment, ChannelSummary, Channel, Command, ContextStats,
   ConnectionInfo, Device, DevicePairing, Harness, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
-  UsageRow, WorkspaceEvent,
+  UsageRow, WorkspaceEvent, ReplyQuote, ReplyRequest,
 } from "./types";
 
 const FALLBACK_URL = "http://127.0.0.1:8000";
@@ -226,8 +226,10 @@ export const api = {
     get<WorkspaceEvent[]>(`/channels/${enc(channelId)}/events${query(params)}`),
   newContext: (channelId: string) => post<WorkspaceEvent>(`/channels/${enc(channelId)}/new`),
 
-  sendMessage: (channelId: string, body: { text: string; mentions?: string[]; attachments?: string[] }) =>
+  sendMessage: (channelId: string, body: { text: string; mentions?: string[]; attachments?: string[]; reply_to_seq?: number; reply_selection?: string }) =>
     post<WorkspaceEvent>(`/channels/${enc(channelId)}/messages`, body),
+  previewReply: (channelId: string, body: ReplyRequest) =>
+    post<ReplyQuote>(`/channels/${enc(channelId)}/reply-preview`, body),
   cancelDelivery: (channelId: string, seq: number, agentIds?: string[]) =>
     post<WorkspaceEvent>(`/channels/${enc(channelId)}/messages/${seq}/cancel`,
       agentIds ? { agent_ids: agentIds } : undefined),

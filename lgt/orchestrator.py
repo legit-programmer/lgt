@@ -27,6 +27,7 @@ from .models import (
 from .store import Store
 from .transfers import parse_transfer
 from .run_errors import duration_ms, failure_text, normalize_error
+from .replies import reply_snapshot
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -624,26 +625,34 @@ class Orchestrator:
             self._suggestion_tasks[channel_id] = asyncio.create_task(generate())
         return await asyncio.shield(self._suggestion_tasks[channel_id])
 
+    def preview_reply(self, channel_id: str, reply_to_seq: int,
+                      reply_selection: str | None = None) -> dict:
+        self._assert_channel(channel_id)
+        return reply_snapshot(self.store, channel_id, reply_to_seq, reply_selection)
+
     async def send_message(
         self, channel_id: str, text: str, mentions: list[str] | None = None,
         attachments: list[str] | None = None,
+        reply_to_seq: int | None = None, reply_selection: str | None = None,
     ) -> Event:
         if self._closing:
             raise WorkspaceError("backend is shutting down")
         attachment_ids = list(attachments or [])
+        if reply_selection is not None and reply_to_seq is None:
+            raise WorkspaceError("reply_selection requires reply_to_seq")
         if not text.strip() and not attachment_ids:
             raise WorkspaceError("a message needs text or an attachment")
         if len(set(attachment_ids)) != len(attachment_ids):
             raise WorkspaceError("an attachment can be sent only once")
-        if text.strip() == "/new" and not attachment_ids:
+        if text.strip() == "/new" and not attachment_ids and reply_to_seq is None:
             return await self.new_context(channel_id)
         command, _, argument = text.strip().partition(" ")
-        if not attachment_ids and command == "/cwd":
+        if not attachment_ids and reply_to_seq is None and command == "/cwd":
             if not argument.strip():
                 raise WorkspaceError("usage: /cwd <absolute path>")
             await self.set_channel_cwd(channel_id, argument.strip())
             return self.store.events(channel_id)[-1]
-        if not attachment_ids and command == "/cancel":
+        if not attachment_ids and reply_to_seq is None and command == "/cancel":
             self._assert_channel(channel_id)
             active = self.store.list_runs(channel_id, active_only=True)
             if argument:
@@ -663,7 +672,14 @@ class Orchestrator:
 
         def accept() -> Event:
             channel = self._assert_channel(channel_id)
+            reply = reply_snapshot(self.store, channel_id, reply_to_seq, reply_selection) if reply_to_seq is not None else None
             targets = self._mentions(channel_id, text, mentions)
+            if reply and reply["author_kind"] == "agent":
+                author = self.store.get_agent(reply["author_id"])
+                if author.retired_at or author.agent_id not in self._agent_ids(channel_id):
+                    raise WorkspaceError("the replied-to agent is no longer available in this channel")
+                if not targets:
+                    targets = [author.agent_id]
             files = [self.store.get_attachment(a) for a in attachment_ids]
             for attachment in files:
                 if attachment.channel_id != channel_id:
@@ -671,6 +687,8 @@ class Orchestrator:
                 if attachment.message_seq is not None:
                     raise WorkspaceError("attachment was already sent")
             payload: dict[str, Any] = {"text": text, "mentions": targets}
+            if reply:
+                payload["reply"] = reply
             if files:
                 payload["attachments"] = [attachment.summary() for attachment in files]
             with self.store.transaction():

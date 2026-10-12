@@ -100,14 +100,22 @@ class FakeOrchestrator:
         ):
             raise WorkspaceError("Human is not a member of this channel.")
 
-    async def send_message(self, channel_id: str, text: str, mentions=None, attachments=None) -> Event:
+    def preview_reply(self, channel_id: str, reply_to_seq: int, reply_selection=None) -> dict:
+        from lgt.replies import reply_snapshot
+        self._ensure_member(channel_id)
+        return reply_snapshot(self.store, channel_id, reply_to_seq, reply_selection)
+
+    async def send_message(self, channel_id: str, text: str, mentions=None, attachments=None,
+                           reply_to_seq=None, reply_selection=None) -> Event:
         self._ensure_member(channel_id)
         event = self.store.append_event(
             channel_id,
             "message",
             "human",
             self.human_id,
-            {"text": text, "mentions": mentions or []},
+            {"text": text, "mentions": mentions or [],
+             **({"reply": self.preview_reply(channel_id, reply_to_seq, reply_selection)}
+                if reply_to_seq is not None else {})},
         )
         self.bus.publish({"type": "event", "event": event.to_dict()})
         return event
@@ -187,6 +195,24 @@ def gateway_client(tmp_path):
     app = create_app(orch)
     with TestClient(_with_peer(app), base_url="http://127.0.0.1") as client:
         yield client, orch
+
+
+def test_reply_preview_and_send_contract(gateway_client):
+    client, orch = gateway_client
+    channel_id = orch.store.list_channels()[0].channel_id
+    source = client.post(f"/channels/{channel_id}/messages", json={"text": "source message"}).json()
+    body = {"reply_to_seq": source["seq"], "reply_selection": "message"}
+    preview = client.post(f"/channels/{channel_id}/reply-preview", json=body)
+    assert preview.status_code == 200
+    assert preview.json()["text"] == "message" and preview.json()["selected"] is True
+    response = client.post(f"/channels/{channel_id}/messages", json={"text": "actual reply", **body})
+    assert response.status_code == 201
+    assert response.json()["payload"]["text"] == "actual reply"
+    assert response.json()["payload"]["reply"] == preview.json()
+    for invalid in [{"reply_to_seq": 0}, {"reply_to_seq": True}, {"reply_selection": "excerpt"},
+                    {"reply_to_seq": source["seq"], "reply_selection": " "}]:
+        assert client.post(f"/channels/{channel_id}/messages", json={"text": "reply", **invalid}).status_code == 422
+    assert client.post(f"/channels/{channel_id}/reply-preview", json={"reply_to_seq": 999}).status_code == 404
 
 
 def test_health_and_loopback_origin_policy(gateway_client):
@@ -589,6 +615,11 @@ def test_websocket_replays_deduplicates_partial_snapshots_and_dispatches_command
         live = websocket.receive_json()
         assert live["type"] == "event"
         assert live["event"]["payload"]["text"] == "after connect"
+        websocket.send_json({"type": "send_message", "channel_id": channel_id, "text": "reply over ws",
+                             "reply_to_seq": event.seq, "reply_selection": "before connect"})
+        replied = websocket.receive_json()
+        assert replied["event"]["payload"]["reply"]["text"] == "before connect"
+        assert replied["event"]["payload"]["reply"]["seq"] == event.seq
 
 
 def test_websocket_rejects_bad_cursor_and_cross_origin(tmp_path):

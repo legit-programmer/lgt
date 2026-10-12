@@ -6,6 +6,7 @@ import type { Agent, Attachment, Command } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { bytes } from "../../lib/format";
 import { reportError } from "../../store/workspace";
+import { ReplyQuoteView, type ReplyDraft } from "./ReplyQuote";
 
 interface Pending {
   localId: number;
@@ -21,6 +22,10 @@ interface ComposerProps {
   members: Agent[];
   allowMentions: boolean;
   disabled?: boolean;
+  reply: ReplyDraft | null;
+  replyLoading: boolean;
+  displayName: string;
+  onClearReply: () => void;
 }
 
 interface Suggestion {
@@ -35,7 +40,7 @@ interface Suggestion {
 const drafts = new Map<string, string>();
 let localIds = 0;
 
-export function Composer({ channelId, placeholder, members, allowMentions, disabled }: ComposerProps) {
+export function Composer({ channelId, placeholder, members, allowMentions, disabled, reply, replyLoading, displayName, onClearReply }: ComposerProps) {
   const [text, setText] = useState(() => drafts.get(channelId) ?? "");
   const [files, setFiles] = useState<Pending[]>([]);
   const [sending, setSending] = useState(false);
@@ -46,6 +51,7 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
   const area = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const commands = useQuery({ queryKey: ["commands"], queryFn: api.commands, staleTime: Infinity });
+  useEffect(() => { if (reply) area.current?.focus(); }, [reply]);
 
   useEffect(() => {
     drafts.set(channelId, text);
@@ -122,17 +128,19 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
 
   const uploading = files.some((f) => !f.attachment && !f.error);
   const ready = files.filter((f) => f.attachment);
-  const canSend = !disabled && !sending && !uploading && (text.trim().length > 0 || ready.length > 0);
+  const canSend = !disabled && !sending && !uploading && !replyLoading && (text.trim().length > 0 || ready.length > 0);
 
   const send = async () => {
     if (!canSend) return;
     setSending(true);
     try {
-      await api.sendMessage(channelId, { text, attachments: ready.map((f) => f.attachment!.attachment_id) });
+      await api.sendMessage(channelId, { text, attachments: ready.map((f) => f.attachment!.attachment_id),
+        ...(reply ? { reply_to_seq: reply.reply_to_seq, reply_selection: reply.reply_selection } : {}) });
       files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
       setFiles([]);
       setText("");
       drafts.delete(channelId);
+      onClearReply();
     } catch (error) {
       reportError(error);
     } finally {
@@ -163,6 +171,7 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
       event.preventDefault();
       void send();
     }
+    if (event.key === "Escape" && (reply || replyLoading)) onClearReply();
   };
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -198,6 +207,12 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
     <div className={`composer${dragging ? " is-dragging" : ""}`}
       onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)} onDrop={onDrop}>
+      {reply || replyLoading ? (
+        <div className="composer-reply" aria-busy={replyLoading}>
+          {replyLoading ? <span className="fv-meta">Loading reply quote…</span> : reply ? <ReplyQuoteView quote={reply.quote} displayName={displayName} /> : null}
+          <button className="fv-icon-btn fv-icon-btn--sm" aria-label="Remove reply" onClick={onClearReply}><X /></button>
+        </div>
+      ) : null}
       {suggestions.length ? (
         <div className="composer-suggest fv-glass fv-menu" role="listbox">
           {suggestions.map((suggestion, index) => (

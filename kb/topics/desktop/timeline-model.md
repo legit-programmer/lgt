@@ -3,8 +3,8 @@ id: 20261008-timeline-model
 title: Timeline model
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-11
-related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle]
+updated: 2026-10-12
+related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle, 20261012-message-replies]
 summary: The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
 ---
 
@@ -33,6 +33,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 - **Tool groups:** finished segments with two or more tools collapse into "ran N tools · read · bash ×2 · pass/err · duration". Each child row expands to its output.
 - **Continuations:** consecutive blocks from the same speaker drop the header (`cont`).
 - **Hidden blocks:** empty, finished segments are dropped.
+- **Replies:** committed human/agent messages offer whole-message replies and text-selection replies. Each source is a message event, rather than an entire run/tool group. Sent quotes render above the new message; nested quotes and tools are outside the selectable source body.
 
 ## Timeline component behavior
 
@@ -44,6 +45,8 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 - **Performance:** blocks use `content-visibility: auto` rather than a virtual list.
 
 ## Related
+
+- [Message replies](../backend/message-replies.md) — author targeting, backend previews and composer drafts.
 
 - [Client state](client-state.md) — where events, runs and queues come from.
 - [Screens](screens.md) — the views that host the timeline.

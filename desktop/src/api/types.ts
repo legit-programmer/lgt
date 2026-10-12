@@ -277,11 +277,27 @@ export interface WorkspaceEvent<P = Record<string, unknown>> {
   payload: P;
 }
 
+export interface ReplyQuote {
+  seq: number;
+  author_id: string;
+  author_kind: "human" | "agent" | "system";
+  author_handle: string;
+  text: string;
+  truncated: boolean;
+  selected: boolean;
+}
+
+export interface ReplyRequest {
+  reply_to_seq: number;
+  reply_selection?: string;
+}
+
 export interface MessagePayload {
   text: string;
   mentions: string[];
   author_handle?: string;
   attachments?: AttachmentSummary[];
+  reply?: ReplyQuote;
 }
 
 export interface ToolCallPayload {
@@ -367,7 +383,7 @@ export type ServerFrame =
   | { type: "error"; error: { code: string; message: string } };
 
 export type ClientCommand =
-  | { type: "send_message"; channel_id: string; text: string; mentions?: string[]; attachments?: string[] }
+  | { type: "send_message"; channel_id: string; text: string; mentions?: string[]; attachments?: string[]; reply_to_seq?: number; reply_selection?: string }
   | { type: "edit_message"; channel_id: string; target_seq: number; text?: string; deleted?: boolean }
   | { type: "cancel_run"; run_id: string }
   | { type: "new_context"; channel_id: string }

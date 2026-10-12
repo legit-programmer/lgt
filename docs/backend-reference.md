@@ -124,6 +124,7 @@ All devices act as the same workspace human. Read cursors, profile, agents, hist
 | GET, PATCH | `/me` | Persistent local display name. PATCH accepts `{"display_name": "..."}`. |
 | POST | `/runs/{run_id}/cancel` | Cancel a run. |
 | POST | `/channels/{channel_id}/messages` | Append a human message and dispatch or queue work. |
+| POST | `/channels/{channel_id}/reply-preview` | Resolve a bounded text-only reply quote without writing an event. |
 | PATCH | `/channels/{channel_id}/messages/{seq}` | Append an edit or deletion event. |
 | DELETE | `/channels/{channel_id}/members/{agent_id}` | Remove an agent, cancel its pending deliveries and active runs in the channel. |
 | PUT | `/channels/{channel_id}/cwd` | Move the channel to an existing absolute directory, or `{"cwd": null}` for its managed directory. |
@@ -138,6 +139,12 @@ All devices act as the same workspace human. Read cursors, profile, agents, hist
 | POST | `/channels/{channel_id}/archive` | Archive a channel without deleting its directory. |
 
 `/docs` contains generated request schemas. Human messages accept `text`, optional `mentions` and optional `attachments` (attachment IDs). A message needs text, attachments or both. Mentions can contain agent IDs or handles. When the field is omitted, the backend extracts known `@handles` from the text. An explicit list controls dispatch. DMs always dispatch their single agent.
+
+Replies also accept `reply_to_seq` (a positive message sequence in this channel) and optional `reply_selection` (nonempty text selected from the rendered message). Omit `reply_selection` to quote the whole message. The desktop restricts selections to one message's text body; rendered Markdown selections are provided by the client as user input. The backend validates the source, applies current edits, rejects deleted messages, and snapshots text only, excluding tool events, attachments and nested reply metadata. The quote is capped at 4,000 Unicode characters including the final `\ntruncated..` marker when shortened. This is a character budget, roughly 1,000 tokens for English; other languages and code can use more tokens.
+
+`POST /channels/{channel_id}/reply-preview` accepts `{"reply_to_seq": 12, "reply_selection": "optional excerpt"}` and returns the same quote shape that send stores in `payload.reply`: `{"seq": 12, "author_id": "...", "author_kind": "agent", "author_handle": "builder", "text": "...", "truncated": false, "selected": true}`. `payload.text` remains the actual reply. Sending resolves the source again inside the channel mailbox. Later edits/deletions do not rewrite a sent quote. Quotes appear as labeled reference context in cold and resumed prompts, including after resets/checkpoints, and in channel `assigned_messages`.
+
+Replying to an agent targets its author and selects it as channel primary. Explicit recipients or known `@mentions` in the actual reply override that automatic recipient; quoted mentions never route work. An empty explicit recipient list still uses the reply author. Replies to human messages use normal channel routing. An unavailable source agent causes an error, allowing the desktop to retain the draft. Slash-command text in a reply is delivered as message text.
 
 ## Agent identity and harness choices
 
@@ -193,6 +200,7 @@ Client commands use a `type` field:
 
 ```json
 {"type": "send_message", "channel_id": "...", "text": "hello", "mentions": ["agent_id"], "attachments": ["attachment_id"]}
+{"type": "send_message", "channel_id": "...", "text": "explain this", "reply_to_seq": 12, "reply_selection": "optional excerpt"}
 {"type": "edit_message", "channel_id": "...", "target_seq": 1, "text": "updated"}
 {"type": "cancel_run", "run_id": "..."}
 {"type": "new_context", "channel_id": "..."}

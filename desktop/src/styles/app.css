@@ -548,6 +548,17 @@
   color: var(--text-3);
 }
 
+.composer-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-200);
+  padding: var(--space-300) var(--space-400) 0;
+}
+
+.composer-reply > :first-child {
+  flex: 1;
+}
+
 .composer-bar {
   display: flex;
   align-items: center;

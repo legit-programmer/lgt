@@ -4,7 +4,7 @@ title: Gateway HTTP API
 tags: [backend, api, security]
 created: 2026-10-08
 updated: 2026-10-12
-related: [20261008-websocket-protocol, 20261008-origins-and-media, 20261008-http-actions-ws-state, 20261008-attachments, 20261010-desktop-daemon, 20261012-device-pairing]
+related: [20261008-websocket-protocol, 20261008-origins-and-media, 20261008-http-actions-ws-state, 20261008-attachments, 20261010-desktop-daemon, 20261012-device-pairing, 20261012-message-replies]
 summary: The FastAPI app's local-origin policy, error envelope, request validation style, and a grouped map of HTTP routes with pointers to the authoritative reference.
 ---
 
@@ -52,7 +52,7 @@ Request validation errors stay FastAPI's 422 `detail` list. Request bodies are s
 | Health and catalog | `/health`, `/shutdown`, `/harnesses`, `/harnesses/scan`, `/harnesses/custom/probe`, `/harnesses/{h}/limits`, `/templates`, `/bootstrap`, `/commands`, `/me` |
 | Agents | `/agents`, `/agents/status`, `/agents/{id}` (GET, PUT), `/agents/{id}/retire` and `DELETE /agents/{id}` (soft retirement) |
 | Channels | `/channels` (summaries), `PATCH /channels/{id}` (rename), `/archive`, `/unarchive`, `/read`, `/context`, `/suggestions`, `/members` (GET, POST, DELETE), `/cwd`, `/queue`, `/new` |
-| Messages | `POST /channels/{id}/messages`, `PATCH …/messages/{seq}` (edit or delete), `POST …/messages/{seq}/cancel` |
+| Messages | `POST /channels/{id}/messages`, `POST …/reply-preview`, `PATCH …/messages/{seq}` (edit or delete), `POST …/messages/{seq}/cancel` |
 | Events and runs | `/channels/{id}/events` (scrollback), `/channels/{id}/runs`, `/runs`, `/runs/{id}`, `/runs/{id}/log`, `/runs/{id}/cancel` |
 | Attachments | `POST /channels/{id}/attachments`, `/attachments/{id}`, `/meta`, `/thumbnail`, `DELETE` |
 | Insight | `/usage?group_by=agent|channel|day`, `/search?q=` |
@@ -60,6 +60,8 @@ Request validation errors stay FastAPI's 422 `detail` list. Request bodies are s
 Every channel-scoped route calls `_require_channel`, which returns 404 unless the local human is a member.
 
 ## Related
+
+- [Message replies](message-replies.md) — optional reply fields and backend quote preview.
 
 - [WebSocket protocol](websocket-protocol.md) — the live half of the API.
 - [Origins and media](../desktop/origins-and-media.md) — the client side of the origin policy.
