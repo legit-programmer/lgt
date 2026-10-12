@@ -28,6 +28,8 @@ interface UiState {
   back(): void;
   forward(): void;
   toggleSidebar(): void;
+  /** Show or hide the sidebar for now, without changing the stored preference (the phone drawer). */
+  setSidebarOpen(open: boolean): void;
   setDetailOpen(open: boolean): void;
   showRuns(agentId: string | null, runId?: string | null): void;
   setDetailTab(tab: DetailTab): void;
@@ -149,6 +151,9 @@ export const useUi = create<UiState>((set, get) => ({
     const sidebarOpen = !get().sidebarOpen;
     store("lgt.sidebar", sidebarOpen ? "open" : "closed");
     set({ sidebarOpen });
+  },
+  setSidebarOpen(sidebarOpen) {
+    if (get().sidebarOpen !== sidebarOpen) set({ sidebarOpen });
   },
   setDetailOpen(detailOpen) {
     set({ detailOpen });

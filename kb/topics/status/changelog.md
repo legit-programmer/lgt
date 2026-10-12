@@ -16,6 +16,11 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-12
 
+- Build the desktop app for Android and iOS as a paired-only client. Compile out the daemon launcher on mobile, split desktop and mobile capabilities, and commit the generated Android project and mobile icons.
+- On a phone without a pairing, show **Pair with your workspace**, and scan the pairing QR with the camera; **Disconnect** replaces **Use local workspace**.
+- Add the phone layout: sidebar drawer, panel sheet, compact top bar, safe areas, dynamic viewport height, 16px inputs, Android back-button handling, and touch-visible controls.
+- On phone-width touch screens, swipe right for the sidebar and left for the channel panel, replacing both top bar toggles; panels slide in from their side.
+- Replace `window.prompt` for host paths with an app dialog, and save attachments on mobile through the system picker (Android) or the app's Documents folder (iOS).
 - Reuse the FastAPI gateway for authenticated remote clients, with configurable inbound listening and advertised pairing addresses.
 - Persist named device credential hashes; local desktop administration creates, lists, renames and revokes connections. Revocation immediately closes device sockets and survives restarts.
 - Add Settings → Devices with QR codes and verified pairing-code import into local storage. Paired clients skip local launch, use host filesystem paths, and quit without stopping the backend.

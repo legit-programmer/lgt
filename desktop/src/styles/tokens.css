@@ -152,6 +152,10 @@
   --radius-xl: 20px;
   --radius-full: 999px;
 
+  /* Over the live camera feed while scanning; the same in both themes. */
+  --scan-ink: #ffffff;
+  --scan-dim: rgb(0 0 0 / 0.55);
+
   --size-control: 34px;
   --size-control-sm: 28px;
   --size-tool-row: 26px;

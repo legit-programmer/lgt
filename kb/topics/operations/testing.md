@@ -3,8 +3,8 @@ id: 20261008-testing
 title: Testing
 tags: [ops, testing]
 created: 2026-10-08
-updated: 2026-10-10
-related: [20261008-repo-map, 20261008-running-locally, 20261008-known-issues]
+updated: 2026-10-12
+related: [20261012-mobile-client, 20261008-repo-map, 20261008-running-locally, 20261008-known-issues]
 summary: How to run the backend and desktop test suites, which test file covers which module, the fakes they use, and how UI changes were verified visually.
 ---
 
@@ -49,8 +49,11 @@ Use `settings(tmp_path, **overrides)` to build a valid `Settings` object.
 - `lib/timeline.test.ts`: block building rules.
 - `store/workspace.test.ts`: frame reducer, partials, runs, snapshots.
 - `lib/format.test.ts`: formatting and argv splitting.
-- `api/client.test.ts`: shared launch attempts, retry, token refresh, authenticated HTTP and media, and browser compatibility.
-- `App.test.tsx`: loading through daemon and workspace startup, StrictMode deduplication, string errors, and Retry.
+- `api/client.test.ts`: shared launch attempts, retry, token refresh, authenticated HTTP and media, browser compatibility, and mobile boot without daemon discovery.
+- `App.test.tsx`: loading through daemon and workspace startup, StrictMode deduplication, string errors, Retry, and the mobile pairing screen.
+- `lib/gestures.test.ts`: swipe recognition, which panel a swipe opens or closes, and ignored targets.
+- `lib/media.test.ts`: safe and de-duplicated filenames for mobile attachment saving.
+- `components/PathPrompt.test.tsx`: the host-path dialog that replaces `window.prompt`.
 
 Rust daemon tests live in `desktop/src-tauri/src/daemon.rs`. Run them with `cargo test --lib` from `desktop/src-tauri` when changing discovery or process launch.
 
@@ -62,6 +65,8 @@ The UI was checked against a live backend with headless Edge:
 
 These scripts are not in the repo. Recreate them in a scratch folder if needed. Use a scratch `data_dir`, because real runs call models.
 
+The phone layout was checked with headless Chromium (Playwright) at 390 x 844: the drawer, panel sheet, compact headers and CDP-driven swipe gestures against a live backend, and the pairing screen, connection dialog and scanner overlay in a `TAURI_ENV_PLATFORM=android` Vite build.
+
 The startup overlay was also checked in headless Edge at 1440 x 900 (dark) and 1024 x 640 (light), with backend requests held pending. Reduced-motion emulation produced no active overlay animations.
 
 ## Related
@@ -69,3 +74,4 @@ The startup overlay was also checked in headless Edge at 1440 x 900 (dark) and 1
 - [Repo map](../overview/repo-map.md) — the modules under test.
 - [Running locally](running-locally.md) — starting a backend for manual checks.
 - [Known issues](../status/known-issues.md) — flaky or environment-dependent tests.
+- [Mobile client](../desktop/mobile-client.md) — what the mobile tests and phone-width checks cover.

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, Unplug } from "lucide-react";
-import { backendUrl, isTauri, resolveBackendUrl } from "./api/client";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Link, RotateCcw, Unplug } from "lucide-react";
+import { backendUrl, isTauri, PairingRequiredError, resolveBackendUrl } from "./api/client";
 import { useWorkspace } from "./store/workspace";
 import { workspaceSocket } from "./store/socket";
 import { useUi } from "./store/ui";
@@ -15,8 +15,13 @@ import { Toasts } from "./components/Toasts";
 import { TopBar } from "./components/TopBar";
 import { StartupOverlay } from "./components/StartupOverlay";
 import { ConnectionDialog } from "./features/settings/ConnectionDialog";
+import { ScanOverlay } from "./components/ScanOverlay";
+import { PathPromptHost } from "./components/PathPrompt";
+import { isMobile, useCompactLayout, useTouchPanels } from "./lib/platform";
+import { swipeAction, useSwipe } from "./lib/gestures";
+import { cancelScan, isScanning } from "./lib/scan";
 
-type Boot = "resolving" | "loading" | "ready" | "failed";
+type Boot = "resolving" | "loading" | "ready" | "failed" | "unpaired";
 
 // React StrictMode mounts effects twice in development. Share the in-flight
 // startup so the daemon handshake and workspace boot happen only once.
@@ -55,6 +60,10 @@ export function App() {
       await startWorkspace();
       setBoot("ready");
     } catch (error) {
+      if (error instanceof PairingRequiredError) {
+        setBoot("unpaired");
+        return;
+      }
       setStartupError(startupErrorText(error));
       setBoot("failed");
     }
@@ -65,8 +74,11 @@ export function App() {
     return () => workspaceSocket.stop();
   }, [start]);
 
+  useAndroidBackButton();
+
   let content;
-  if (boot === "failed") content = <Unreachable message={startupError ?? bootError} onRetry={start} />;
+  if (boot === "unpaired") content = <Unpaired />;
+  else if (boot === "failed") content = <Unreachable message={startupError ?? bootError} onRetry={start} />;
   else if (boot !== "ready") content = <StartupOverlay />;
   else content = <Workspace />;
   // The shell carries the backdrop, so the top bar and the UI share one ground.
@@ -74,8 +86,51 @@ export function App() {
     <div className="app-shell fv-backdrop">
       <TopBar workspace={boot === "ready"} />
       {content}
+      <ScanOverlay />
+      <PathPromptHost />
     </div>
   );
+}
+
+/*
+ * Android's back gesture closes the innermost layer first: a running scan, an
+ * open dialog or menu, the phone drawer or panel. Then it walks the view
+ * history, and leaves the app from the first view. Registering the listener
+ * replaces the default, which would exit at once because views use replaceState.
+ */
+function useAndroidBackButton() {
+  useEffect(() => {
+    if (!isMobile || !isTauri()) return;
+    let live = true;
+    let unregister: (() => void) | undefined;
+    void (async () => {
+      const { exit, onBackButtonPress } = await import("@tauri-apps/api/app");
+      const listener = await onBackButtonPress(() => {
+        if (isScanning()) {
+          void cancelScan();
+          return;
+        }
+        if (document.querySelector("[role=dialog][data-state=open], [role=menu][data-state=open]")) {
+          // Radix dialogs, popovers, menus and the palette close on Escape.
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          return;
+        }
+        const ui = useUi.getState();
+        if (window.matchMedia("(max-width: 760px)").matches) {
+          if (ui.sidebarOpen) return ui.setSidebarOpen(false);
+          if (ui.detailOpen && ui.view.kind === "channel") return ui.setDetailOpen(false);
+        }
+        if (ui.historyIndex > 0) ui.back();
+        else void exit(0);
+      });
+      if (live) unregister = () => void listener.unregister();
+      else void listener.unregister();
+    })();
+    return () => {
+      live = false;
+      unregister?.();
+    };
+  }, []);
 }
 
 function Workspace() {
@@ -84,9 +139,22 @@ function Workspace() {
   const openChannel = useUi((s) => s.openChannel);
   const setPaletteOpen = useUi((s) => s.setPaletteOpen);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
+  const setSidebarOpen = useUi((s) => s.setSidebarOpen);
+  const setDetailOpen = useUi((s) => s.setDetailOpen);
+  const compact = useCompactLayout();
+  const touchPanels = useTouchPanels();
   const agents = useWorkspace((s) => s.agents);
   const channels = useWorkspace((s) => s.channels);
   const hasAgents = activeAgents(agents).length > 0;
+  // Channels have the agents/run panel; DMs and the other views don't.
+  const hasDetail = view.kind === "channel" && channels[view.channelId]?.kind === "channel";
+
+  useSwipe(touchPanels, (swipe) => {
+    const ui = useUi.getState();
+    const change = swipeAction(swipe, { sidebarOpen: ui.sidebarOpen, detailOpen: ui.detailOpen, hasDetail });
+    if (change && "sidebarOpen" in change) setSidebarOpen(change.sidebarOpen);
+    else if (change) setDetailOpen(change.detailOpen);
+  });
 
   // Land on the most recent conversation, or onboarding with no agents.
   useEffect(() => {
@@ -101,6 +169,15 @@ function Workspace() {
       .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))[0];
     if (recent) openChannel(recent.channel_id, undefined, { replace: true });
   }, [view.kind, hasAgents, channels, navigate, openChannel]);
+
+  // On a phone the sidebar and panel overlay the conversation: each view opens
+  // with both closed, so picking a conversation from the drawer reveals it.
+  // A layout effect, so a stored open sidebar never flashes over the first view.
+  useLayoutEffect(() => {
+    if (!compact) return;
+    setSidebarOpen(false);
+    setDetailOpen(false);
+  }, [compact, view, setSidebarOpen, setDetailOpen]);
 
   // A missing or archived conversation (deep link, or archived elsewhere) falls back home.
   useEffect(() => {
@@ -125,7 +202,8 @@ function Workspace() {
   }, [setPaletteOpen]);
 
   return (
-    <div className={`app${sidebarOpen ? "" : " app--no-sidebar"}`}>
+    <div className={`app${sidebarOpen && !compact ? "" : " app--no-sidebar"}`}>
+      {sidebarOpen && compact ? <div className="drawer-scrim" aria-hidden="true" onClick={() => setSidebarOpen(false)} /> : null}
       {sidebarOpen ? <Sidebar /> : null}
       <main className="app-main">
         {view.kind === "channel" && channels[view.channelId] ? (
@@ -138,6 +216,31 @@ function Workspace() {
       <CommandPalette />
       <NewChannelDialog />
       <Toasts />
+    </div>
+  );
+}
+
+/** First launch on a phone: there is no local workspace, only pairing. */
+function Unpaired() {
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  return (
+    <div className="app-splash">
+      <div className="unreachable fv-glass">
+        <Link className="unreachable-icon" />
+        <h1 className="fv-dialog-title">Pair with your workspace</h1>
+        <p className="fv-dialog-desc">
+          Lgt on your phone connects to the workspace running on your computer.
+        </p>
+        <p className="fv-hint">
+          On that computer, open Settings → Devices and create a connection. Then scan its QR code here.
+        </p>
+        <div className="fv-dialog-actions">
+          <button className="fv-btn fv-btn--primary" onClick={() => setConnectionOpen(true)}>
+            <Link /> Connect to a workspace
+          </button>
+        </div>
+        <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
+      </div>
     </div>
   );
 }
@@ -157,9 +260,11 @@ function Unreachable({ message, onRetry }: { message: string | null; onRetry: ()
         <Unplug className="unreachable-icon" />
         <h1 className="fv-dialog-title">Lgt couldn't open your workspace</h1>
         <p className="fv-dialog-desc">
-          {message ?? "Your local workspace did not answer."}
+          {message ?? (isMobile ? "Your workspace did not answer." : "Your local workspace did not answer.")}
         </p>
-        {desktop ? (
+        {isMobile ? (
+          <p className="fv-hint">Check that your phone can reach the workspace computer, then retry.</p>
+        ) : desktop ? (
           <p className="fv-hint">Retry to reconnect or start your workspace again.</p>
         ) : <>
         <pre className="unreachable-cmd">uv run python -m lgt --config config.local.json</pre>

@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "Paired phone client: scanning the pairing QR, saving attachments, opening links, and leaving the app from the Android back button.",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "permissions": [
+    "core:default",
+    "core:app:allow-exit",
+    "opener:allow-open-url",
+    "dialog:allow-save",
+    "fs:allow-write-file",
+    "fs:allow-exists",
+    "fs:scope-document",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions"
+  ]
+}

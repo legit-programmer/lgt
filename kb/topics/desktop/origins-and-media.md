@@ -4,7 +4,7 @@ title: Origins, CSP and media loading
 tags: [desktop, security, attachments]
 created: 2026-10-08
 updated: 2026-10-12
-related: [20261008-gateway-http, 20261008-attachments, 20261008-running-locally, 20261008-desktop-architecture]
+related: [20261012-mobile-client, 20261008-gateway-http, 20261008-attachments, 20261008-running-locally, 20261008-desktop-architecture]
 summary: Which origins the backend must allow for each way of running the app, the Tauri CSP, and why attachment thumbnails and downloads are fetched with CORS into blob URLs.
 ---
 
@@ -16,8 +16,8 @@ summary: Which origins the backend must allow for each way of running the app, t
 
 | Origin | Used by |
 | --- | --- |
-| `http://tauri.localhost` | The built app on Windows (Tauri v2 default) |
-| `tauri://localhost` | The built app on macOS and Linux |
+| `http://tauri.localhost` | The built app on Windows and Android (Tauri v2 default) |
+| `tauri://localhost` | The built app on macOS, Linux and iOS |
 | `http://localhost:1420` | `pnpm tauri dev` and `pnpm dev` (Vite on port 1420) |
 
 Without the matching entry, requests get `403 local_only` (local mode) or `403 forbidden_origin` (remote mode) and the app shows its unreachable screen.
@@ -36,7 +36,7 @@ Without the matching entry, requests get `403 local_only` (local mode) or `403 f
 
 `<img src>` and download navigations send no `Origin` header. From a different site (`tauri.localhost` or `localhost:1420` versus `127.0.0.1`), `Sec-Fetch-Site: cross-site` then makes the backend reject them.
 
-So `useBlobUrl` and `downloadAttachment` instead fetch with `mode: "cors"`, which sends `Origin`, turn the response into a blob URL, cache it per URL, and render or save from there. This uses the documented endpoints and is not a workaround. In daemon mode these fetches use `fetchBackendResource`, which adds the launch or device token as an Authorization header and rejects redirects and other origins. Signed URLs remain a future option.
+So `useBlobUrl` and `downloadAttachment` instead fetch with `mode: "cors"`, which sends `Origin`, turn the response into a blob URL, cache it per URL, and render or save from there. This uses the documented endpoints and is not a workaround. Mobile webviews ignore `<a download>`, so on Android and iOS `downloadAttachment` writes the bytes through the fs plugin instead; see [Mobile client](mobile-client.md). In daemon mode these fetches use `fetchBackendResource`, which adds the launch or device token as an Authorization header and rejects redirects and other origins. Signed URLs remain a future option.
 
 ## Related
 
@@ -44,3 +44,4 @@ So `useBlobUrl` and `downloadAttachment` instead fetch with `mode: "cors"`, whic
 - [Attachments](../backend/attachments.md) — the routes being fetched.
 - [Running locally](../operations/running-locally.md) — a config with these origins.
 - [Desktop architecture](desktop-architecture.md) — the shell's capabilities.
+- [Mobile client](mobile-client.md) — mobile origins and attachment saving.

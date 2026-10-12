@@ -20,8 +20,16 @@ serde_json = "1.0"
 tauri = { version = "2.12.1", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+
+# The local daemon launcher (src/daemon.rs) is desktop-only.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json"] }
 url = "2"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))'.dependencies]
 libc = "0.2"
+
+# Paired mobile clients scan the pairing QR and save attachments.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+tauri-plugin-fs = "2"

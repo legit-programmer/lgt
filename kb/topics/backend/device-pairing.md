@@ -4,7 +4,7 @@ title: Device pairing and remote access
 tags: [backend, desktop, api, security, config]
 created: 2026-10-12
 updated: 2026-10-12
-related: [20261008-gateway-http, 20261008-runtime-and-config, 20261010-desktop-daemon, 20261008-websocket-protocol, 20261008-full-permission-agents, 20261008-system-overview, 20261008-desktop-architecture]
+related: [20261012-mobile-client, 20261008-gateway-http, 20261008-runtime-and-config, 20261010-desktop-daemon, 20261008-websocket-protocol, 20261008-full-permission-agents, 20261008-system-overview, 20261008-desktop-architecture]
 summary: Persistent named device credentials, QR payloads, opt-in remote listening, local administration, and immediate socket revocation.
 ---
 
@@ -30,7 +30,7 @@ All `/devices` routes and `/shutdown` require both loopback and the current loca
 
 `features/settings/DevicesDialog.tsx` renders local Settings → Devices, QR generation through `qrcode`, and revocation. `ConnectionDialog.tsx` verifies pasted pairing JSON through `/connection` before persisting it under `lgt.pairedConnection`. `api/client.ts` gives stored pairing precedence over local startup and sends credentials only to the selected origin with redirects disabled. Launch tokens stay in memory. `lib/folder.ts` asks for host filesystem paths for remote workspaces. `quit_client` exits a paired desktop without shutting down a previous managed local daemon. The socket client stops retrying after a 1008 close.
 
-Native mobile scanning remains a future client feature. Its backend contract is the same versioned QR payload, Bearer requests, and authenticated cursor replay described in [the API reference](../../../docs/backend-reference.md#device-pairing-and-remote-access).
+The Android and iOS builds of the same app are paired-only clients that scan this QR natively; see [Mobile client](../desktop/mobile-client.md). They use the same versioned QR payload, Bearer requests, and authenticated cursor replay described in [the API reference](../../../docs/backend-reference.md#device-pairing-and-remote-access).
 
 ## Validation
 
@@ -45,3 +45,4 @@ Native mobile scanning remains a future client feature. Its backend contract is 
 - [Full-permission agents](../decisions/full-permission-agents.md) — paired access authorizes agent execution.
 - [System overview](../overview/system-overview.md) — shared workspace and message flow.
 - [Desktop architecture](../desktop/desktop-architecture.md) — host and paired boot paths.
+- [Mobile client](../desktop/mobile-client.md) — native QR scanning on Android and iOS.

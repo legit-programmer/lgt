@@ -12,6 +12,7 @@ import { StatusBadge } from "../../components/Status";
 import { TopBarSlot } from "../../components/TopBar";
 import { cliLine, hueStyle } from "../../lib/agents";
 import { pickFolder } from "../../lib/folder";
+import { useTouchPanels } from "../../lib/platform";
 import { displayPath, plural, tokens } from "../../lib/format";
 import { useUi } from "../../store/ui";
 import { contextKey, reportError, useWorkspace } from "../../store/workspace";
@@ -172,6 +173,7 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
   const detailOpen = useUi((s) => s.detailOpen);
   const setDetailOpen = useUi((s) => s.setDetailOpen);
   const setPaletteOpen = useUi((s) => s.setPaletteOpen);
+  const touchPanels = useTouchPanels();
   const [renaming, setRenaming] = useState(false);
   const [savingHandoff, setSavingHandoff] = useState(false);
   const primary = members.find((a) => a.agent_id === channel.primary_agent_id);
@@ -218,9 +220,12 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
     </TopBarSlot>
     <TopBarSlot target="actions">
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
-      <button className="fv-icon-btn" aria-label="Agents panel" aria-pressed={detailOpen} onClick={() => setDetailOpen(!detailOpen)}>
-        <PanelRight />
-      </button>
+      {/* On touch phones the panel opens by swiping left (lib/gestures.ts). */}
+      {touchPanels ? null : (
+        <button className="fv-icon-btn" aria-label="Agents panel" aria-pressed={detailOpen} onClick={() => setDetailOpen(!detailOpen)}>
+          <PanelRight />
+        </button>
+      )}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <button className="fv-icon-btn" aria-label="Channel actions"><MoreHorizontal /></button>
@@ -282,7 +287,9 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
       ) : null}
     </TopBarSlot>
     <TopBarSlot target="actions">
-      <button className="fv-btn fv-btn--sm" onClick={fresh}><RotateCcw /> Fresh context</button>
+      <button className="fv-btn fv-btn--sm" aria-label="Fresh context" onClick={fresh}>
+        <RotateCcw /> <span className="topbar-label">Fresh context</span>
+      </button>
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
       <button className="fv-icon-btn" aria-label={`Edit ${agent.handle}`}
         onClick={() => navigate({ kind: "agent-edit", agentId: agent.agent_id, returnTo: view })}>
