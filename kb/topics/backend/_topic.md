@@ -9,7 +9,7 @@ The Python package in `lgt/`: storage, orchestration, harness adapters, and the 
 - [Context and sessions](context-and-sessions.md) — prompt rendering, resume or cold, checkpoints.
 - [Message replies](message-replies.md) — text-only quotes, selected text, author routing and composer drafts.
 - [Routing](routing.md) — shared ownership, handoff/delegation, direct follow-ups, overlapping tasks, model routing and suggestions.
-- [Harness adapters](harness-adapters.md) — registry, Codex, Claude, Gemini, custom.
+- [Harness adapters](harness-adapters.md) — registry, model reasoning modes, Codex, Claude, Gemini, custom.
 - [Process hosting](process-hosting.md) — process trees, Job Objects, SDK host, one-shot calls.
 - [Attachments](attachments.md) — storage, limits, binding, serving, native inputs.
 - [Gateway HTTP API](gateway-http.md) — origin policy, errors, route map.

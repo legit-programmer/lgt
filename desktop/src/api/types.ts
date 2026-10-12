@@ -14,6 +14,7 @@ export interface Agent {
   description: string;
   harness: HarnessId;
   model: string;
+  reasoning_effort?: string | null;
   system_prompt: string;
   allowed_tools: string[];
   default_cwd: string | null;
@@ -34,6 +35,7 @@ export interface AgentInput {
   description: string;
   harness: HarnessId;
   model: string;
+  reasoning_effort?: string | null;
   system_prompt: string;
   allowed_tools: string[];
   default_cwd: string | null;
@@ -57,6 +59,8 @@ export interface HarnessModel {
   label: string;
   description: string;
   default: boolean;
+  reasoning_modes: { id: string; label: string; description: string }[];
+  default_reasoning_effort: string | null;
 }
 
 export interface HarnessTool {

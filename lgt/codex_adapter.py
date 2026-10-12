@@ -290,6 +290,7 @@ class CodexAppServerRunner:
                     sandbox=Sandbox.full_access,
                     cwd=turn.channel.cwd,
                     model=turn.agent.model,
+                    effort=turn.agent.reasoning_effort,
                 ))
                 self._turn_handle = handle
                 async for notification in self._notifications(handle, limits_queue):

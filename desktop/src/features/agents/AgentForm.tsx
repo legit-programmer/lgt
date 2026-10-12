@@ -38,6 +38,7 @@ interface FormState {
   description: string;
   harness: string;
   model: string;
+  reasoningEffort: string | null;
   systemPrompt: string;
   tools: string[];
   defaultCwd: string;
@@ -52,6 +53,7 @@ function initialState(agent: Agent | null): FormState {
     description: agent?.description ?? "",
     harness: agent?.harness ?? "",
     model: agent?.model ?? "",
+    reasoningEffort: agent?.reasoning_effort ?? null,
     systemPrompt: agent?.system_prompt ?? "",
     tools: agent?.allowed_tools ?? [],
     defaultCwd: agent?.default_cwd ?? "",
@@ -96,7 +98,8 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
   useEffect(() => {
     if (!catalog || !catalog.models.length) return;
     if (!catalog.models.some((m) => m.id === form.model)) {
-      update({ model: (catalog.models.find((m) => m.default) ?? catalog.models[0]).id });
+      const next = catalog.models.find((m) => m.default) ?? catalog.models[0];
+      update({ model: next.id, reasoningEffort: next.default_reasoning_effort ?? null });
     }
     if (!catalog.capabilities.allowed_tools && form.tools.length) update({ tools: [] });
     else if (form.tools.some((t) => !catalog.tools.some((tool) => tool.id === t))) {
@@ -156,6 +159,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
       description: form.description.trim(),
       harness: form.harness,
       model: form.model,
+      reasoning_effort: form.reasoningEffort,
       system_prompt: form.systemPrompt,
       allowed_tools: catalog?.capabilities.allowed_tools ? form.tools : [],
       default_cwd: form.defaultCwd.trim() || null,
@@ -251,7 +255,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
               <div className="cli-grid" role="radiogroup" aria-label="Backing CLI">
                 {(harnesses.data ?? []).map((harness) => (
                   <CliCard key={harness.harness} harness={harness} selected={form.harness === harness.harness}
-                    onSelect={() => { update({ harness: harness.harness }); setError(null); }} />
+                    onSelect={() => { update({ harness: harness.harness, model: "", reasoningEffort: null }); setError(null); }} />
                 ))}
                 {harnesses.isLoading ? <p className="fv-meta">Looking for CLIs on this machine…</p> : null}
               </div>
@@ -276,7 +280,7 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
                   {catalog?.models.length ? (
                     <div className="fv-segmented model-picker" role="group" aria-label="Model">
                       {catalog.models.map((m) => (
-                        <button type="button" key={m.id} aria-pressed={form.model === m.id} onClick={() => update({ model: m.id })}>
+                        <button type="button" key={m.id} aria-pressed={form.model === m.id} onClick={() => update({ model: m.id, reasoningEffort: m.default_reasoning_effort ?? null })}>
                           {m.label.toLowerCase()}
                         </button>
                       ))}
@@ -286,6 +290,15 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
                   )}
                   {model ? <span className="fv-hint">{model.label} · {model.description}</span> : null}
               </div>
+              {model?.reasoning_modes?.length ? (
+                <div className="fv-field">
+                  <label htmlFor="agent-reasoning">Reasoning</label>
+                  <select id="agent-reasoning" className="fv-input" value={form.reasoningEffort ?? ""} onChange={(event) => update({ reasoningEffort: event.target.value || null })}>
+                    <option value="">Provider default</option>
+                    {model.reasoning_modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
+                  </select>
+                </div>
+              ) : null}
               <div className="form-row">
                 <div className="fv-field">
                   <label htmlFor="agent-flags">Extra CLI flags</label>

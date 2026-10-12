@@ -1,3 +1,4 @@
+import { AgentInference } from "../../components/AgentInference";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
@@ -71,7 +72,7 @@ function AddAgentButton({ channel, members }: { channel: ChannelSummary; members
           {candidates.map((agent) => (
             <button key={agent.agent_id} className="fv-menu-item" onClick={() => add(agent)}>
               <AgentAvatar agent={agent} />
-              <span className="fv-name" style={hueStyle(agent)}>{agent.handle}</span>
+              <span className="fv-name" style={hueStyle(agent)}><AgentInference agent={agent}>{agent.handle}</AgentInference></span>
               <span className="fv-meta menu-detail">{agent.description}</span>
             </button>
           ))}
@@ -114,7 +115,7 @@ function AgentCard({ agent, channel }: { agent: Agent; channel: ChannelSummary }
       <div className="agent-card-top">
         <AgentAvatar agent={agent} status={state} />
         <div className="agent-card-text">
-          <span className="fv-name" style={hueStyle(agent)}>{agent.handle}</span>
+          <span className="fv-name" style={hueStyle(agent)}><AgentInference agent={agent}>{agent.handle}</AgentInference></span>
           <span className="fv-meta fv-mono fv-provider-label"><ProviderLogo harness={agent.harness} />{cliLine(agent, harnesses.data)}</span>
         </div>
         <StatusBadge state={state} since={state === "working" ? here?.started_at : undefined} />

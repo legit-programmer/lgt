@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import math
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,83 @@ def canonical_harness(value: str) -> str:
 
 
 def _model(model_id: str, description: str, default: bool = False) -> dict[str, Any]:
-    return {"id": model_id, "label": model_id.title(), "description": description, "default": default}
+    return {"id": model_id, "label": model_id.title(), "description": description, "default": default,
+            "reasoning_modes": [], "default_reasoning_effort": None}
+
+
+def _validated_model_modes(model: dict[str, Any]) -> dict[str, Any]:
+    modes = model.get("reasoning_modes", [])
+    default = model.get("default_reasoning_effort")
+    if not isinstance(modes, list) or any(not isinstance(mode, dict) or
+            set(mode) != {"id", "label", "description"} or
+            any(not isinstance(mode[key], str) or not mode[key].strip() for key in mode)
+            for mode in modes):
+        raise WorkspaceError("custom harness supplied invalid reasoning modes")
+    ids = [mode["id"] for mode in modes]
+    if len(ids) != len(set(ids)) or (default is not None and
+            (not isinstance(default, str) or default not in ids)):
+        raise WorkspaceError("custom harness supplied invalid default reasoning effort")
+    return dict(model, reasoning_modes=modes, default_reasoning_effort=default)
+
+
+def _effort_id(value: Any) -> str:
+    return str(getattr(value, "value", value))
+
+
+def _codex_model(model: Any) -> dict[str, Any]:
+    modes = [{"id": _effort_id(mode.reasoning_effort),
+              "label": _effort_id(mode.reasoning_effort).replace("_", " ").title(),
+              "description": mode.description}
+             for mode in getattr(model, "supported_reasoning_efforts", [])]
+    default = getattr(model, "default_reasoning_effort", None)
+    default = _effort_id(default) if default is not None else None
+    return {"id": model.model, "label": model.display_name, "description": model.description,
+            "default": model.is_default, "reasoning_modes": modes,
+            "default_reasoning_effort": default if default in {m["id"] for m in modes} else None}
+
+
+def _claude_reasoning(models: list[dict[str, Any]], version: str | None, help_text: str) -> None:
+    """Only expose controls when both the installed CLI and resolved model support them.
+
+    Alias/version thresholds and model levels follow Claude Code's model-config
+    reference. Unknown or older alias resolutions remain provider-managed.
+    """
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", version or "")
+    if "--effort" not in help_text or not match:
+        return
+    effort_help = help_text[help_text.index("--effort"):help_text.index("--effort") + 300]
+    offered = set(re.findall(r"\b(low|medium|high|xhigh|max)\b", effort_help))
+    if not offered:
+        return
+    cli_version = tuple(int(part) for part in match.groups())
+    for model in models:
+        family = model["id"]
+        resolved = os.environ.get(f"ANTHROPIC_DEFAULT_{family.upper()}_MODEL")
+        if not resolved:
+            # Alternate provider aliases can point to older models. Do not guess.
+            if any(os.environ.get(key) for key in ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                                                  "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_BASE_URL")):
+                continue
+            minimum = {"sonnet": (2, 1, 284), "opus": (2, 1, 280), "haiku": (2, 1, 293)}[family]
+            if cli_version < minimum:
+                continue
+            resolved = f"claude-{family}-5-5"
+        if re.search(r"claude-(?:opus|sonnet|haiku)-5-5", resolved):
+            levels, default = ["low", "medium", "high", "xhigh", "max"], "medium"
+        elif re.search(r"claude-(?:opus|sonnet)-4-6", resolved):
+            levels, default = ["low", "medium", "high", "max"], "high"
+        elif re.search(r"claude-(?:opus-(?:4-[78]|5)|sonnet-5)(?:$|[^\d])", resolved):
+            levels, default = ["low", "medium", "high", "xhigh", "max"], "high"
+        else:
+            continue
+        levels = [level for level in levels if level in offered]
+        if not levels:
+            continue
+        model["reasoning_modes"] = [{"id": level, "label": level.title(),
+            "description": {"low": "Fast responses with less reasoning", "medium": "Balanced speed and reasoning",
+                            "high": "More reasoning for complex tasks", "xhigh": "Extra reasoning for demanding tasks",
+                            "max": "Maximum reasoning depth"}[level]} for level in levels]
+        model["default_reasoning_effort"] = default if default in levels else None
 
 
 def _tools(names: tuple[str, ...]) -> list[dict[str, str]]:
@@ -104,9 +181,7 @@ class HarnessRegistry:
                         async with AsyncCodex(CodexConfig(codex_bin=self.codex_bin,
                                                          cwd=str(self.settings.data_dir))) as client:
                             response = await client.models()
-                            models = [{"id": model.model, "label": model.display_name,
-                                       "description": model.description, "default": model.is_default}
-                                      for model in response.data]
+                            models = [_codex_model(model) for model in response.data]
                             try:
                                 account = await asyncio.wait_for(client.account(), 2)
                                 auth = "signed_in" if getattr(account, "account", None) else "signed_out"
@@ -126,6 +201,7 @@ class HarnessRegistry:
                         if not all(marker in help_text for marker in required):
                             item["capabilities"]["usage"] = False
                         if item["harness"] == "claude":
+                            _claude_reasoning(item["models"], item["version"], help_text)
                             item["capabilities"]["allowed_tools"] = "--tools" in help_text
                             item["capabilities"]["image_input"] = "--input-format" in help_text
                 except (OSError, TimeoutError):
@@ -143,8 +219,7 @@ class HarnessRegistry:
             return 1, "", "CLI probe output exceeded 65536 bytes"
 
     def list(self) -> list[dict[str, Any]]:
-        return [dict(item, capabilities=dict(item["capabilities"]),
-                     models=list(item["models"]), tools=list(item["tools"])) for item in self._catalog]
+        return copy.deepcopy(self._catalog)
 
     async def probe_custom(self, command: list[str], extra_args: list[str] | None = None) -> dict[str, Any]:
         if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
@@ -209,6 +284,7 @@ class HarnessRegistry:
             for tool in tools
         ):
             raise WorkspaceError("custom harness supplied invalid tool catalog")
+        models = [_validated_model_modes(model) for model in models]
         descriptor = {"harness": "custom", "found": True, "path": binary,
                       "version": str(contract.get("version", "1")), "auth": "unknown",
                       "capabilities": {key: caps[key] for key in CAPABILITIES},
@@ -234,6 +310,16 @@ class HarnessRegistry:
             raise WorkspaceError(f"harness {harness} is not probed")
         return dict(entry["capabilities"])
 
+    def models_for(self, agent: Agent) -> list[dict[str, Any]]:
+        harness = canonical_harness(agent.harness)
+        if harness == "custom":
+            entry = self._custom_cache.get((*agent.command, *agent.extra_args))
+        else:
+            entry = next((item for item in self._catalog if item["harness"] == harness), None)
+        if entry is None:
+            raise WorkspaceError(f"harness {harness} is not probed")
+        return copy.deepcopy(entry["models"])
+
     def validate_agent(self, agent: Agent) -> None:
         harness = canonical_harness(agent.harness)
         entry = next((item for item in self._catalog if item["harness"] == harness), None)
@@ -249,6 +335,10 @@ class HarnessRegistry:
             entry = self._custom_cache[(*command, *extra)]
         if agent.model and agent.model not in {m["id"] for m in entry["models"]}:
             raise WorkspaceError(f"model {agent.model} is not offered by {harness}")
+        model = next((item for item in entry["models"] if item["id"] == agent.model), None)
+        if agent.reasoning_effort is not None and (model is None or
+                agent.reasoning_effort not in {mode["id"] for mode in model.get("reasoning_modes", [])}):
+            raise WorkspaceError(f"reasoning effort {agent.reasoning_effort} is not offered by model {agent.model}")
         if agent.allowed_tools:
             if not entry["capabilities"]["allowed_tools"]:
                 raise WorkspaceError(f"{harness} cannot enforce allowed_tools")

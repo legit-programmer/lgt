@@ -86,6 +86,26 @@ Every HTTP request, including media, sends the credential in the Authorization h
 
 All devices act as the same workspace human. Read cursors, profile, agents, history, and channel state are shared, not per-device user accounts.
 
+## Agent model and reasoning controls
+
+Agents include `reasoning_effort: string | null`, persisted in SQLite. Null uses the provider default. Creation accepts this field. Full replacement preserves an omitted effort when the model and provider are unchanged.
+
+Every model in `GET /harnesses`, custom probe responses, and `GET /agents/{agent_id}/models` includes `reasoning_modes: [{id, label, description}]` and `default_reasoning_effort: string | null`. Modes are ordered for the UI slider. An empty list means the adapter cannot configure reasoning for that model. The desktop displays these values without inventing levels.
+
+`PATCH /agents/{agent_id}/inference` accepts only `model` and `reasoning_effort`; at least one field is required:
+
+```json
+{"model":"gpt-5.4","reasoning_effort":"high"}
+```
+
+The model must belong to the current agent's catalog. A non-null effort must appear in that model's reasoning modes. Unknown models, unsupported efforts, and retired agents return 400. Unknown agents return 404. Empty bodies, null or empty models, invalid field types, and provider or other extra fields return 422. Invalid requests leave configuration unchanged.
+
+When a different model is supplied without an effort, the backend selects that model's default effort. An effort-only update keeps the model. Explicit null restores the provider default. The response is the saved agent; the server also broadcasts the existing `agent` WebSocket frame. All unrelated fields, including provider, tools, prompt, avatar and working directory, are preserved.
+
+Active runs retain the agent configuration captured at dispatch. Changes affect subsequent runs across all channels. An explicit effort participates in the session fingerprint, so changed model or reasoning settings rebuild context cold on the next run; existing null-effort fingerprints remain compatible.
+
+Codex modes and defaults come from its SDK model catalog and are passed as turn effort. Claude modes depend on the installed CLI's `--effort` support and the resolved model family; unknown or older configurations advertise no modes. Claude uses `--effort` for each configured run. Gemini's current adapter advertises no modes because its installed CLI has no supported isolated per-run reasoning override. Custom harnesses can advertise modes through their probe and receive the effort in the turn request. See [custom harness protocol](custom-harness.md).
+
 ## HTTP API
 
 | Method | Path | Result |
@@ -103,6 +123,8 @@ All devices act as the same workspace human. Read cursors, profile, agents, hist
 | GET, POST | `/agents` | List or create agent configuration. |
 | GET | `/agents/status` | Agent state, active runs across channels, activity, and last failure. |
 | GET, PUT | `/agents/{agent_id}` | Read or replace agent configuration. |
+| GET | `/agents/{agent_id}/models` | Model choices and reasoning modes for this agent, including its custom command catalog. |
+| PATCH | `/agents/{agent_id}/inference` | Update model and/or reasoning level while preserving the provider. |
 | POST, DELETE | `/agents/{agent_id}/retire`, `/agents/{agent_id}` | Soft retirement. The POST uses the `/retire` path; DELETE uses the agent path. |
 | GET, POST | `/channels` | List or create channels and DMs. |
 | PATCH | `/channels/{channel_id}` | Rename with `{"name": "..."}` or set automatic handoffs with `{"allow_handoff": false}`; either or both fields are allowed. |

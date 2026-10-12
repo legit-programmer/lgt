@@ -1,6 +1,6 @@
 import type {
   Agent, AgentInput, AgentStatus, Attachment, ChannelSummary, Channel, Command, ContextStats,
-  ConnectionInfo, Device, DevicePairing, Harness, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
+  ConnectionInfo, Device, DevicePairing, Harness, HarnessModel, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
   UsageRow, WorkspaceEvent, ReplyQuote, ReplyRequest,
 } from "./types";
 import { isMobile } from "../lib/platform";
@@ -209,6 +209,9 @@ export const api = {
   updateMe: (display_name: string) => patch<Profile>("/me", { display_name }),
 
   agents: () => get<Agent[]>("/agents"),
+  agentModels: (agentId: string) => get<HarnessModel[]>(`/agents/${enc(agentId)}/models`),
+  updateAgentInference: (agentId: string, input: { model?: string; reasoning_effort?: string | null }) =>
+    patch<Agent>(`/agents/${enc(agentId)}/inference`, input),
   agentStatuses: () => get<AgentStatus[]>("/agents/status"),
   createAgent: (input: AgentInput) => post<Agent>("/agents", input),
   replaceAgent: (agentId: string, input: AgentInput) => put<Agent>(`/agents/${enc(agentId)}`, input),

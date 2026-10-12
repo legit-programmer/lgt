@@ -58,6 +58,10 @@ The remaining product decision is proactive scheduled or event-triggered agent p
 
 This compares `Lgt Screens.pdf` with the backend as of 2026-10-08. Each gap is a backend contract to build. The frontend does not compensate for missing backend features. It does not scan every channel to derive status, keep state in localStorage that the server should own, or guess queue state from heuristics. Any state the UI shows comes from the backend through HTTP for the initial load and WebSocket frames for changes.
 
+## Agent inference controls (implemented 2026-10-11)
+
+Adapters expose per-model reasoning modes and defaults through the harness catalog and `GET /agents/{id}/models`. `PATCH /agents/{id}/inference` changes model or effort without changing provider, persists the result, and broadcasts an agent frame. A frosted transparent hover panel in chat renders a model selector and stepped slider from those server values. Unsupported reasoning controls are shown as automatic. Changes apply to subsequent runs; active runs retain their captured settings. See [backend reference](../docs/backend-reference.md#agent-model-and-reasoning-controls).
+
 ## Closed in this change
 
 | UI element | Backend contract | Reference |

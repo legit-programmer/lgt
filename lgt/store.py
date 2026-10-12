@@ -51,6 +51,7 @@ def _agent(row: sqlite3.Row) -> Agent:
     return Agent(
         agent_id=row["agent_id"], handle=row["handle"], name=row["name"],
         description=row["description"], harness=row["harness"], model=row["model"],
+        reasoning_effort=row["reasoning_effort"],
         system_prompt=row["system_prompt"], allowed_tools=_load(row["allowed_tools"]),
         default_cwd=row["default_cwd"], permission_mode=row["permission_mode"],
         avatar=_load(row["avatar"]), hue=row["hue"],
@@ -209,6 +210,7 @@ class Store:
         """Add columns to databases created before the current schema."""
         additions = {
             "agents": {
+                "reasoning_effort": "TEXT",
                 "avatar": "TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(avatar))",
                 "hue": "INTEGER", "extra_args": "TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(extra_args))",
                 "command": "TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(command))",
@@ -320,15 +322,16 @@ class Store:
             avatar = agent.avatar or {"style": DEFAULT_AVATAR_STYLE, "seed": agent.agent_id}
             self.conn.execute(
                 """INSERT INTO agents (
-                       agent_id, handle, name, description, harness, model,
+                       agent_id, handle, name, description, harness, model, reasoning_effort,
                        system_prompt, allowed_tools, default_cwd, permission_mode,
                        avatar, hue, extra_args, command, retired_at, dm_channel_id,
                        created_at, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(agent_id) DO UPDATE SET
                        handle=excluded.handle, name=excluded.name,
                        description=excluded.description, harness=excluded.harness,
-                       model=excluded.model, system_prompt=excluded.system_prompt,
+                       model=excluded.model, reasoning_effort=excluded.reasoning_effort,
+                       system_prompt=excluded.system_prompt,
                        allowed_tools=excluded.allowed_tools, default_cwd=excluded.default_cwd,
                        permission_mode=excluded.permission_mode,
                        avatar=excluded.avatar, extra_args=excluded.extra_args,
@@ -338,7 +341,7 @@ class Store:
                        updated_at=excluded.updated_at""",
                 (
                     agent.agent_id, agent.handle, agent.name, agent.description,
-                    agent.harness, agent.model, agent.system_prompt,
+                    agent.harness, agent.model, agent.reasoning_effort, agent.system_prompt,
                     _dump(agent.allowed_tools), agent.default_cwd, agent.permission_mode,
                     _dump(avatar), hue, _dump(agent.extra_args), _dump(agent.command),
                     agent.retired_at, agent.dm_channel_id,

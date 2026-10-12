@@ -60,6 +60,7 @@ class Agent:
     command: list[str] = field(default_factory=list)
     retired_at: str | None = None
     dm_channel_id: str | None = None
+    reasoning_effort: str | None = None
 
     def __post_init__(self) -> None:
         if not self.avatar:
@@ -74,6 +75,8 @@ class Agent:
             "extra_args": self.extra_args, "command": self.command,
             "permission_mode": self.permission_mode,
         }
+        if self.reasoning_effort is not None:
+            config["reasoning_effort"] = self.reasoning_effort
         return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 

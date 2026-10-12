@@ -41,7 +41,7 @@ A stored session resumes only if all of these hold:
 
 - `last_run_status` is `clean`;
 - the harness is unchanged;
-- the agent config fingerprint (harness, model, system prompt, tools) is unchanged;
+- the agent config fingerprint (harness, model, explicit reasoning effort, system prompt, tools, permissions and argv) is unchanged;
 - the session cwd equals the channel's cwd;
 - `last_seen_seq <= end_seq`;
 - the harness artifact still exists (`artifact_exists`, for example Codex's rollout file under `CODEX_HOME/sessions`);

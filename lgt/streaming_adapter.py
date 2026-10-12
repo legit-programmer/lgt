@@ -205,6 +205,8 @@ class ClaudeRunner(StreamingRunner):
                 "--include-partial-messages", "--input-format", "stream-json",
                 "--model", turn.agent.model,
                 "--append-system-prompt", turn.agent.system_prompt)
+        if turn.agent.reasoning_effort is not None:
+            args += ("--effort", turn.agent.reasoning_effort)
         if turn.agent.allowed_tools:
             args += ("--tools", ",".join(turn.agent.allowed_tools),
                      "--disallowedTools", "mcp__*",
@@ -321,6 +323,7 @@ class CustomRunner(StreamingRunner):
     def stdin(self, turn: Turn) -> bytes:
         payload = {"type": "turn", "version": 1, "run_id": turn.run.run_id,
                    "prompt": turn.prompt, "model": turn.agent.model,
+                   "reasoning_effort": turn.agent.reasoning_effort,
                    "system_prompt": turn.agent.system_prompt,
                    "session_mode": turn.run.session_mode,
                    "session_id": turn.session.harness_session_id if turn.session else None,

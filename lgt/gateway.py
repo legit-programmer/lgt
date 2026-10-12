@@ -11,7 +11,7 @@ import sqlite3
 from io import BytesIO
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from lgt.attachments import VIEWABLE_IMAGE_TYPES, AttachmentTooLarge
 from lgt.device_auth import DeviceAuth
-from lgt.models import Agent, Attachment, Event, WorkspaceError, new_id
+from lgt.models import Agent, Attachment, Event, WorkspaceError, new_id, utc_now
 from lgt.services import COMMANDS, template_catalog
 from lgt.run_errors import duration_ms, failure_text, normalize_error
 
@@ -40,6 +40,7 @@ class AgentCreate(_StrictModel):
     description: str
     harness: str = Field(min_length=1)
     model: str = Field(min_length=1)
+    reasoning_effort: str | None = None
     system_prompt: str
     allowed_tools: list[str] = Field(default_factory=list)
     default_cwd: str | None = None
@@ -55,6 +56,7 @@ class AgentReplace(_StrictModel):
     description: str
     harness: str = Field(min_length=1)
     model: str = Field(min_length=1)
+    reasoning_effort: str | None = None
     system_prompt: str
     allowed_tools: list[str] = Field(default_factory=list)
     default_cwd: str | None = None
@@ -62,6 +64,19 @@ class AgentReplace(_StrictModel):
     avatar: dict[str, str] | None = None
     extra_args: list[str] = Field(default_factory=list)
     command: list[str] = Field(default_factory=list)
+
+
+class AgentInference(_StrictModel):
+    model: str | None = Field(default=None, min_length=1)
+    reasoning_effort: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if not self.model_fields_set:
+            raise ValueError("model or reasoning_effort is required")
+        if "model" in self.model_fields_set and self.model is None:
+            raise ValueError("model cannot be null")
+        return self
 
 
 class ReadBody(_StrictModel):
@@ -617,10 +632,36 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
         data = body.model_dump()
         if data["avatar"] is None:
             data["avatar"] = current.avatar
+        if ("reasoning_effort" not in body.model_fields_set and current.model == data["model"]
+                and current.harness == data["harness"]):
+            data["reasoning_effort"] = current.reasoning_effort
         agent = Agent(agent_id=agent_id, hue=current.hue, created_at=current.created_at,
                       dm_channel_id=current.dm_channel_id, retired_at=current.retired_at, **data)
         if hasattr(orch, "harness_registry") and hasattr(orch.harness_registry, "prepare_agent"):
             await orch.harness_registry.prepare_agent(agent)
+        orch.put_agent(agent)
+        return _plain(orch.store.get_agent(agent_id))
+
+    @app.get("/agents/{agent_id}/models")
+    async def agent_models(agent_id: str):
+        agent = orch.store.get_agent(agent_id)
+        await orch.harness_registry.prepare_agent(agent)
+        return orch.harness_registry.models_for(agent)
+
+    @app.patch("/agents/{agent_id}/inference")
+    async def patch_agent_inference(agent_id: str, body: AgentInference):
+        current = orch.store.get_agent(agent_id)
+        await orch.harness_registry.prepare_agent(current)
+        current = orch.store.get_agent(agent_id)
+        model = body.model if "model" in body.model_fields_set else current.model
+        effort = current.reasoning_effort
+        if "reasoning_effort" in body.model_fields_set:
+            effort = body.reasoning_effort
+        elif model != current.model:
+            entry = next((item for item in orch.harness_registry.models_for(current)
+                          if item["id"] == model), None)
+            effort = entry["default_reasoning_effort"] if entry else None
+        agent = replace(current, model=model, reasoning_effort=effort, updated_at=utc_now())
         orch.put_agent(agent)
         return _plain(orch.store.get_agent(agent_id))
 

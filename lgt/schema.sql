@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS agents (
     description TEXT NOT NULL,
     harness TEXT NOT NULL,
     model TEXT NOT NULL,
+    reasoning_effort TEXT,
     system_prompt TEXT NOT NULL,
     allowed_tools TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(allowed_tools)),
     default_cwd TEXT,

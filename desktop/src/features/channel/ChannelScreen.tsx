@@ -1,3 +1,4 @@
+import { AgentInference } from "../../components/AgentInference";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
@@ -271,8 +272,8 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
   return (
     <>
     <TopBarSlot target="title">
-      <AgentAvatar agent={agent} status={state} className="topbar-passive" />
-      <h1 className="fv-name topbar-heading" style={hueStyle(agent)}>{agent.handle}</h1>
+      <AgentInference agent={agent}><AgentAvatar agent={agent} status={state} className="topbar-passive" /></AgentInference>
+      <h1 className="fv-name topbar-heading" style={hueStyle(agent)}><AgentInference agent={agent}>{agent.handle}</AgentInference></h1>
       <span className="topbar-passive">
         {activeHere ? <StatusBadge state="working" since={activeHere.started_at} /> : <StatusBadge state={state} />}
       </span>

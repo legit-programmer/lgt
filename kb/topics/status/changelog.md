@@ -34,6 +34,14 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 - Add a shared agent transfer protocol, current roster/policy/assignment context, ownership and transfer history, and the channel header's primary/router indicator and automatic handoff toggle.
 - Migrate existing databases additively, preserve ownership through restarts, and test routing, delegation, delayed acceptance, concurrency, shared-user state and frontend snapshots. Two pre-existing POSIX process tests also fail on unchanged HEAD in this container.
 
+### Change agent model and reasoning from chat
+
+- Add nullable persisted agent reasoning effort, per-model modes and defaults, a provider-preserving inference PATCH endpoint, and per-agent model catalogs.
+- Send supported settings to Codex, Claude and custom harnesses. Existing null-effort fingerprints remain compatible; changed settings apply to the next run and trigger cold context rebuilding.
+- Add a frosted transparent hover panel over agent identities with model selection, a stepped reasoning slider, keyboard access, and server-confirmed state. Unsupported controls display automatic reasoning.
+- Validate catalog, migration, endpoint errors, busy-run snapshots and adapter arguments with focused backend tests; verify hover editing and server acknowledgment with focused desktop tests.
+
+
 ## 2026-10-10
 
 - Use locally bundled Claude, Gemini and Codex logos throughout provider selection and metadata, with a theme-aware Codex mark and a terminal fallback for custom CLIs.

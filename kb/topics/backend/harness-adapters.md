@@ -3,7 +3,7 @@ id: 20261008-harness-adapters
 title: Harness adapters
 tags: [backend, harness]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-11
 related: [20261008-run-lifecycle, 20261008-process-hosting, 20261008-full-permission-agents, 20261008-open-gaps]
 summary: The harness registry (discovery, catalogs, capability-based validation, runner factory) and the Codex, Claude, Gemini, and custom adapters that turn CLI output into normalized events.
 ---
@@ -29,6 +29,12 @@ summary: The harness registry (discovery, catalogs, capability-based validation,
   - `allowed_tools` when the harness can't enforce them, or tools outside its catalog;
   - unsafe `extra_args`. Claude allows only `--max-turns N` and `--max-budget-usd X`; custom harnesses reject `--lgt-*` flags.
 - **`runner(harness)`** is the orchestrator's runner factory. **`artifact_exists`** checks that a stored session can still be resumed.
+
+## Model-specific reasoning
+
+`GET /agents/{id}/models` returns the agent's provider catalog, including its custom command probe when applicable. Model entries add ordered `reasoning_modes` and `default_reasoning_effort`. Codex reads these from the SDK, Claude gates them on installed CLI and model support, and Gemini currently exposes no configurable modes. Custom probes can advertise and honor their own modes.
+
+`PATCH /agents/{id}/inference` accepts only model and reasoning effort, validates them through `HarnessRegistry`, preserves provider and unrelated config, and broadcasts the saved agent. SQLite stores the nullable effort. Codex sends it through the turn SDK, Claude passes `--effort`, and custom turn JSON includes `reasoning_effort`. Null uses provider defaults.
 
 ## Adapters
 

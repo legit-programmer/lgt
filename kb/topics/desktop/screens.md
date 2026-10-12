@@ -32,6 +32,10 @@ summary: Which desktop/src/features file implements each screen of Lgt Screens.p
 - **DM:** avatar, handle, status, CLI and model, cwd, context stats; Fresh context, search, edit.
 - **Agent form:** "New agent" or "Edit …"; Retire.
 
+## Agent hover controls
+
+`components/AgentInference.tsx` opens over agent avatars and names in chat, the DM header and conversation details. Pointer hover opens a frosted transparent glass panel; clicking or keyboard focus also exposes the controls. The provider remains a fixed identity. Models and the stepped reasoning slider come from `GET /agents/{id}/models`, including the agent's custom probe catalog. Apply sends `PATCH /agents/{id}/inference`; workspace state changes only when the server's agent frame arrives. Unsupported reasoning modes show automatic control by the CLI. The full agent form also preserves and exposes supported effort settings.
+
 ## Composer (`Composer.tsx`)
 
 - **Mentions and commands:** `@` autocompletes channel members (not shown in DMs), and `/` lists `GET /commands`; commands run on the server.

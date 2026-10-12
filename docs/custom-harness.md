@@ -12,6 +12,8 @@ A custom harness is an executable argv array in the agent's `command` field, wit
 
 Every capability is a boolean. Models require `id`, `label`, `description`, and `default`. Tools require `id`, `label`, and `description`. A custom harness that advertises tool restrictions must enforce the requested `allowed_tools` in its implementation. The backend validates that the selected tools and model appear in its catalog.
 
+Models can optionally include `reasoning_modes: [{id, label, description}]` and `default_reasoning_effort: string | null`. Omitted fields normalize to an empty mode list and null default. Mode IDs must be nonempty and unique; the default must be null or one of those IDs. Advertising modes commits the harness to honor the selected mode. `GET /agents/{id}/models` returns the catalog for that agent's command and extra arguments.
+
 Version 1 requires `resume: false`; custom sessions rebuild cold. Interruption terminates the process tree. The probe does not perform a model turn.
 
 ## Turn request
@@ -21,6 +23,8 @@ The normal command receives exactly one stdin line. The backend then closes stdi
 ```json
 {"type":"turn","version":1,"run_id":"01...","prompt":"Rendered channel context","model":"local-model","system_prompt":"Agent instructions","session_mode":"cold","session_id":null,"allowed_tools":["Read"],"attachments":[{"attachment_id":"01...","filename":"notes.pdf","media_type":"application/pdf","size_bytes":1234,"path":"C:/.../notes.pdf"}]}
 ```
+
+Turn requests include `reasoning_effort: string | null`. Null uses the harness default; a non-null value is validated against the selected model's advertised modes.
 
 Attachment paths refer to server storage. A harness can pass supported files into its model as native inputs. Other files remain available through their paths and the rendered prompt.
 

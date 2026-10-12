@@ -1,3 +1,4 @@
+import { AgentInference } from "../../components/AgentInference";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -59,7 +60,7 @@ function AgentChip({ agent, fallback }: { agent: Agent | undefined; fallback?: s
   return (
     <span className="fv-chip" style={hueStyle(agent)}>
       <AgentAvatar agent={agent} className="chip-avatar" />
-      {agent?.handle ?? fallback ?? "agent"}
+      {agent ? <AgentInference agent={agent}>{agent.handle}</AgentInference> : fallback ?? "agent"}
     </span>
   );
 }
@@ -177,11 +178,11 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
   const className = ["fv-msg", live && "fv-msg--live", block.cont && "fv-msg--cont"].filter(Boolean).join(" ");
   return (
     <article className={className} data-seq={block.seq}>
-      {block.cont ? <span /> : <AgentAvatar agent={agent} status={live ? (queuedRun ? "queued" : "working") : null} />}
+      {block.cont ? <span /> : agent ? <AgentInference agent={agent}><AgentAvatar agent={agent} status={live ? (queuedRun ? "queued" : "working") : null} /></AgentInference> : <AgentAvatar agent={agent} />}
       <div style={{ minWidth: 0 }}>
         {!block.cont ? (
           <div className="fv-msg-head">
-            <span className="fv-name" style={hueStyle(agent)}>{agent?.handle ?? "agent"}</span>
+            <span className="fv-name" style={hueStyle(agent)}>{agent ? <AgentInference agent={agent}>{agent.handle}</AgentInference> : "agent"}</span>
             {agent ? <span className="fv-cli"><span className="via">via</span><ProviderLogo harness={agent.harness} />{harnessLabel(agent.harness)}</span> : null}
             {live ? (
               <StatusBadge state={queuedRun ? "queued" : "working"} since={queuedRun ? undefined : run?.started_at ?? block.ts}
