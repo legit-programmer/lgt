@@ -11,6 +11,7 @@ import { reportError, useWorkspace } from "../../store/workspace";
 import { ProfileDialog } from "./ProfileDialog";
 import { DevicesDialog } from "../settings/DevicesDialog";
 import { ConnectionDialog } from "../settings/ConnectionDialog";
+import { isMobile } from "../../lib/platform";
 
 export function Sidebar() {
   const agentsById = useWorkspace((s) => s.agents);
@@ -63,7 +64,7 @@ export function Sidebar() {
       <button className="sidebar-search" onClick={() => setPaletteOpen(true)}>
         <Search />
         <span>Search or jump to…</span>
-        <kbd className="fv-kbd">Ctrl K</kbd>
+        {isMobile ? null : <kbd className="fv-kbd">Ctrl K</kbd>}
       </button>
 
       <nav className="sidebar-scroll">
@@ -111,7 +112,8 @@ export function Sidebar() {
           aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
           {theme === "dark" ? <Sun /> : <Moon />}
         </button>
-        {isTauri() ? (
+        {/* Mobile apps don't quit themselves; Disconnect lives in the connection dialog. */}
+        {isTauri() && !isMobile ? (
           <button className="fv-icon-btn" disabled={quitting} onClick={() => void quit()}
             aria-label={quitting ? "Quitting Lgt" : "Quit Lgt"}
             title={isRemoteConnection() ? "Quit Lgt" : "Quit Lgt and stop background runs"}>

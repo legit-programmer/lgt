@@ -19,8 +19,8 @@ The backend accepts only its own origin and exact origins listed in `settings.al
 
 | Origin | Used by |
 | --- | --- |
-| `http://tauri.localhost` | The built app on Windows |
-| `tauri://localhost` | The built app on macOS and Linux |
+| `http://tauri.localhost` | The built app on Windows and Android |
+| `tauri://localhost` | The built app on macOS, Linux and iOS |
 | `http://localhost:1420` | `pnpm tauri dev` and `pnpm dev` |
 
 ## Run
@@ -50,7 +50,7 @@ Configure the host backend's `listen_host: "0.0.0.0"`, a stable `listen_port`, a
 
 **Connect to a workspace** verifies a pasted code and stores it under `lgt.pairedConnection` in local storage. Stored pairing takes precedence over local daemon startup and environment overrides. HTTP, media fetches, and the WebSocket handshake authenticate with that device credential. **Use local workspace** forgets it and reloads the default connection. Quitting a paired client exits that client without stopping a daemon. Remote workspace folder paths refer to the host computer.
 
-Native mobile scanning is a future client feature; the versioned QR payload and backend protocol are ready for it.
+The Android and iOS apps scan the same QR code; see [Mobile](#mobile-android-and-ios).
 
 See [Desktop daemon lifecycle](../kb/topics/backend/desktop-daemon.md) for authentication and diagnostics. `--daemon` keeps Python in the foreground internally; the Tauri launcher detaches it and opens no console.
 
@@ -63,6 +63,27 @@ pnpm bundle
 This uses `src-tauri/tauri.release.conf.json` to package a standalone Python runtime, production dependencies from `uv.lock`, and the backend source as Tauri resources. Build on the target operating system. End users do not need Python or `uv` installed. Installed harness CLIs still use the user's existing sign-ins.
 
 `pnpm tauri build --no-bundle` builds the shell alone. Use the release configuration to include the backend when distributing the application.
+
+## Mobile (Android and iOS)
+
+The same app builds for phones as a paired-only client. A phone has no local workspace: the daemon launcher is compiled out, and the first launch shows **Pair with your workspace**. Create a connection in **Settings → Devices** on the workspace computer, then choose **Scan QR code** on the phone. **Disconnect** in the connection dialog forgets the pairing.
+
+The workspace must be reachable from the phone, and its `allowed_origins` must include the phone's webview origin from the table above. Android release builds and iOS refuse plain-HTTP addresses, so use an HTTPS `advertised_url` for anything beyond Android debug builds.
+
+```sh
+# Android: Android Studio or the SDK command-line tools, an NDK, and ANDROID_HOME / NDK_HOME
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+pnpm android:dev                   # device or emulator, with Vite on TAURI_DEV_HOST
+pnpm android:build                 # signed release needs a keystore; see the Tauri docs
+
+# iOS: macOS with Xcode
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+pnpm tauri ios init                # generates src-tauri/gen/apple once; commit it
+pnpm tauri icon src-tauri/icons/icon.png   # then restore the desktop icons it rewrites, keeping gen/apple's
+pnpm ios:dev
+```
+
+If a dev build's requests fail with `403 forbidden_origin`, the webview is loading the Vite server directly; add its origin (for example `http://192.168.1.20:1420`) to `allowed_origins` for development. `src-tauri/gen/android` is committed. `src-tauri/Info.ios.plist` is merged into the generated iOS project. See [Mobile client](../kb/topics/desktop/mobile-client.md) for how the build differs from desktop.
 
 ## Test
 
@@ -82,6 +103,6 @@ pnpm typecheck
 | `src/store/socket.ts` | Cursor replay, resync and reconnect |
 | `src/lib/timeline.ts` | Event log to timeline blocks: runs, tool groups, notices |
 | `src/features/` | Sidebar, channel and DM views, detail panel, agent form, onboarding, command palette |
-| `src-tauri/` | The Rust shell: daemon discovery, detached startup, clean shutdown, and folder dialogs. `tauri.windows.conf.json` makes the Windows window frameless, and `src/components/TopBar.tsx` draws the combined title bar and app chrome. |
+| `src-tauri/` | The Rust shell: daemon discovery, detached startup, clean shutdown, and folder dialogs (desktop); QR scanning and file saving (mobile). `capabilities/default.json` is desktop-only and `capabilities/mobile.json` is mobile-only; `gen/android` is the generated Android project. `tauri.windows.conf.json` makes the Windows window frameless, and `src/components/TopBar.tsx` draws the combined title bar and app chrome. |
 
 Agent avatars are DiceBear avatars (Critters by default), rendered locally from the `{style, seed}` the backend stores. Each style's definition loads on first use. Fonts are bundled, so the app works offline.

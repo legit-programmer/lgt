@@ -28,6 +28,8 @@ export interface RunInfo {
 export interface Toast {
   id: number;
   message: string;
+  /** Errors by default; "info" confirms a completed action. */
+  tone?: "info";
 }
 
 const TERMINAL: ReadonlySet<RunStatus> = new Set(["completed", "failed", "cancelled"]);
@@ -60,7 +62,7 @@ interface WorkspaceState {
   refreshSummaries(): Promise<void>;
   upsertAgent(agent: Agent): void;
   setConnection(connection: Connection): void;
-  toast(message: string): void;
+  toast(message: string, tone?: "info"): void;
   dismissToast(id: number): void;
 }
 
@@ -325,9 +327,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set({ connection });
   },
 
-  toast(message) {
+  toast(message, tone) {
     const id = ++toastId;
-    set((state) => ({ toasts: [...state.toasts.slice(-3), { id, message }] }));
+    set((state) => ({ toasts: [...state.toasts.slice(-3), tone ? { id, message, tone } : { id, message }] }));
     window.setTimeout(() => get().dismissToast(id), 6000);
   },
 

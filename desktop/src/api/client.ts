@@ -3,6 +3,7 @@ import type {
   ConnectionInfo, Device, DevicePairing, Harness, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
   UsageRow, WorkspaceEvent, ReplyQuote, ReplyRequest,
 } from "./types";
+import { isMobile } from "../lib/platform";
 
 const FALLBACK_URL = "http://127.0.0.1:8000";
 let baseUrl: string | null = null;
@@ -59,6 +60,14 @@ export function isRemoteConnection(): boolean {
   return !["127.0.0.1", "localhost", "[::1]"].includes(new URL(baseUrl).hostname);
 }
 
+/** A mobile client has no local workspace and must be paired before it can boot. */
+export class PairingRequiredError extends Error {
+  constructor() {
+    super("Pair this device with a workspace to continue.");
+    this.name = "PairingRequiredError";
+  }
+}
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -74,6 +83,8 @@ export function resolveBackendUrl(): Promise<string> {
     if (pairing) {
       url = pairing.url;
       token = pairing.token;
+    } else if (isMobile) {
+      throw new PairingRequiredError();
     } else if (isTauri()) {
       const { invoke } = await import("@tauri-apps/api/core");
       const connection = await invoke<{ url: string; token: string | null; managed: boolean }>("ensure_backend");

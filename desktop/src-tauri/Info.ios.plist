@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Tauri merges this into the generated iOS Info.plist. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Lgt uses the camera to scan the pairing code shown on your workspace computer.</string>
+	<!-- Saved attachments go to the app's Documents folder; these show it in Files under Lgt. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+</dict>
+</plist>

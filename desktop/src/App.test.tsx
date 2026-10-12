@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  PairingRequiredError: class PairingRequiredError extends Error {},
   resolveBackendUrl: vi.fn(),
   backendUrl: vi.fn(() => "http://127.0.0.1:8000"),
   workspace: {
@@ -18,6 +19,8 @@ const mocks = vi.hoisted(() => ({
     history: [] as unknown[],
     historyIndex: 0,
     toggleSidebar: vi.fn(),
+    setSidebarOpen: vi.fn(),
+    setDetailOpen: vi.fn(),
     back: vi.fn(),
     forward: vi.fn(),
     navigate: vi.fn(),
@@ -34,6 +37,7 @@ vi.mock("./api/client", () => ({
   savePairedConnection: vi.fn(),
   backendUrl: mocks.backendUrl,
   resolveBackendUrl: mocks.resolveBackendUrl,
+  PairingRequiredError: mocks.PairingRequiredError,
 }));
 
 vi.mock("./store/workspace", () => ({
@@ -126,5 +130,17 @@ describe("application startup", () => {
     await act(async () => retry.resolve("http://127.0.0.1:8000"));
     await screen.findByText("Ready workspace");
     expect(mocks.socket.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers pairing instead of an error when a phone has no workspace yet", async () => {
+    mocks.resolveBackendUrl.mockRejectedValueOnce(new mocks.PairingRequiredError("pair first"));
+
+    render(<StrictMode><App /></StrictMode>);
+
+    expect(await screen.findByRole("heading", { name: "Pair with your workspace" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Connect to a workspace" }));
+    expect(screen.getByRole("dialog", { name: "Connect to a workspace" })).not.toBeNull();
+    expect(mocks.workspace.boot).not.toHaveBeenCalled();
   });
 });

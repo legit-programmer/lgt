@@ -119,4 +119,18 @@ describe("daemon connection", () => {
     expect(client.socketHandshake(3)).toEqual({ last_id: 3 });
     expect(new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers).has("Authorization")).toBe(false);
   });
+
+  it("asks a phone to pair instead of discovering a local daemon, then uses its pairing", async () => {
+    vi.stubEnv("TAURI_ENV_PLATFORM", "android");
+    let client = await import("./client");
+    await expect(client.resolveBackendUrl()).rejects.toBeInstanceOf(client.PairingRequiredError);
+    expect(invoke).not.toHaveBeenCalled();
+    localStorage.setItem("lgt.pairedConnection", JSON.stringify({ type: "lgt-device", version: 1,
+      url: "https://lgt.example", device_id: "phone", name: "Pixel", token: "lgt_device_" + "a".repeat(43) }));
+    vi.resetModules();
+    client = await import("./client");
+    expect(await client.resolveBackendUrl()).toBe("https://lgt.example");
+    expect(client.isRemoteConnection()).toBe(true);
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });

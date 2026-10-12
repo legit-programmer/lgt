@@ -1,11 +1,11 @@
 import { isRemoteConnection } from "../api/client";
+import { requestPath } from "../components/PathPrompt";
 
 /** Pick a directory with the native dialog. Returns null when cancelled. */
 export async function pickFolder(title: string, defaultPath?: string | null): Promise<string | null> {
   if (isRemoteConnection() || !("__TAURI_INTERNALS__" in window)) {
-    // A plain browser has no folder dialog; the path is typed instead.
-    const typed = window.prompt(`${title}\nEnter an absolute directory path on the workspace host:`, defaultPath ?? "");
-    return typed?.trim() || null;
+    // The native dialog would browse this device, not the workspace host; the path is typed instead.
+    return requestPath(title, defaultPath);
   }
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({ directory: true, multiple: false, title, defaultPath: defaultPath ?? undefined });
