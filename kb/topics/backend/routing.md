@@ -3,8 +3,8 @@ id: 20261008-routing
 title: Routing
 tags: [backend, routing]
 created: 2026-10-08
-updated: 2026-10-12
-related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol, 20261012-message-replies]
+updated: 2026-10-13
+related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol, 20261012-message-replies, 20261013-skill-invocation]
 summary: Shared channel ownership, direct follow-ups, handoff versus delegation, router fallback during independent overlapping work, and model-routing contracts.
 ---
 
@@ -32,6 +32,8 @@ summary: Shared channel ownership, direct follow-ups, handoff versus delegation,
 - Only user selection, accepted handoff, and router assignment append `ownership_changed`. In-flight routing results cannot supersede a newer ownership version.
 
 ## Handoff and delegation
+
+Explicit [skill invocations](skill-invocation.md) route to one validated executor with `method`/`reason_code: "skill"`. The primary is the default when eligible; other agents require user selection. This dispatch preserves primary ownership, skips the model router, and isolates the invocation in its own queue batch.
 
 An agent emits a complete `lgt-transfer` fenced JSON message containing `mode` (`handoff` or `delegation`), `target` (member handle or ID), and `text` (the task and context). `parse_transfer` does not interpret quoted examples or human messages. Custom harnesses can alternatively send a structured `transfer` on `message`.
 

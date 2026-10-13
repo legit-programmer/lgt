@@ -4,6 +4,8 @@ The contracts in the sections after "Open" are implemented. The original gap des
 
 Message replies are implemented through optional `reply_to_seq`/`reply_selection` fields and `POST /channels/{id}/reply-preview`. The backend owns quote snapshots, truncation and automatic author targeting; the desktop supplies the user's selection and displays the returned quote. See [Message replies](../kb/topics/backend/message-replies.md).
 
+Skill discovery and invocation are implemented for Codex and Claude through `GET /channels/{id}/skills` and `POST …/skills/invoke`. The server owns source identity, eligible executors, primary defaults, declared tool checks and queued revalidation. The desktop offers explicit backend/agent choices and permission-failure recovery. Gemini/custom skill discovery remains an adapter extension. See [Skill discovery and invocation](../kb/topics/backend/skill-invocation.md).
+
 ## Open: found while building the desktop app
 
 These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. D1 is implemented. D2 through D6 remain open, and the app omits unsupported controls.

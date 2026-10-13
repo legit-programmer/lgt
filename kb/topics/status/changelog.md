@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-13
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,14 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-13
+
+- Add harness-owned skill discovery for Codex and Claude, including scoped Claude plugins and legacy commands, native enabled state, source identity and partial discovery errors.
+- Add channel/DM skill catalogs, explicit invocation APIs, primary defaults, eligible-agent selection, backend/new-agent actions, isolated turns and unchanged channel ownership.
+- Check declared tool requirements and native Claude Skill access; retain unknown requirements and harness runtime enforcement. Normalize permission denials and expose explicit recovery actions. Revalidate queued installations and preserve transcripts through guarded backend switches.
+- Cover discovery, provenance, routing, permissions, queue changes, native inputs, strict HTTP contracts and composer workflows with model-free tests.
+- Verify 226 backend tests (excluding two existing POSIX process tests reproduced on unchanged HEAD), 49 desktop tests, the production build, and native Codex discovery without model calls.
 
 ## 2026-10-12
 

@@ -3,8 +3,8 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-11
-related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps]
+updated: 2026-10-13
+related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
 
@@ -13,6 +13,8 @@ summary: Which desktop/src/features file implements each screen of Lgt Screens.p
 > Summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 
 ## Map
+
+The composer lists skills across Codex and Claude installations through `/` and `/list`. Server-provided eligibility drives default execution and `SkillDialog.tsx` choices. `SkillRecovery.tsx` exposes explicit retry/settings actions after permission failures. Agent forms support a requested backend and creating an agent directly for a channel. See [Skill discovery and invocation](../backend/skill-invocation.md).
 
 | Design screen | Files | Backend |
 | --- | --- | --- |

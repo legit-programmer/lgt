@@ -253,8 +253,12 @@ class ClaudeRunner(StreamingRunner):
                     if block.get("type") == "tool_result"]
         if kind == "result":
             items = [usage(event.get("usage") or {}, claude=True)] if event.get("usage") else []
-            items.append(NormalizedEvent("run_finished", {"ok": not event.get("is_error", False),
-                "error": structured_error(str(event.get("result") or event.get("subtype"))) if event.get("is_error") else None,
+            denials = event.get("permission_denials") or []
+            denied_tools = sorted({str(denial.get("tool_name", "tool")) for denial in denials})
+            error = ({"code": "permission", "message": "Agent permissions blocked tools: " + ", ".join(denied_tools)}
+                     if denials else structured_error(str(event.get("result") or event.get("subtype"))) if event.get("is_error") else None)
+            items.append(NormalizedEvent("run_finished", {"ok": not event.get("is_error", False) and not denials,
+                "error": error,
                 "cancelled": False}))
             return items
         return []

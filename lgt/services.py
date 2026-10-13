@@ -6,6 +6,7 @@ from typing import Any
 
 
 COMMANDS = [
+    {"name": "/list", "description": "List skills from every harness in this workspace", "usage": "/list"},
     {"name": "/new", "description": "Start a fresh context in this channel", "usage": "/new"},
     {"name": "/cwd", "description": "Change this channel's working directory", "usage": "/cwd <absolute path>"},
     {"name": "/cancel", "description": "Cancel an active run", "usage": "/cancel [run_id]"},

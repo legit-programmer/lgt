@@ -36,6 +36,8 @@ def normalize_error(error: Any, exit_code: int | None = None) -> dict[str, Any]:
             code = "auth"
         elif "timeout" in lowered or "timed out" in lowered:
             code = "timeout"
+        elif "permission denied" in lowered or "not allowed" in lowered or "permission to use" in lowered:
+            code = "permission"
         elif signal is not None:
             code = "signal"
         elif "cancel" in lowered:

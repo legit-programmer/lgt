@@ -28,6 +28,7 @@ from .store import Store
 from .transfers import parse_transfer
 from .run_errors import duration_ms, failure_text, normalize_error
 from .replies import reply_snapshot
+from .skills import Skill, skill_instructions
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -187,6 +188,9 @@ class Orchestrator:
             previous = None
         if previous is not None and previous.retired_at:
             raise WorkspaceError("a retired agent cannot be changed")
+        if previous and (previous.harness != agent.harness or previous.command != agent.command):
+            if any(run.agent_id == agent.agent_id for run in self.store.list_runs(active_only=True)):
+                raise WorkspaceError("Stop or finish this agent's active runs before changing its backend")
         with self.store.transaction():
             self.store.put_agent(agent)
             self._ensure_dm(self.store.get_agent(agent.agent_id))
@@ -630,29 +634,74 @@ class Orchestrator:
         self._assert_channel(channel_id)
         return reply_snapshot(self.store, channel_id, reply_to_seq, reply_selection)
 
+    async def channel_skills(self, channel_id: str) -> dict[str, Any]:
+        channel = self._assert_channel(channel_id)
+        discovered_cwd = channel.cwd
+        skills, errors = await self.harness_registry.discover_skills(discovered_cwd)
+        # Discovery awaits subprocesses. Use the latest membership and owner.
+        channel = self._assert_channel(channel_id)
+        if channel.cwd != discovered_cwd:
+            raise WorkspaceError("Channel directory changed; refresh the skill menu")
+        return self._skill_catalog(channel, skills, errors)
+
+    def _skill_catalog(self, channel: Channel, skills: list[Skill], errors: list[dict]) -> dict[str, Any]:
+        members = self._agent_ids(channel.channel_id)
+        primary = members[0] if channel.kind == "dm" and members else channel.primary_agent_id
+        entries = []
+        for skill in skills:
+            agents = []
+            for agent in self.store.list_agents():
+                reason = self.harness_registry.skill_ineligibility(skill, agent)
+                agents.append({"agent_id": agent.agent_id, "handle": agent.handle,
+                               "in_channel": agent.agent_id in members,
+                               "eligible": reason is None, "reason": reason,
+                               "reason_code": ("harness_mismatch" if
+                                   ("claude" if agent.harness == "claude_code" else agent.harness) != skill.harness
+                                   else "tools" if reason and reason.startswith("Agent does not allow")
+                                   else "unavailable" if reason else None)})
+            eligible = [agent["agent_id"] for agent in agents if agent["in_channel"] and agent["eligible"]]
+            default = primary if primary in eligible else None
+            entries.append({**skill.summary(), "agents": agents, "eligible_agent_ids": eligible,
+                "default_agent_id": default,
+                "recommended_agent_id": default or (eligible[0] if len(eligible) == 1 else None),
+                "status": "ready" if default else "choose_agent" if eligible else "unavailable",
+                "reason": None if eligible else skill.unavailable_reason or
+                    f"No agent in this conversation can invoke this {skill.harness} skill"})
+        return {"channel_id": channel.channel_id, "kind": channel.kind, "skills": entries, "errors": errors}
+
+    async def invoke_skill(self, channel_id: str, skill_id: str, arguments: str = "",
+                           agent_id: str | None = None, attachments: list[str] | None = None,
+                           reply_to_seq: int | None = None, reply_selection: str | None = None) -> Event:
+        return await self.send_message(channel_id, arguments, attachments=attachments,
+            reply_to_seq=reply_to_seq, reply_selection=reply_selection,
+            skill_id=skill_id, skill_agent_id=agent_id)
+
     async def send_message(
         self, channel_id: str, text: str, mentions: list[str] | None = None,
         attachments: list[str] | None = None,
         reply_to_seq: int | None = None, reply_selection: str | None = None,
+        *, skill_id: str | None = None, skill_agent_id: str | None = None,
     ) -> Event:
         if self._closing:
             raise WorkspaceError("backend is shutting down")
         attachment_ids = list(attachments or [])
         if reply_selection is not None and reply_to_seq is None:
             raise WorkspaceError("reply_selection requires reply_to_seq")
-        if not text.strip() and not attachment_ids:
+        if not text.strip() and not attachment_ids and not skill_id:
             raise WorkspaceError("a message needs text or an attachment")
         if len(set(attachment_ids)) != len(attachment_ids):
             raise WorkspaceError("an attachment can be sent only once")
-        if text.strip() == "/new" and not attachment_ids and reply_to_seq is None:
+        if not skill_id and text.strip() == "/new" and not attachment_ids and reply_to_seq is None:
             return await self.new_context(channel_id)
-        command, _, argument = text.strip().partition(" ")
-        if not attachment_ids and reply_to_seq is None and command == "/cwd":
+        parts = text.strip().split(maxsplit=1)
+        command = parts[0] if parts else ""
+        argument = parts[1] if len(parts) > 1 else ""
+        if not skill_id and not attachment_ids and reply_to_seq is None and command == "/cwd":
             if not argument.strip():
                 raise WorkspaceError("usage: /cwd <absolute path>")
             await self.set_channel_cwd(channel_id, argument.strip())
             return self.store.events(channel_id)[-1]
-        if not attachment_ids and reply_to_seq is None and command == "/cancel":
+        if not skill_id and not attachment_ids and reply_to_seq is None and command == "/cancel":
             self._assert_channel(channel_id)
             active = self.store.list_runs(channel_id, active_only=True)
             if argument:
@@ -670,11 +719,52 @@ class Orchestrator:
                 return event
             return await self._call(channel_id, notice)
 
-        def accept() -> Event:
+        async def accept() -> Event:
             channel = self._assert_channel(channel_id)
+            skill = None
+            message_text = text
+            skill_arguments = text
+            if skill_id or (command.startswith("/") and command not in {"/new", "/cwd", "/cancel"}):
+                skills, errors = await self.harness_registry.discover_skills(channel.cwd)
+                if not skill_id and command == "/list":
+                    if attachment_ids or reply_to_seq is not None:
+                        raise WorkspaceError("/list cannot include attachments or a reply; use the skill menu")
+                    catalog = self._skill_catalog(channel, skills, errors)
+                    with self.store.transaction():
+                        event = self._append(channel_id, "system", "human", self.human_id, {
+                            "code": "skills_list", "skills": catalog["skills"], "errors": errors,
+                            "text": "Available skills:\n" + "\n".join(
+                                f"/{entry['name']} · {entry['harness']} · {entry['status']}" for entry in catalog["skills"])
+                                if skills else "No skills found in this workspace.",
+                        })
+                    self._publish(event)
+                    return event
+                matches = [entry for entry in skills if entry.skill_id == skill_id] if skill_id else [
+                    entry for entry in skills if command[1:] in {entry.name, f"{entry.harness}:{entry.name}"}]
+                if len(matches) != 1:
+                    raise WorkspaceError("Skill is unavailable or ambiguous; refresh /list and select its installation")
+                skill = matches[0]
+                skill_arguments = text if skill_id else argument
+                message_text = f"/{skill.name}" + (f" {skill_arguments}" if skill_arguments else "")
             reply = reply_snapshot(self.store, channel_id, reply_to_seq, reply_selection) if reply_to_seq is not None else None
-            targets = self._mentions(channel_id, text, mentions)
-            if reply and reply["author_kind"] == "agent":
+            targets = self._mentions(channel_id, text, mentions) if not skill or not skill_id else []
+            if skill:
+                if len(targets) > 1:
+                    raise WorkspaceError("Select exactly one agent for a skill invocation")
+                primary = self._agent_ids(channel_id)[0] if channel.kind == "dm" else channel.primary_agent_id
+                selected = skill_agent_id or (targets[0] if len(targets) == 1 else primary)
+                if mentions:
+                    explicit = self._mentions(channel_id, "", mentions)
+                    if len(explicit) != 1 or (skill_agent_id and explicit[0] != skill_agent_id):
+                        raise WorkspaceError("Select exactly one agent for a skill invocation")
+                    selected = explicit[0]
+                if not selected or selected not in self._agent_ids(channel_id):
+                    raise WorkspaceError("Select an eligible agent in this conversation to invoke the skill")
+                reason = self.harness_registry.skill_ineligibility(skill, self.store.get_agent(selected))
+                if reason:
+                    raise WorkspaceError(f"{reason}. Choose another agent or explicitly change this agent's backend or tools")
+                targets = [selected]
+            if not skill and reply and reply["author_kind"] == "agent":
                 author = self.store.get_agent(reply["author_id"])
                 if author.retired_at or author.agent_id not in self._agent_ids(channel_id):
                     raise WorkspaceError("the replied-to agent is no longer available in this channel")
@@ -686,21 +776,27 @@ class Orchestrator:
                     raise WorkspaceError("attachment belongs to another channel")
                 if attachment.message_seq is not None:
                     raise WorkspaceError("attachment was already sent")
-            payload: dict[str, Any] = {"text": text, "mentions": targets}
+            payload: dict[str, Any] = {"text": message_text, "mentions": targets}
+            if skill:
+                payload["skill"] = {**skill.summary(), "arguments": skill_arguments, "agent_id": targets[0]}
             if reply:
                 payload["reply"] = reply
             if files:
                 payload["attachments"] = [attachment.summary() for attachment in files]
             with self.store.transaction():
                 event = self._append(channel_id, "message", "human", self.human_id, payload)
-                routing = self._mention_decision(event, targets) if targets else None
+                routing = self._append(channel_id, "routing_decision", "system", "router", {
+                    "for_seqs": [event.seq], "agents": targets, "suggested_agents": [],
+                    "method": "skill", "reason_code": "skill", "reason": f"explicit skill invocation: {skill.name}",
+                }, chain_id=event.chain_id) if skill else self._mention_decision(event, targets) if targets else None
                 ownership = None
                 for attachment in files:
                     self.store.bind_attachment(attachment.attachment_id, event.seq)
                 if channel.kind == "dm":
                     self.store.enqueue(channel_id, event.seq, self._agent_ids(channel_id)[0])
                 elif targets:
-                    ownership = self._set_owner(event, targets[-1], "user_selection")
+                    if not skill:
+                        ownership = self._set_owner(event, targets[-1], "user_selection")
                     for agent_id in targets:
                         self.store.enqueue(channel_id, event.seq, agent_id)
                 elif self.store.routing_state(channel_id)["routing_mode"] == "primary":
@@ -921,6 +1017,12 @@ class Orchestrator:
             # could transfer unrelated delegated work or accept two requests.
             if handoff_index is not None:
                 batch = batch[:handoff_index] if handoff_index else batch[:1]
+            # Each explicit skill has its own installation and arguments. Never
+            # coalesce it with ordinary work or another skill invocation.
+            skill_index = next((i for i, q in enumerate(batch) if
+                self.store.get_event(channel_id, q.event_seq).payload.get("skill")), None)
+            if skill_index is not None:
+                batch = batch[:skill_index] if skill_index else batch[:1]
             self._dispatch(channel_id, agent_id, batch)
 
     async def _route(self, channel_id: str, batch: list[QueueItem], request: RoutingRequest) -> None:
@@ -1020,6 +1122,31 @@ class Orchestrator:
                 await self._call(turn.channel.channel_id, lambda: self._status(turn, "starting"))
                 if turn.channel.cwd_managed:
                     Path(turn.channel.cwd).mkdir(parents=True, exist_ok=True)
+                invocation = self.store.get_event(turn.channel.channel_id, turn.run.trigger_seq).payload.get("skill")
+                if invocation:
+                    async def authorize_skill() -> Turn:
+                        current = self.store.get_agent(turn.agent.agent_id)
+                        if current.fingerprint() != turn.agent.fingerprint():
+                            raise WorkspaceError("Agent configuration changed while this skill was queued; select an executor again")
+                        skills, _ = await self.harness_registry.discover_skills(turn.channel.cwd)
+                        current = self.store.get_agent(turn.agent.agent_id)
+                        if current.fingerprint() != turn.agent.fingerprint():
+                            raise WorkspaceError("Agent configuration changed during skill validation; select an executor again")
+                        skill = next((entry for entry in skills if entry.skill_id == invocation["skill_id"]), None)
+                        if not skill:
+                            raise WorkspaceError("Skill installation is no longer available; refresh /list")
+                        reason = self.harness_registry.skill_ineligibility(skill, current)
+                        if reason:
+                            raise WorkspaceError(reason)
+                        instructions = skill_instructions(skill, invocation["arguments"])
+                        return replace(turn, prompt=turn.prompt + instructions, skills=(skill,))
+                    try:
+                        turn = await self._call(turn.channel.channel_id, authorize_skill)
+                        self._turns[run_id] = turn
+                    except (WorkspaceError, OSError, ValueError) as error:
+                        await self._call(turn.channel.channel_id, lambda: self._finish(
+                            turn, "failed", {"code": "skill_unavailable", "message": str(error)}, None))
+                        return
                 runner = self.runner_factory(turn.agent.harness)
                 self._runners[run_id] = runner
                 terminal = False
@@ -1226,6 +1353,8 @@ class Orchestrator:
             self.store.update_run(run.run_id, status=status, error=error,
                                   exit_code=exit_code, ended_at=ended, duration_ms=elapsed)
             payload = self._run_payload(self.store.get_run(run.run_id))
+            if trigger.payload.get("skill"):
+                payload["skill"] = trigger.payload["skill"]
             if status == "failed":
                 payload["text"] = failure_text(run.harness, error, elapsed)
             event = self._append(run.channel_id, "run_status", "system", "system", payload,

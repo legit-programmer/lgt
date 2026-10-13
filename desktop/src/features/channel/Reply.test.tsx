@@ -6,8 +6,8 @@ import { HumanMessage, RunSegment, type BlockContext } from "./blocks";
 import { Composer } from "./Composer";
 import type { ReplyDraft } from "./ReplyQuote";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), commands: vi.fn(), reportError: vi.fn() }));
-vi.mock("../../api/client", () => ({ api: { sendMessage: mocks.sendMessage, commands: mocks.commands } }));
+const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), commands: vi.fn(), channelSkills: vi.fn(), reportError: vi.fn() }));
+vi.mock("../../api/client", () => ({ api: { sendMessage: mocks.sendMessage, commands: mocks.commands, channelSkills: mocks.channelSkills } }));
 vi.mock("../../store/workspace", () => ({
   reportError: mocks.reportError,
   useWorkspace: (selector: (state: { partials: object }) => unknown) => selector({ partials: {} }),
@@ -31,6 +31,7 @@ const draft: ReplyDraft = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.commands.mockResolvedValue([]);
+  mocks.channelSkills.mockResolvedValue({ skills: [], errors: [], kind: "channel" });
   mocks.sendMessage.mockResolvedValue({});
 });
 afterEach(() => {

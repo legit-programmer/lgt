@@ -106,6 +106,25 @@ Active runs retain the agent configuration captured at dispatch. Changes affect 
 
 Codex modes and defaults come from its SDK model catalog and are passed as turn effort. Claude modes depend on the installed CLI's `--effort` support and the resolved model family; unknown or older configurations advertise no modes. Claude uses `--effort` for each configured run. Gemini's current adapter advertises no modes because its installed CLI has no supported isolated per-run reasoning override. Custom harnesses can advertise modes through their probe and receive the effort in the turn request. See [custom harness protocol](custom-harness.md).
 
+## Skill discovery and invocation
+
+`GET /channels/{id}/skills` discovers the current workspace's installations across the Codex and Claude adapters. It returns `{channel_id, kind, skills, errors}`. Each skill contains `skill_id`, `name`, `description`, `harness`, `path`, `scope`, `plugin_id`, `enabled`, `required_tools` (array or null), `unavailable_reason`, `agents`, `eligible_agent_ids`, `default_agent_id`, `recommended_agent_id`, `status` (`ready`, `choose_agent`, `unavailable`), and `reason`. Each candidate has `agent_id`, `handle`, `in_channel`, `eligible`, `reason`, and `reason_code` (`harness_mismatch`, `tools`, `unavailable`, or null). Discovery errors identify the harness and message; a failed adapter does not hide another adapter's skills. IDs identify installations, including their harness, path, scope, and plugin; matching display names are not merged across harnesses.
+
+Codex uses the pinned SDK's typed `skills/list` request with the channel cwd and `forceReload: true`, including native enabled state and plugin provenance. Claude scans user skills/legacy commands under `CLAUDE_CONFIG_DIR` (defaults to `~/.claude`), project directories from cwd through its ancestors, and applicable user/project/local installations from `plugins/installed_plugins.json`. Effective `enabledPlugins` settings honor project and local overrides. Project definitions take precedence over broader definitions. Plugin skill names use their native namespace. Disabled and non-user-invocable skills are visible but unavailable. Multiple enabled Claude plugin installations with the same native skill name retain separate source IDs but are unavailable until the duplicate is disabled, because Claude's native tool selects by name. Gemini and custom harness skill adapters are not implemented.
+
+`POST /channels/{id}/skills/invoke` accepts `{skill_id, agent_id?, arguments?, attachments?, reply_to_seq?, reply_selection?}` and returns the appended message (201). Only the ID is accepted as installation identity; clients cannot supply a path, source, or permission claim. If the primary is eligible it is the default. Otherwise the request must explicitly select an eligible member; another member is recommended by the menu but never silently selected. DMs can execute only through their own agent. Outside agents must be explicitly added to a channel first. Invocation appends a human message with a `skill` snapshot (installation metadata plus `arguments` and `agent_id`) and a `routing_decision` with `method`/`reason_code: "skill"`. It preserves channel ownership and bypasses the model router. Explicit skills execute in separate turns; they do not coalesce with other skill invocations or ordinary messages.
+
+Both acceptance and execution recheck availability, harness, membership, enabled state, and tool requirements. Agents with a Claude allowlist must explicitly allow the native `Skill` tool. Requirements beyond invocation can be declared in `SKILL.md` frontmatter:
+
+```yaml
+lgt:
+  required_tools: [Read, Write]
+```
+
+Absent requirements remain unknown; an empty array explicitly declares none. Claude's `allowed-tools` field grants tools within a skill and is not interpreted as a requirement. Preflight compares declared tools with the configured agent allowlist. Runtime restrictions remain enforced by the harness; the app never widens an agent's tool policy to invoke a skill. Claude receives instructions to invoke its native `Skill` tool, preserving argument expansion and plugin behavior. Codex receives a native `SkillInput` for the exact installation. Claude terminal `permission_denials` produce a failed run with error code `permission`, even if its result otherwise reports success. Queued installations that disappear or become incompatible fail with `skill_unavailable`; their terminal `run_status` includes the invocation snapshot. The UI offers agent settings and an explicitly selected executor for retry.
+
+`/` and `/list` show the live skill catalog in the desktop composer. `/list` sent through the message API appends a system notice containing the catalog without invoking a model; it cannot include attachments or reply metadata. Manually typed `/<name> [arguments]` uses the same backend validation. Ambiguous names require menu selection or `/<harness>:<name>`; explicit recipients can select exactly one executor. Backend switches and agent creation go through the existing agent form. Changes to an agent's harness or custom command are blocked until its active runs stop or finish. Session fingerprints force a cold rebuild on the new backend using the stored transcript; provider-native session state does not transfer.
+
 ## HTTP API
 
 | Method | Path | Result |
@@ -132,6 +151,8 @@ Codex modes and defaults come from its SDK model catalog and are passed as turn 
 | POST | `/channels/{channel_id}/read` | Advance the server read cursor with `{"seq": 12}`. |
 | GET | `/channels/{channel_id}/context?agent_id=` | Session mode, message count, reported context tokens, window size, and checkpoint. |
 | GET | `/channels/{channel_id}/suggestions` | Three starter prompts generated with the router model, cached per roster. |
+| GET | `/channels/{channel_id}/skills` | All discovered skill installations with sources, executor eligibility, defaults, and discovery errors. |
+| POST | `/channels/{channel_id}/skills/invoke` | Validate an installation and chosen executor, then append and dispatch its invocation. |
 | GET, POST | `/channels/{channel_id}/members` | Read members or add an agent. |
 | GET | `/channels/{channel_id}/events` | Scrollback, with `before_seq`, `after_seq`, and `limit`. |
 | GET | `/channels/{channel_id}/runs` | Runs in a channel. |
@@ -140,7 +161,7 @@ Codex modes and defaults come from its SDK model catalog and are passed as turn 
 | GET | `/runs/{run_id}/log?tail=` | Last stderr lines. Tail defaults to 200 and is capped at 10000. |
 | GET | `/usage?group_by=&since=` | Token totals by `agent`, `channel`, or `day`. Since accepts an ISO date or timestamp. |
 | GET | `/search?q=&channel_id=&kinds=` | Matching channels, agents, and messages with sequence anchors. Kinds is a comma-separated filter. |
-| GET | `/commands` | Server command registry: `/new`, `/cwd`, and `/cancel`. |
+| GET | `/commands` | Server command registry: `/new`, `/cwd`, `/cancel`, and `/list`. |
 | GET | `/templates` | Starter presets filtered by detected harnesses, models, and tools. |
 | POST | `/bootstrap` | Atomically create `agent_templates` and #general in the supplied existing `cwd`. |
 | GET, PATCH | `/me` | Persistent local display name. PATCH accepts `{"display_name": "..."}`. |
@@ -186,7 +207,7 @@ Channels also persist `primary_agent_id` (nullable), `ownership_version` (monoto
 
 Tool calls contain `tool_call_id`, normalized `tool`, `label`, `summary`, and `input`. Results contain `tool_call_id`, `is_error`, `exit_code`, `duration_ms`, `bytes`, `lines`, `truncated`, and `output`. Byte and line counts describe the full output before truncation.
 
-Mention routing writes `method: "mention"`, `reason_code: "mention"`, and `reason: "explicit mentions"`. Direct primary delivery uses `method: "primary"` and `reason_code: "primary"`. The model router sees agents outside the channel and can return `suggested_agents`. Outside agents are suggestions only. Reason codes are `mention`, `primary`, `router`, `router_failed_random`, and `none`; random fallback selects only channel members.
+Mention routing writes `method: "mention"`, `reason_code: "mention"`, and `reason: "explicit mentions"`. Direct primary delivery uses `method: "primary"` and `reason_code: "primary"`. Explicit skill invocation uses `method` and `reason_code: "skill"`, preserving primary ownership. The model router sees agents outside the channel and can return `suggested_agents`. Outside agents are suggestions only. Reason codes are `mention`, `primary`, `skill`, `router`, `router_failed_random`, and `none`; random fallback selects only channel members.
 
 Context reports `mode`, `start_seq`, `messages_in_context`, `context_tokens`, `model_context_window`, and `checkpoint_seq`. Usage and window fields are null when the harness has not reported them for the current context. A reset invalidates the previous context usage. Multi-agent channels require `agent_id` on this endpoint.
 
@@ -275,7 +296,7 @@ Direct primary delivery writes `routing_decision` with `method: "primary"`, `rea
 
 `checkpoint_mode` must be `cli` or `deferred`. The CLI summarizer uses the routing model, timeout, retry count, and CLI commands. The router timeout also bounds SDK initialization and thread or turn setup. It does not bound the duration of an active specialist turn.
 
-The SDK dependency is pinned to `openai-codex==0.160.1`. The adapter uses the public SDK for JSON-RPC. Private SDK access is limited to the binary resolver and subprocess handle for process status and termination. The byte host forwards protocol traffic unchanged, caps lines, and records stderr.
+The SDK dependency is pinned to `openai-codex==0.160.1`. The adapter uses the public SDK for JSON-RPC. Private SDK access includes the binary resolver, subprocess handle for process status and termination, and the wrapped async client for the typed `skills/list` request, which the high-level SDK does not expose. The byte host forwards protocol traffic unchanged, caps lines, and records stderr.
 
 The adapter records token usage and available rate-limit windows. Unsupported plan usage stays unavailable rather than becoming an estimated bill.
 

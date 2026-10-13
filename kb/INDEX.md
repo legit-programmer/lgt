@@ -32,6 +32,7 @@ Format: `id` — **Title** — `path` — description.
 - `20261008-system-overview` — **System overview** — `topics/overview/system-overview.md` — What Lgt is, its two halves (Python backend and Tauri desktop app), and how a message flows from the composer to an agent and back.
 
 ### backend
+- `20261013-skill-invocation` — **Skill discovery and invocation** — `topics/backend/skill-invocation.md` — Harness-owned installations, explicit executors in channels and DMs, native invocation, and declared/runtime permission checks.
 - `20261012-device-pairing` — **Device pairing and remote access** — `topics/backend/device-pairing.md` — Persistent named device credentials, QR payloads, inbound remote listening, local administration, and immediate socket revocation.
 - `20261012-message-replies` — **Message replies** — `topics/backend/message-replies.md` — Whole-message and selected-text quotes, snapshots, truncation, automatic author routing, and composer drafts.
 - `20261010-desktop-daemon` - **Desktop daemon lifecycle** - `topics/backend/desktop-daemon.md` - Discovery, detached launch, tokens, shutdown, and the frosted startup screen.

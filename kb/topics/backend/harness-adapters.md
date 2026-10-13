@@ -3,8 +3,8 @@ id: 20261008-harness-adapters
 title: Harness adapters
 tags: [backend, harness]
 created: 2026-10-08
-updated: 2026-10-11
-related: [20261008-run-lifecycle, 20261008-process-hosting, 20261008-full-permission-agents, 20261008-open-gaps]
+updated: 2026-10-13
+related: [20261008-run-lifecycle, 20261008-process-hosting, 20261008-full-permission-agents, 20261008-open-gaps, 20261013-skill-invocation]
 summary: The harness registry (discovery, catalogs, capability-based validation, runner factory) and the Codex, Claude, Gemini, and custom adapters that turn CLI output into normalized events.
 ---
 
@@ -37,6 +37,8 @@ summary: The harness registry (discovery, catalogs, capability-based validation,
 `PATCH /agents/{id}/inference` accepts only model and reasoning effort, validates them through `HarnessRegistry`, preserves provider and unrelated config, and broadcasts the saved agent. SQLite stores the nullable effort. Codex sends it through the turn SDK, Claude passes `--effort`, and custom turn JSON includes `reasoning_effort`. Null uses provider defaults.
 
 ## Adapters
+
+`HarnessRegistry.skill_adapters` discovers skills per harness and isolates discovery failures. Codex uses typed native `skills/list`; Claude discovers scoped files and enabled plugins. The channel catalog computes eligibility independently of the primary. Native invocation respects the agent tool policy, including explicit `Skill` access for allowlisted Claude agents. See [Skill discovery and invocation](skill-invocation.md).
 
 | Harness | File | How it runs |
 | --- | --- | --- |

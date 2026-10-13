@@ -20,6 +20,7 @@ import { downloadAttachment, useBlobUrl } from "../../lib/media";
 import { reportError, useWorkspace, type RunInfo } from "../../store/workspace";
 import { replySelection } from "../../lib/reply-selection";
 import { ReplyQuoteView } from "./ReplyQuote";
+import { SkillRecovery } from "./SkillRecovery";
 
 export interface BlockContext {
   channelId: string;
@@ -340,6 +341,8 @@ export function RunEnd({ event, ctx }: { event: WorkspaceEvent<RunStatusPayload>
         <Square fill="currentColor" />
         <AgentChip agent={agent} />
         <span>run failed · {payload.text ?? payload.error?.message ?? "the harness reported an error"}</span>
+        {["permission", "skill_unavailable"].includes(payload.error?.code ?? "")
+          ? <SkillRecovery channelId={ctx.channelId} payload={payload} /> : null}
       </div>
     );
   }

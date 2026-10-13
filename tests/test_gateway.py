@@ -411,7 +411,7 @@ def test_run_filter_log_and_catalog_routes(gateway_client, tmp_path):
     assert [item["run_id"] for item in latest] == ["run-3", "run-2"]
     log = client.get("/runs/run-log/log", params={"tail": 2})
     assert log.json() == {"run_id": "run-log", "lines": ["second", "third"], "truncated": True}
-    assert {item["name"] for item in client.get("/commands").json()} == {"/new", "/cwd", "/cancel"}
+    assert {item["name"] for item in client.get("/commands").json()} == {"/new", "/cwd", "/cancel", "/list"}
 
 
 def test_attachment_thumbnail_is_bounded_and_scoped(gateway_client, tmp_path):

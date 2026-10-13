@@ -148,6 +148,21 @@ class ReplyPreviewBody(_StrictModel):
     reply_selection: str | None = None
 
 
+class SkillInvocationBody(_StrictModel):
+    skill_id: str = Field(min_length=1)
+    agent_id: str | None = Field(default=None, min_length=1)
+    arguments: str = ""
+    attachments: list[str] | None = None
+    reply_to_seq: int | None = Field(default=None, gt=0)
+    reply_selection: str | None = None
+
+    @model_validator(mode="after")
+    def validate_reply(self):
+        if self.reply_selection is not None and (self.reply_to_seq is None or not self.reply_selection.strip()):
+            raise ValueError("reply_selection requires reply_to_seq and nonempty text")
+        return self
+
+
 class ChannelCwdBody(_StrictModel):
     cwd: str | None = Field(description="An existing absolute directory, or null for a managed one.")
 
@@ -893,6 +908,17 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
         _require_channel(orch, run.channel_id)
         await orch.cancel_run(run_id)
         return {"status": "cancel_requested", "run_id": run_id}
+
+    @app.get("/channels/{channel_id}/skills")
+    async def channel_skills(channel_id: str):
+        _require_channel(orch, channel_id)
+        return await orch.channel_skills(channel_id)
+
+    @app.post("/channels/{channel_id}/skills/invoke", status_code=201)
+    async def invoke_skill(channel_id: str, body: SkillInvocationBody):
+        _require_channel(orch, channel_id)
+        event = await orch.invoke_skill(channel_id, **body.model_dump())
+        return _event_payload(event, orch.store)
 
     @app.post("/channels/{channel_id}/messages", status_code=201)
     async def send_message(channel_id: str, body: SendMessageBody):

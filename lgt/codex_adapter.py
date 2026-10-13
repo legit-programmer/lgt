@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from openai_codex import (
-    ApprovalMode, AsyncCodex, CodexConfig, LocalImageInput, Sandbox, TextInput,
+    ApprovalMode, AsyncCodex, CodexConfig, LocalImageInput, Sandbox, TextInput, SkillInput,
 )
 
 from .attachments import VIEWABLE_IMAGE_TYPES
@@ -32,9 +32,10 @@ def _value(value: Any) -> Any:
 def _turn_input(turn: Turn) -> Any:
     """Send attached images as native inputs; the prompt already names every file."""
     images = [a for a in turn.attachments if a.media_type in VIEWABLE_IMAGE_TYPES]
-    if not images:
+    skills = [SkillInput(skill.name, skill.path) for skill in turn.skills]
+    if not images and not skills:
         return turn.prompt
-    return [TextInput(turn.prompt), *(LocalImageInput(a.path) for a in images)]
+    return [TextInput(turn.prompt), *skills, *(LocalImageInput(a.path) for a in images)]
 
 
 def _item_dict(item: Any) -> dict[str, Any]:

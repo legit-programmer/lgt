@@ -3,8 +3,8 @@ import { create } from "zustand";
 export type View =
   | { kind: "home" }
   | { kind: "channel"; channelId: string; anchorSeq?: number }
-  | { kind: "agent-new"; returnTo?: View }
-  | { kind: "agent-edit"; agentId: string; returnTo?: View }
+  | { kind: "agent-new"; returnTo?: View; harness?: string; addToChannelId?: string }
+  | { kind: "agent-edit"; agentId: string; returnTo?: View; harness?: string }
   | { kind: "onboarding" };
 
 export type DetailTab = "agents" | "run";

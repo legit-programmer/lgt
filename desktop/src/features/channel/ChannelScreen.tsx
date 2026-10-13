@@ -115,6 +115,7 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
             channelId={channelId}
             members={members}
             allowMentions={!isDm}
+            skillRevision={`${channel.cwd}:${channel.primary_agent_id}:${members.map((member) => `${member.agent_id}:${member.updated_at}`).join(",")}`}
             reply={reply}
             replyLoading={replyLoading}
             displayName={ctx.displayName}

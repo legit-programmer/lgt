@@ -90,6 +90,49 @@ export interface Template {
   allowed_tools: string[];
 }
 
+export interface SkillExecutor {
+  agent_id: string;
+  handle: string;
+  in_channel: boolean;
+  eligible: boolean;
+  reason: string | null;
+  reason_code: "harness_mismatch" | "tools" | "unavailable" | null;
+}
+
+export interface SkillInstallation {
+  skill_id: string;
+  name: string;
+  description: string;
+  harness: HarnessId;
+  path: string;
+  scope: string;
+  plugin_id: string | null;
+  enabled: boolean;
+  required_tools: string[] | null;
+  unavailable_reason: string | null;
+}
+
+export interface SkillEntry extends SkillInstallation {
+  agents: SkillExecutor[];
+  eligible_agent_ids: string[];
+  default_agent_id: string | null;
+  recommended_agent_id: string | null;
+  status: "ready" | "choose_agent" | "unavailable";
+  reason: string | null;
+}
+
+export interface SkillCatalog {
+  channel_id: string;
+  kind: "channel" | "dm";
+  skills: SkillEntry[];
+  errors: { harness: string; message: string }[];
+}
+
+export interface SkillInvocation extends SkillInstallation {
+  arguments: string;
+  agent_id: string;
+}
+
 export interface Member {
   member_kind: "human" | "agent";
   member_id: string;
@@ -302,6 +345,7 @@ export interface MessagePayload {
   author_handle?: string;
   attachments?: AttachmentSummary[];
   reply?: ReplyQuote;
+  skill?: SkillInvocation;
 }
 
 export interface ToolCallPayload {
@@ -326,6 +370,7 @@ export interface ToolResultPayload {
 }
 
 export interface RunStatusPayload {
+  skill?: SkillInvocation;
   run_id: string;
   agent_id: string;
   status: RunStatus;
@@ -340,8 +385,8 @@ export interface RoutingPayload {
   for_seqs: number[];
   agents: string[];
   suggested_agents: string[];
-  method: "mention" | "router" | "primary";
-  reason_code: "mention" | "router" | "primary" | "router_failed_random" | "none";
+  method: "mention" | "router" | "primary" | "skill";
+  reason_code: "mention" | "router" | "primary" | "skill" | "router_failed_random" | "none";
   reason: string;
   error?: string;
 }

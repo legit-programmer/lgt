@@ -1,7 +1,7 @@
 import type {
   Agent, AgentInput, AgentStatus, Attachment, ChannelSummary, Channel, Command, ContextStats,
   ConnectionInfo, Device, DevicePairing, Harness, HarnessModel, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
-  UsageRow, WorkspaceEvent, ReplyQuote, ReplyRequest,
+  UsageRow, WorkspaceEvent, ReplyQuote, ReplyRequest, SkillCatalog,
 } from "./types";
 import { isMobile } from "../lib/platform";
 
@@ -205,6 +205,10 @@ export const api = {
   bootstrap: (agent_templates: string[], cwd: string) =>
     post<{ agents: Agent[]; channel: Channel }>("/bootstrap", { agent_templates, cwd }),
   commands: () => get<Command[]>("/commands"),
+  channelSkills: (channelId: string) => get<SkillCatalog>(`/channels/${enc(channelId)}/skills`),
+  invokeSkill: (channelId: string, input: { skill_id: string; agent_id?: string; arguments?: string;
+    attachments?: string[]; reply_to_seq?: number; reply_selection?: string }) =>
+    post<WorkspaceEvent>(`/channels/${enc(channelId)}/skills/invoke`, input),
   me: () => get<Profile>("/me"),
   updateMe: (display_name: string) => patch<Profile>("/me", { display_name }),
 

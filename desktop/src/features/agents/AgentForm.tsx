@@ -70,7 +70,11 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
   const openChannel = useUi((s) => s.openChannel);
   const queryClient = useQueryClient();
   const harnesses = useQuery({ queryKey: ["harnesses"], queryFn: api.harnesses });
-  const [form, setForm] = useState<FormState>(() => initialState(agent));
+  const [form, setForm] = useState<FormState>(() => {
+    const initial = initialState(agent);
+    const harness = view.kind === "agent-new" || view.kind === "agent-edit" ? view.harness : undefined;
+    return harness && harness !== initial.harness ? { ...initial, harness, model: "", reasoningEffort: null, tools: [], extraArgs: "", command: "" } : initial;
+  });
   const [probe, setProbe] = useState<Harness | null>(null);
   const [probing, setProbing] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -170,6 +174,12 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
     try {
       const saved = agent ? await api.replaceAgent(agent.agent_id, input) : await api.createAgent(input);
       useWorkspace.getState().upsertAgent(saved);
+      if (!agent && view.kind === "agent-new" && view.addToChannelId) {
+        await api.addMember(view.addToChannelId, saved.agent_id);
+        await useWorkspace.getState().refreshSummaries();
+        openChannel(view.addToChannelId);
+        return;
+      }
       await useWorkspace.getState().refreshSummaries();
       if (!agent && saved.dm_channel_id) openChannel(saved.dm_channel_id);
       else back();

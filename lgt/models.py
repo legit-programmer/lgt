@@ -7,7 +7,10 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .skills import Skill
 
 Harness = Literal["claude", "claude_code", "codex", "gemini", "custom"]
 SessionMode = Literal["resume", "cold"]
@@ -201,6 +204,8 @@ class Turn:
     # images the harness can view as native inputs; the prompt names every file.
     attachments: tuple[Attachment, ...] = ()
     delivery_seqs: tuple[int, ...] = ()
+    # Explicit installations resolved by the backend; never accept client paths.
+    skills: tuple[Skill, ...] = ()
 
 
 @dataclass(frozen=True)

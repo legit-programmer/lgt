@@ -20,10 +20,11 @@ from .models import Agent, WorkspaceError
 from .oneshot import CLIOutputLimitError, CLIProcessError, invoke_cli
 from .processes import read_lines, spawn_command
 from .streaming_adapter import ClaudeRunner, CustomRunner, GeminiRunner
+from .skills import ClaudeSkillDiscovery, CodexSkillDiscovery, Skill, ineligibility
 
 
 CAPABILITIES = ("resume", "interrupt", "text_delta", "allowed_tools", "image_input", "usage", "rate_limits")
-CLAUDE_TOOLS = ("Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch")
+CLAUDE_TOOLS = ("Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Skill")
 CODEX_TOOLS = ("Bash", "Read", "Edit", "Grep", "WebSearch")
 GEMINI_TOOLS = ("run_shell_command", "read_file", "write_file", "replace", "glob",
                 "grep_search", "web_fetch", "google_web_search")
@@ -127,6 +128,7 @@ class HarnessRegistry:
         self.gemini_command = gemini_command
         self._catalog: list[dict[str, Any]] = []
         self._custom_cache: dict[tuple[str, ...], dict[str, Any]] = {}
+        self.skill_adapters = {"codex": CodexSkillDiscovery(codex_bin), "claude": ClaudeSkillDiscovery()}
         self._refresh_static()
 
     def _refresh_static(self) -> None:
@@ -220,6 +222,26 @@ class HarnessRegistry:
 
     def list(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self._catalog)
+
+    async def discover_skills(self, cwd: str) -> tuple[list[Skill], list[dict[str, str]]]:
+        async def discover(harness: str, adapter):
+            try:
+                skills, errors = await asyncio.wait_for(adapter.discover_skills(cwd), 10)
+                return skills, [{"harness": harness, "message": error} for error in errors]
+            except Exception as exc:
+                return [], [{"harness": harness, "message": str(exc) or "Skill discovery timed out"}]
+        # Claude's filesystem discovery also lists installations when its CLI is
+        # missing. Codex's authoritative inventory requires its app-server.
+        results = await asyncio.gather(*(discover(name, adapter) for name, adapter in self.skill_adapters.items()
+            if name == "claude" or any(item["harness"] == name and item["found"] for item in self._catalog)))
+        skills = {skill.skill_id: skill for found, _ in results for skill in found}
+        return sorted(skills.values(), key=lambda skill: (skill.name.lower(), skill.harness, skill.skill_id)), [
+            error for _, errors in results for error in errors]
+
+    def skill_ineligibility(self, skill: Skill, agent: Agent) -> str | None:
+        entry = next((item for item in self._catalog if item["harness"] == skill.harness), None)
+        ready = bool(entry and entry["found"] and entry["auth"] != "signed_out")
+        return ineligibility(skill, agent, ready)
 
     async def probe_custom(self, command: list[str], extra_args: list[str] | None = None) -> dict[str, Any]:
         if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):

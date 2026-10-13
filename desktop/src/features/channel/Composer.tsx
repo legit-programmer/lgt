@@ -1,12 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, AtSign, FileText, Loader2, Paperclip, Slash, X } from "lucide-react";
+import { ArrowRight, ArrowUp, AtSign, Ban, Check, FileText, Loader2, Paperclip, Slash, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { api } from "../../api/client";
-import type { Agent, Attachment, Command } from "../../api/types";
+import type { Agent, Attachment, Command, SkillEntry } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { bytes } from "../../lib/format";
 import { reportError } from "../../store/workspace";
 import { ReplyQuoteView, type ReplyDraft } from "./ReplyQuote";
+import { SkillDialog } from "./SkillDialog";
+import { harnessLabel } from "../../lib/agents";
+import { ProviderLogo } from "../../components/ProviderLogo";
 
 interface Pending {
   localId: number;
@@ -26,6 +29,7 @@ interface ComposerProps {
   replyLoading: boolean;
   displayName: string;
   onClearReply: () => void;
+  skillRevision?: string;
 }
 
 interface Suggestion {
@@ -34,28 +38,37 @@ interface Suggestion {
   detail: string;
   insert: string;
   agent?: Agent;
+  skill?: SkillEntry;
 }
 
 // Drafts survive switching conversations within this window.
-const drafts = new Map<string, string>();
+const drafts = new Map<string, { text: string; skill: SkillEntry | null; agentId: string | null }>();
 let localIds = 0;
 
-export function Composer({ channelId, placeholder, members, allowMentions, disabled, reply, replyLoading, displayName, onClearReply }: ComposerProps) {
-  const [text, setText] = useState(() => drafts.get(channelId) ?? "");
+export function Composer({ channelId, placeholder, members, allowMentions, disabled, reply, replyLoading, displayName, onClearReply, skillRevision }: ComposerProps) {
+  const [text, setText] = useState(() => drafts.get(channelId)?.text ?? "");
   const [files, setFiles] = useState<Pending[]>([]);
   const [sending, setSending] = useState(false);
   const [caret, setCaret] = useState(0);
   const [highlight, setHighlight] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<SkillEntry | null>(() => drafts.get(channelId)?.skill ?? null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(() => drafts.get(channelId)?.agentId ?? null);
+  const [choosingAgent, setChoosingAgent] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+  const suggestionList = useRef<HTMLDivElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const commands = useQuery({ queryKey: ["commands"], queryFn: api.commands, staleTime: Infinity });
+  const skills = useQuery({ queryKey: ["channel-skills", channelId, skillRevision],
+    queryFn: () => api.channelSkills(channelId), enabled: text.startsWith("/") || selectedSkill !== null,
+    staleTime: 0, retry: false });
+  const currentSkill = skills.data?.skills.find((skill) => skill.skill_id === selectedSkill?.skill_id) ?? selectedSkill;
   useEffect(() => { if (reply) area.current?.focus(); }, [reply]);
 
   useEffect(() => {
-    drafts.set(channelId, text);
-  }, [channelId, text]);
+    drafts.set(channelId, { text, skill: selectedSkill, agentId: selectedAgent });
+  }, [channelId, text, selectedSkill, selectedAgent]);
 
   // Grow with the text up to a cap.
   useEffect(() => {
@@ -74,9 +87,16 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
     const before = text.slice(0, caret);
     const command = /^\/(\S*)$/.exec(before);
     if (command) {
-      return (commands.data ?? [])
+      const installed = (skills.data?.skills ?? []).filter((skill) => command[1] === "list" ||
+        skill.name.toLowerCase().startsWith(command[1].toLowerCase()) || `${skill.harness}:${skill.name}`.startsWith(command[1]));
+      return [...(command[1] === "list" ? [] : commands.data ?? [])
         .filter((c: Command) => c.name.slice(1).startsWith(command[1]))
-        .map((c) => ({ key: c.name, label: c.usage, detail: c.description, insert: `${c.name} ` }));
+        .map((c) => ({ key: c.name, label: c.usage, detail: c.description, insert: `${c.name} ` })),
+        ...installed.map((skill) => ({ key: skill.skill_id, label: `/${skill.name}`, skill,
+          detail: `${harnessLabel(skill.harness)} · ${skill.plugin_id ?? skill.scope} · ${skill.status === "ready"
+            ? `run with ${skill.agents.find((agent) => agent.agent_id === skill.default_agent_id)?.handle}`
+            : skill.status === "choose_agent" ? "choose an agent" : skill.reason}`,
+          insert: `/${skill.name} ` }))];
     }
     const mention = allowMentions ? /(?:^|\s)@([\w.:-]*)$/.exec(before) : null;
     if (mention) {
@@ -86,11 +106,18 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
         .map((agent) => ({ key: agent.agent_id, label: `@${agent.handle}`, detail: agent.description, insert: `@${agent.handle} `, agent }));
     }
     return [];
-  }, [text, caret, commands.data, members, allowMentions, dismissed]);
+  }, [text, caret, commands.data, skills.data, members, allowMentions, dismissed]);
 
   useEffect(() => setHighlight(0), [suggestions.length]);
+  useEffect(() => {
+    suggestionList.current?.querySelector<HTMLElement>('[data-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
+  }, [highlight, suggestions.length]);
 
   const applySuggestion = (suggestion: Suggestion) => {
+    setSelectedSkill(suggestion.skill ?? null);
+    setSelectedAgent(null);
+    setChoosingAgent(!!suggestion.skill && suggestion.skill.status !== "ready");
+    setDismissed(true);
     const before = text.slice(0, caret);
     const after = text.slice(caret);
     const start = suggestion.insert.startsWith("/") ? 0 : before.lastIndexOf("@");
@@ -128,21 +155,43 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
 
   const uploading = files.some((f) => !f.attachment && !f.error);
   const ready = files.filter((f) => f.attachment);
-  const canSend = !disabled && !sending && !uploading && !replyLoading && (text.trim().length > 0 || ready.length > 0);
+  const executor = selectedAgent ?? currentSkill?.default_agent_id;
+  const skillBlocked = currentSkill && (skills.isLoading || skills.isError ||
+    !skills.data?.skills.some((skill) => skill.skill_id === currentSkill.skill_id) ||
+    !executor || !currentSkill.eligible_agent_ids.includes(executor));
+  const canSend = !disabled && !sending && !uploading && !replyLoading && !skillBlocked && (text.trim().length > 0 || ready.length > 0);
 
   const send = async () => {
     if (!canSend) return;
     setSending(true);
     try {
-      await api.sendMessage(channelId, { text, attachments: ready.map((f) => f.attachment!.attachment_id),
-        ...(reply ? { reply_to_seq: reply.reply_to_seq, reply_selection: reply.reply_selection } : {}) });
+      let skill = currentSkill;
+      const match = /^\/(\S+)(?:\s([\s\S]*))?$/.exec(text);
+      if (!skill && match && !["new", "cwd", "cancel", "list"].includes(match[1])) {
+        const fresh = await skills.refetch();
+        const matches = fresh.data?.skills.filter((entry) => [entry.name, `${entry.harness}:${entry.name}`].includes(match[1])) ?? [];
+        if (matches.length !== 1) throw new Error("Skill is unavailable or ambiguous. Select its installation from /list.");
+        skill = matches[0];
+        setSelectedSkill(skill);
+        setSelectedAgent(null);
+        if (!skill.default_agent_id) { setChoosingAgent(true); return; }
+      }
+      const metadata = { attachments: ready.map((f) => f.attachment!.attachment_id),
+        ...(reply ? { reply_to_seq: reply.reply_to_seq, reply_selection: reply.reply_selection } : {}) };
+      if (skill) {
+        await api.invokeSkill(channelId, { skill_id: skill.skill_id,
+          agent_id: selectedAgent ?? skill.default_agent_id ?? undefined, arguments: match?.[2] ?? "", ...metadata });
+      } else await api.sendMessage(channelId, { text, ...metadata });
       files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
       setFiles([]);
       setText("");
+      setSelectedSkill(null);
+      setSelectedAgent(null);
       drafts.delete(channelId);
       onClearReply();
     } catch (error) {
       reportError(error);
+      if (currentSkill) { await skills.refetch(); setChoosingAgent(true); }
     } finally {
       setSending(false);
       area.current?.focus();
@@ -214,18 +263,43 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
         </div>
       ) : null}
       {suggestions.length ? (
-        <div className="composer-suggest fv-glass fv-menu" role="listbox">
+        <div ref={suggestionList} className="composer-suggest fv-glass fv-menu" role="listbox">
           {suggestions.map((suggestion, index) => (
             <button key={suggestion.key} role="option" aria-selected={index === highlight}
               className="fv-menu-item" data-selected={index === highlight}
+              title={suggestion.skill?.description ?? suggestion.detail}
               onMouseDown={(event) => { event.preventDefault(); applySuggestion(suggestion); }}>
-              {suggestion.agent ? <AgentAvatar agent={suggestion.agent} /> : <Slash />}
+              {suggestion.agent ? <AgentAvatar agent={suggestion.agent} /> : suggestion.skill ? <ProviderLogo harness={suggestion.skill.harness} /> : <Slash />}
               <span className="fv-mono">{suggestion.label}</span>
               <span className="fv-meta composer-suggest-detail">{suggestion.detail}</span>
+              {suggestion.skill ? <span className={`fv-chip ${suggestion.skill.status === "ready" ? "fv-chip--success"
+                : suggestion.skill.status === "unavailable" ? "fv-chip--failed" : ""}`}>
+                {suggestion.skill.status === "ready" ? <Check /> : suggestion.skill.status === "unavailable" ? <Ban /> : <ArrowRight />}
+                {suggestion.skill.status === "ready" ? "Ready" : suggestion.skill.status === "unavailable" ? "Unavailable" : "Choose"}
+              </span> : null}
             </button>
           ))}
         </div>
       ) : null}
+      {text.startsWith("/") && skills.isFetching ? <span className="fv-meta"><Loader2 size={12} className="spin" /> Discovering skills…</span> : null}
+      {text.startsWith("/") && skills.error ? <span className="fv-error-text">{skills.error.message}</span> : null}
+      {text.startsWith("/") && skills.data?.errors.length ? <div className="fv-meta" role="status">
+        {skills.data.errors.map((error, index) => <div key={index}>{harnessLabel(error.harness)}: {error.message}</div>)}
+      </div> : null}
+      {currentSkill ? <div className="composer-skill fv-meta">
+        <ProviderLogo harness={currentSkill.harness} /><span>/{currentSkill.name} · {executor
+          ? `run with ${currentSkill.agents.find((agent) => agent.agent_id === executor)?.handle ?? "selected agent"}`
+          : "requires a compatible agent"}</span>
+        <button className="fv-btn fv-btn--ghost fv-btn--sm" onClick={() => setChoosingAgent(true)}>Choose agent or backend</button>
+        <button className="fv-icon-btn fv-icon-btn--sm" aria-label="Clear skill selection" onClick={() => {
+          setSelectedSkill(null); setSelectedAgent(null); setText("");
+        }}><X /></button>
+      </div> : null}
+      {currentSkill && skills.data && !skills.data.skills.some((skill) => skill.skill_id === currentSkill.skill_id)
+        ? <p className="fv-error-text">This installation is no longer available. Select another skill from /list.</p> : null}
+      {choosingAgent && currentSkill ? <SkillDialog skill={currentSkill} channelId={channelId}
+        kind={skills.data?.kind ?? (allowMentions ? "channel" : "dm")} onClose={() => setChoosingAgent(false)}
+        onRefresh={() => skills.refetch()} onChoose={(agentId) => { setSelectedAgent(agentId); setChoosingAgent(false); }} /> : null}
       {files.length ? (
         <div className="composer-files">
           {files.map((pending) => (
@@ -251,7 +325,11 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
         placeholder={placeholder}
         disabled={disabled}
         aria-label={placeholder}
-        onChange={(event) => { setText(event.target.value); setCaret(event.target.selectionStart); setDismissed(false); }}
+        onChange={(event) => {
+          const value = event.target.value;
+          if (selectedSkill && value.split(/\s/)[0] !== `/${selectedSkill.name}`) { setSelectedSkill(null); setSelectedAgent(null); }
+          setText(value); setCaret(event.target.selectionStart); setDismissed(false);
+        }}
         onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
