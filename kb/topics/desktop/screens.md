@@ -3,7 +3,7 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-13
+updated: 2026-10-14
 related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
@@ -36,7 +36,7 @@ The composer lists skills across Codex and Claude installations through `/` and 
 
 ## Agent hover controls
 
-`components/AgentInference.tsx` opens over agent avatars and names in chat, the DM header and conversation details. Pointer hover opens a frosted transparent glass panel; clicking or keyboard focus also exposes the controls. The provider remains a fixed identity. Models and the stepped reasoning slider come from `GET /agents/{id}/models`, including the agent's custom probe catalog. Apply sends `PATCH /agents/{id}/inference`; workspace state changes only when the server's agent frame arrives. Unsupported reasoning modes show automatic control by the CLI. The full agent form also preserves and exposes supported effort settings.
+`components/AgentInference.tsx` opens over agent avatars and names in chat, the DM header and conversation details. Pointer hover opens a frosted transparent glass panel; clicking or keyboard focus also exposes the controls. The provider remains a fixed identity. Model cards and the reasoning meter (one segment per mode, plus a **Provider default** toggle) come from `GET /agents/{id}/models`, including the agent's custom probe catalog. Apply sends `PATCH /agents/{id}/inference`; workspace state changes only when the server's agent frame arrives. Unsupported reasoning modes show automatic control by the CLI. The full agent form shows the same modes as a segmented control with a default option and a hint naming the chosen or default mode.
 
 ## Composer (`Composer.tsx`)
 

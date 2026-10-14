@@ -3,7 +3,7 @@ id: 20261008-desktop-architecture
 title: Desktop architecture
 tags: [desktop]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-14
 related: [20261012-mobile-client, 20261010-desktop-daemon, 20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model, 20261012-device-pairing]
 summary: How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
 ---
@@ -58,7 +58,7 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 | `store/ui.ts` | View, panel, palette, theme, and URL hash sync |
 | `lib/timeline.ts` | Event log → blocks ([timeline model](timeline-model.md)) |
 | `lib/format.ts`, `lib/agents.ts`, `lib/media.ts`, `lib/folder.ts`, `lib/useNow.ts` | Formatting, hues and CLI labels, blob media, folder dialog, ticking clock |
-| `components/StartupOverlay.tsx`, `StartupOverlay.css` | Frosted launch screen, animated mark, reduced-motion styles |
+| `components/StartupOverlay.tsx`, `StartupOverlay.css` | Frosted launch screen, mark tile, progress bar, reduced-motion styles |
 | `components/` | `Avatar` (DiceBear), `Status` (dots, badges, elapsed), `Markdown` (mentions), `Toasts` |
 | `features/settings/` | Local Devices administration, QR display, pairing-code import and mobile QR scanning |
 | `lib/platform.ts`, `lib/scan.ts` | Build-time mobile detection and the phone breakpoint; QR scanning state |

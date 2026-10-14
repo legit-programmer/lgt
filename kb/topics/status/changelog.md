@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-13
+updated: 2026-10-14
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,11 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-14
+
+- Add a KB TODO note, starting with improving agent-to-agent delegation and handoff.
+- Simplify the startup screen to a mark, title, caption and progress bar. Replace the native selects in the agent hover panel with model cards and a segmented reasoning meter, and show reasoning in the agent form as a segmented control.
 
 ## 2026-10-13
 

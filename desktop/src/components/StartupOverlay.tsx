@@ -37,27 +37,15 @@ export function StartupOverlay() {
       </div>
       <div className="startup-frost" aria-hidden="true" />
 
-      <section className="startup-card fv-glass" role="status" aria-live="polite">
-        <div className="startup-emblem" aria-hidden="true">
-          <span className="startup-emblem-halo" />
-          <span className="startup-emblem-orbit startup-emblem-orbit--outer">
-            <i />
-          </span>
-          <span className="startup-emblem-orbit startup-emblem-orbit--inner">
-            <i />
-          </span>
-          <svg className="startup-emblem-mark" viewBox="0 0 64 64" focusable="false">
-            <path d="M22 14v30c0 4.4 3.6 8 8 8h20" />
+      <section className="startup-card" role="status" aria-live="polite">
+        <div className="startup-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" focusable="false">
+            <path d="M24 16v26c0 3.3 2.7 6 6 6h14" />
           </svg>
         </div>
-        <p className="startup-overline fv-label">LGT · LOCAL WORKSPACE</p>
         <h1>Setting up your Lgt workspace</h1>
-        <p className="startup-caption">Connecting to your local workspace.</p>
-        <div className="startup-pulse" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
+        <p className="startup-caption">Connecting to your local workspace…</p>
+        <div className="startup-progress" aria-hidden="true"><i /></div>
       </section>
     </main>
   );

@@ -3,7 +3,7 @@ id: 20261008-design-system
 title: Ember design system
 tags: [desktop, design]
 created: 2026-10-08
-updated: 2026-10-11
+updated: 2026-10-14
 related: [20261008-screens, 20261008-desktop-architecture]
 summary: The Ember rules from design/README.md and how they are implemented in tokens.css, components.css and app.css, including agent hues, status glyphs and glass usage.
 ---
@@ -46,8 +46,8 @@ summary: The Ember rules from design/README.md and how they are implemented in t
 - **Controls:** every control is a pill at `--size-control` (34px) with a gradient, a top sheen and a shadow. Tool rows are compact at `--size-tool-row`.
 - **Type:** Figtree for prose and UI, IBM Plex Mono for anything machine-owned (paths, tools, agent names, numbers). Labels are uppercase with 0.9px tracking, and UI copy is sentence case.
 - **Motion:** only the working dots, the shimmer and the caret move, and all three stop under `prefers-reduced-motion`.
-- **Launch overlay (owner request, 2026-10-10):** `StartupOverlay` covers an abstract workspace silhouette with CSS frost and an animated Lgt mark while daemon discovery and workspace loading are pending. It uses the working colour, stops motion under `prefers-reduced-motion`, and leaves the top bar available. It does not enable OS window transparency.
-- **Agent hover panel:** `components/AgentInference.css` uses `--glass-composer` with `--glass-line`, `--blur-overlay` and `--shadow-overlay` for frosted transparent glass in both themes. The stepped slider uses amber for the adjustable control. Provider identity remains fixed, and mode descriptions come from the backend.
+- **Launch overlay (owner request, 2026-10-10):** `StartupOverlay` covers an abstract workspace silhouette with CSS frost while daemon discovery and workspace loading are pending. A plain centered card holds the Lgt mark on a raised button tile, the title, a caption and a thin indeterminate progress bar (restyled 2026-10-14 to drop the orbiting emblem, overline and pulse dots). The bar uses the working colour, stops motion under `prefers-reduced-motion`, and leaves the top bar available. It does not enable OS window transparency.
+- **Agent hover panel:** `components/AgentInference.css` uses `--glass-composer` with `--glass-line`, `--blur-overlay` and `--shadow-overlay` for frosted transparent glass in both themes. Models are selectable cards with a check, and reasoning is a segmented meter whose labels sit under their own segments; amber marks the selection. The panel takes the agent's hue. Provider identity remains fixed, and mode descriptions come from the backend.
 - **No emoji anywhere.**
 
 ## Related

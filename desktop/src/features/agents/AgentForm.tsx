@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Folder, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../api/client";
-import type { Agent, AgentInput, Avatar, Harness } from "../../api/types";
+import type { Agent, AgentInput, Avatar, Harness, HarnessModel } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { TopBarSlot } from "../../components/TopBar";
 import { harnessLabel, hueStyle } from "../../lib/agents";
@@ -27,6 +27,14 @@ export function splitArgs(value: string): string[] {
 
 function joinArgs(args: string[]): string {
   return args.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(" ");
+}
+
+/** Describe the chosen reasoning mode, naming the provider's default when none is chosen. */
+function reasoningHint(model: HarnessModel, effort: string | null): string {
+  const chosen = model.reasoning_modes.find((mode) => mode.id === effort);
+  if (chosen) return `${chosen.label} · ${chosen.description}`;
+  const fallback = model.reasoning_modes.find((mode) => mode.id === model.default_reasoning_effort);
+  return fallback ? `Provider default · ${fallback.label}` : "Uses the provider's default reasoning mode.";
 }
 
 function randomSeed(): string {
@@ -302,11 +310,16 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
               </div>
               {model?.reasoning_modes?.length ? (
                 <div className="fv-field">
-                  <label htmlFor="agent-reasoning">Reasoning</label>
-                  <select id="agent-reasoning" className="fv-input" value={form.reasoningEffort ?? ""} onChange={(event) => update({ reasoningEffort: event.target.value || null })}>
-                    <option value="">Provider default</option>
-                    {model.reasoning_modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
-                  </select>
+                  <span className="fv-field-label">Reasoning</span>
+                  <div className="fv-segmented model-picker" role="group" aria-label="Reasoning">
+                    <button type="button" aria-pressed={form.reasoningEffort === null} onClick={() => update({ reasoningEffort: null })}>default</button>
+                    {model.reasoning_modes.map((mode) => (
+                      <button type="button" key={mode.id} aria-pressed={form.reasoningEffort === mode.id} onClick={() => update({ reasoningEffort: mode.id })}>
+                        {mode.label.toLowerCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="fv-hint">{reasoningHint(model, form.reasoningEffort)}</span>
                 </div>
               ) : null}
               <div className="form-row">

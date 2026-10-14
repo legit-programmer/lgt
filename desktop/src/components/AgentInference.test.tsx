@@ -25,19 +25,22 @@ function mount(value = agent) {
   return render(<QueryClientProvider client={client}><AgentInference agent={value}>builder</AgentInference></QueryClientProvider>);
 }
 
+const checked = (name: string) => (screen.getByRole("radio", { name }) as HTMLInputElement).checked;
+
 it("opens on hover and loads the agent's own provider catalog", async () => {
   mount();
   fireEvent.pointerEnter(screen.getByRole("button", { name: "Model and reasoning for builder" }));
-  await screen.findByRole("combobox", { name: "Model" });
+  await screen.findByRole("radio", { name: "Model A" });
   expect(mocks.models).toHaveBeenCalledWith("agent1");
-  expect(screen.getByRole("slider", { name: "Reasoning" }).getAttribute("aria-valuetext")).toBe("Low");
+  expect(checked("Model A")).toBe(true);
+  expect(screen.getByRole("radiogroup", { name: "Reasoning" })).toBeTruthy();
+  expect(checked("Low")).toBe(true);
 });
 
 it("saves only model and reasoning and waits for server state", async () => {
   const view = mount();
   fireEvent.click(screen.getByRole("button", { name: "Model and reasoning for builder" }));
-  const slider = await screen.findByRole("slider", { name: "Reasoning" });
-  fireEvent.change(slider, { target: { value: "1" } });
+  fireEvent.click(await screen.findByRole("radio", { name: "High" }));
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));
   await waitFor(() => expect(mocks.update).toHaveBeenCalledWith("agent1", { model: "a", reasoning_effort: "high" }));
   expect(agent.reasoning_effort).toBe("low");
@@ -48,25 +51,35 @@ it("saves only model and reasoning and waits for server state", async () => {
   await waitFor(() => expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull());
 });
 
-it("uses the selected model's modes and hides the slider when unsupported", async () => {
+it("uses the selected model's modes and hides the meter when unsupported", async () => {
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Model and reasoning for builder" }));
-  const picker = await screen.findByRole("combobox", { name: "Model" });
-  fireEvent.change(picker, { target: { value: "b" } });
-  const slider = screen.getByRole("slider", { name: "Reasoning" });
-  expect(slider.getAttribute("max")).toBe("0");
-  expect(slider.getAttribute("aria-valuetext")).toBe("High");
-  fireEvent.change(picker, { target: { value: "auto" } });
-  expect(screen.queryByRole("slider")).toBeNull();
+  fireEvent.click(await screen.findByRole("radio", { name: "Model B" }));
+  expect(screen.queryByRole("radio", { name: "Low" })).toBeNull();
+  expect(checked("High")).toBe(true);
+  fireEvent.click(screen.getByRole("radio", { name: "Automatic model" }));
+  expect(screen.queryByRole("radiogroup", { name: "Reasoning" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));
   await waitFor(() => expect(mocks.update).toHaveBeenCalledWith("agent1", { model: "auto", reasoning_effort: null }));
+});
+
+it("can return to the provider default reasoning", async () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "Model and reasoning for builder" }));
+  const reset = await screen.findByRole("button", { name: "Provider default" });
+  expect(reset.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(reset);
+  expect(reset.getAttribute("aria-pressed")).toBe("true");
+  expect(checked("Low")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+  await waitFor(() => expect(mocks.update).toHaveBeenCalledWith("agent1", { model: "a", reasoning_effort: null }));
 });
 
 it("keeps failed changes editable and exposes the error", async () => {
   mocks.update.mockRejectedValue(new Error("Unsupported reasoning level"));
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Model and reasoning for builder" }));
-  fireEvent.change(await screen.findByRole("slider", { name: "Reasoning" }), { target: { value: "1" } });
+  fireEvent.click(await screen.findByRole("radio", { name: "High" }));
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));
   expect((await screen.findByRole("alert")).textContent).toBe("Unsupported reasoning level");
   expect(screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")).toBe(false);

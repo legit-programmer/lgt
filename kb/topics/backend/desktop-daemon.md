@@ -3,7 +3,7 @@ id: 20261010-desktop-daemon
 title: Desktop daemon lifecycle
 tags: [backend, desktop, process, security, config]
 created: 2026-10-10
-updated: 2026-10-12
+updated: 2026-10-14
 related: [20261008-runtime-and-config, 20261008-desktop-architecture, 20261008-gateway-http, 20261008-websocket-protocol, 20261008-running-locally, 20261012-device-pairing]
 summary: How the desktop discovers, starts, authenticates to, and shuts down its persistent local backend.
 ---
@@ -55,7 +55,7 @@ Shutdown distinguishes a refused connection from authentication, malformed-respo
 
 ## Launch screen and diagnostics
 
-`StartupOverlay` covers the workspace while discovery and the initial state load are pending. Its abstract background contains no workspace data. CSS frost and an animated mark accompany **Setting up your Lgt workspace**. Reduced-motion preferences stop the animation, and the title bar remains available.
+`StartupOverlay` covers the workspace while discovery and the initial state load are pending. Its abstract background contains no workspace data. CSS frost, the Lgt mark and a thin progress bar accompany **Setting up your Lgt workspace**. Reduced-motion preferences stop the animation, and the title bar remains available.
 
 Startup errors show a Retry action. Python daemon logs rotate at 5 MiB with three backups under `data_dir/logs/daemon.log`.
 
