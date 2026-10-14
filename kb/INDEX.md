@@ -74,4 +74,5 @@ Format: `id` — **Title** — `path` — description.
 ### status
 - `20261008-changelog` — **Changelog** — `topics/status/changelog.md` — Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 - `20261008-known-issues` — **Known issues and caveats** — `topics/status/known-issues.md` — Behaviors and risks that are not bugs in the gap list but will surprise a newcomer — stopped requests staying in context, SDK private access, packaging, bundle size, test and line-ending quirks.
+- `20261014-todo` — **TODO** — `topics/status/todo.md` — Planned improvements the user has asked for that are not yet designed or scheduled, with the observed problem behind each one.
 - `20261008-open-gaps` — **Open gaps** — `topics/status/open-gaps.md` — Summary of the open backend contracts (D2–D6) that block desktop features, what the UI shows meanwhile, and where the full contracts live.
