@@ -4,6 +4,23 @@ Lgt is a local workspace where one person talks to a team of AI coding agents. E
 
 This repository holds the backend and the desktop app. The backend is a local FastAPI server with SQLite history, a WebSocket stream, and Codex, Claude Code, Gemini, and custom stdio agents. Codex uses the official `openai-codex` Python SDK. The desktop app in [`desktop/`](desktop/) is a Tauri shell with a React UI built from the design in [`design/`](design/).
 
+## Screenshots
+
+![A channel where builder implements a change, delegates the review to reviewer, and the agent panel shows each agent's last run, context and usage](docs/screenshots/channel-dark.png)
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/channel-light.png" alt="The same channel in the light theme"></td>
+    <td><img src="docs/screenshots/agent-form.png" alt="The new-agent form: avatar, backing CLI, model and reasoning, with a live preview"></td>
+  </tr>
+  <tr>
+    <td align="center">Light theme</td>
+    <td align="center">Creating an agent: pick a CLI, model and reasoning level</td>
+  </tr>
+</table>
+
+The screenshots use scripted demo agents. On Windows the desktop window can also be frosted, showing the wallpaper through its panels.
+
 ## Quick start
 
 ```powershell
