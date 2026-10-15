@@ -16,6 +16,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-15
 
+- Make the light frosted window readable over dark wallpapers: a heavier light Acrylic tint, a paper ground behind the shell, and more opaque light side panels.
 - Add a frosted window on Windows: a transparent window with Acrylic, tinted side panels, and a **Frosted window** toggle in the channel menu and the command palette. Make the working label static and step the working dots, because their per-frame repaints, not the blur, cost the GPU.
 - Support inline `<@agent_id:handoff>` and `<@agent_id:delegation>` in normal agent prose. Dispatch only after message completion, preserve task context and ownership checks, and render known targets as `@handle` in the desktop. Keep legacy transfers compatible and cover streaming, routing and rendering with tests.
 

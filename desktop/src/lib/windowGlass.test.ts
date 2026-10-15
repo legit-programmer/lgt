@@ -37,7 +37,7 @@ describe("window glass", () => {
 
   it("applies Acrylic with the theme's tint, then clears the page", async () => {
     await applyWindowGlass(true, "light");
-    expect(win.setEffects).toHaveBeenCalledWith({ effects: ["acrylic"], color: [245, 240, 234, 120] });
+    expect(win.setEffects).toHaveBeenCalledWith({ effects: ["acrylic"], color: [245, 240, 234, 200] });
     expect(glass()).toBe("on");
   });
 

@@ -15,10 +15,12 @@ import { isWindowsDesktop } from "./platform";
  * and the other desktop platforms never have the effect.
  */
 
-// Acrylic tint per theme, RGBA. Windows 10 applies it under the page.
+// Acrylic tint per theme, RGBA. Windows 10 applies it under the page. Light
+// needs a heavy tint: a light sheet over a dark wallpaper otherwise reads as
+// the wallpaper's colour, and the dark ink loses its contrast.
 const TINT: Record<Theme, [number, number, number, number]> = {
   dark: [18, 14, 12, 90],
-  light: [245, 240, 234, 120],
+  light: [245, 240, 234, 200],
 };
 
 let queue: Promise<void> = Promise.resolve();

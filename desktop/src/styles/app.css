@@ -1657,9 +1657,12 @@ html.is-scanning body > :not(.scan-overlay) {
  * behind the transparent window, so the grounds clear and the panels become
  * tints over the blurred desktop. The conversation pane keeps --glass-pane.
  */
-:root[data-window-glass="on"] body,
-:root[data-window-glass="on"] .fv-backdrop {
+:root[data-window-glass="on"] body {
   background: transparent;
+}
+
+:root[data-window-glass="on"] .fv-backdrop {
+  background: var(--window-glass-ground);
 }
 
 :root[data-window-glass="on"] .sidebar,
