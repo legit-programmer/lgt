@@ -14,6 +14,7 @@ import { TopBarSlot } from "../../components/TopBar";
 import { cliLine, hueStyle } from "../../lib/agents";
 import { pickFolder } from "../../lib/folder";
 import { useTouchPanels } from "../../lib/platform";
+import { windowGlassAvailable } from "../../lib/windowGlass";
 import { displayPath, plural, tokens } from "../../lib/format";
 import { useUi } from "../../store/ui";
 import { contextKey, reportError, useWorkspace } from "../../store/workspace";
@@ -175,6 +176,8 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
   const detailOpen = useUi((s) => s.detailOpen);
   const setDetailOpen = useUi((s) => s.setDetailOpen);
   const setPaletteOpen = useUi((s) => s.setPaletteOpen);
+  const frosted = useUi((s) => s.frosted);
+  const toggleFrosted = useUi((s) => s.toggleFrosted);
   const touchPanels = useTouchPanels();
   const [renaming, setRenaming] = useState(false);
   const [savingHandoff, setSavingHandoff] = useState(false);
@@ -242,6 +245,15 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
               Allow agents to hand off ownership
             </DropdownMenu.CheckboxItem>
             <DropdownMenu.Separator className="fv-menu-sep" />
+            {windowGlassAvailable() ? (
+              <>
+                <DropdownMenu.CheckboxItem className="fv-menu-item" checked={frosted} onCheckedChange={toggleFrosted}>
+                  <DropdownMenu.ItemIndicator><Check /></DropdownMenu.ItemIndicator>
+                  Frosted window
+                </DropdownMenu.CheckboxItem>
+                <DropdownMenu.Separator className="fv-menu-sep" />
+              </>
+            ) : null}
             <DropdownMenu.Item className="fv-menu-item fv-menu-item--danger" onSelect={archive}><Archive /> Archive channel</DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>

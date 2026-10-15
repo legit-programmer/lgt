@@ -10,6 +10,8 @@ const platform = import.meta.env.TAURI_ENV_PLATFORM as string | undefined;
 export const isMobile = platform === "android" || platform === "ios";
 export const isAndroid = platform === "android";
 export const isIos = platform === "ios";
+/** The Windows desktop shell (also true in a browser tab on the Windows dev server; check for Tauri too). */
+export const isWindowsDesktop = platform === "windows";
 
 const COMPACT_QUERY = "(max-width: 760px)";
 /** A phone-width touch screen: panels open by swiping instead of top bar toggles (lib/gestures.ts). */

@@ -9,9 +9,20 @@
         "height": 900,
         "minWidth": 1024,
         "minHeight": 640,
-        "backgroundColor": "#000000",
         "resizable": true,
-        "decorations": false
+        "decorations": false,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "acrylic"
+          ],
+          "color": [
+            18,
+            14,
+            12,
+            90
+          ]
+        }
       }
     ]
   }

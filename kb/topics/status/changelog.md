@@ -16,6 +16,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-15
 
+- Add a frosted window on Windows: a transparent window with Acrylic, tinted side panels, and a **Frosted window** toggle in the channel menu and the command palette. Make the working label static and step the working dots, because their per-frame repaints, not the blur, cost the GPU.
 - Support inline `<@agent_id:handoff>` and `<@agent_id:delegation>` in normal agent prose. Dispatch only after message completion, preserve task context and ownership checks, and render known targets as `@handle` in the desktop. Keep legacy transfers compatible and cover streaming, routing and rendering with tests.
 
 ## 2026-10-14

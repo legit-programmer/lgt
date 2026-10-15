@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Folder pickers, opening attachments, and the app-drawn title bar's window controls.",
+  "description": "Folder pickers, opening attachments, the app-drawn title bar's window controls, and the frosted window effect.",
   "windows": [
     "main"
   ],
@@ -17,6 +17,7 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-effects"
   ]
 }

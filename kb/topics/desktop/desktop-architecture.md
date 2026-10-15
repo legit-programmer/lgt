@@ -3,7 +3,7 @@ id: 20261008-desktop-architecture
 title: Desktop architecture
 tags: [desktop]
 created: 2026-10-08
-updated: 2026-10-14
+updated: 2026-10-15
 related: [20261012-mobile-client, 20261010-desktop-daemon, 20261008-client-state, 20261008-screens, 20261008-design-system, 20261008-origins-and-media, 20261008-no-frontend-workarounds, 20261008-open-gaps, 20261008-timeline-model, 20261012-device-pairing]
 summary: How the Tauri shell, the React app, and the backend connect, the boot sequence, and a file map of desktop/.
 ---
@@ -55,13 +55,14 @@ Tauri shell (Rust, desktop/src-tauri) ── hosts ──> WebView2 / WKWebView
 | `api/types.ts`, `api/client.ts` | API types and the typed `api.*` client with the `ApiError` envelope |
 | `store/workspace.ts` | Workspace state and `applyFrame` ([client state](client-state.md)) |
 | `store/socket.ts` | WebSocket lifecycle |
-| `store/ui.ts` | View, panel, palette, theme, and URL hash sync |
+| `store/ui.ts` | View, panel, palette, theme, frosted window preference, and URL hash sync |
 | `lib/timeline.ts` | Event log → blocks ([timeline model](timeline-model.md)) |
 | `lib/format.ts`, `lib/agents.ts`, `lib/media.ts`, `lib/folder.ts`, `lib/useNow.ts` | Formatting, hues and CLI labels, blob media, folder dialog, ticking clock |
 | `components/StartupOverlay.tsx`, `StartupOverlay.css` | Frosted launch screen, mark tile, progress bar, reduced-motion styles |
 | `components/` | `Avatar` (DiceBear), `Status` (dots, badges, elapsed), `Markdown` (mentions), `Toasts` |
 | `features/settings/` | Local Devices administration, QR display, pairing-code import and mobile QR scanning |
-| `lib/platform.ts`, `lib/scan.ts` | Build-time mobile detection and the phone breakpoint; QR scanning state |
+| `lib/platform.ts`, `lib/scan.ts` | Build-time platform detection and the phone breakpoint; QR scanning state |
+| `lib/windowGlass.ts` | Windows Acrylic window glass: availability, applying and clearing the effect ([design system](design-system.md)) |
 | `components/ScanOverlay.tsx`, `components/PathPrompt.tsx` | Scanner frame and Cancel; the host-path dialog for remote workspaces |
 | `features/` | Screens; see [screens](screens.md) |
 | `styles/` | `tokens.css`, `components.css`, `app.css` ([design system](design-system.md)) |

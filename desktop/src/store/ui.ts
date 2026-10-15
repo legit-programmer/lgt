@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { applyWindowGlass } from "../lib/windowGlass";
 
 export type View =
   | { kind: "home" }
@@ -19,6 +20,8 @@ interface UiState {
   paletteOpen: boolean;
   newChannelOpen: boolean;
   theme: Theme;
+  /** Frosted window glass (Windows shell only; see lib/windowGlass.ts). */
+  frosted: boolean;
   sidebarOpen: boolean;
   /** Visited views, for back and forward. */
   history: View[];
@@ -37,6 +40,7 @@ interface UiState {
   setPaletteOpen(open: boolean): void;
   setNewChannelOpen(open: boolean): void;
   toggleTheme(): void;
+  toggleFrosted(): void;
 }
 
 /** The view as a URL hash, so a window can be reloaded or deep-linked. */
@@ -69,7 +73,7 @@ function syncHash(view: View) {
   if (window.location.hash !== hash) window.history.replaceState(null, "", hash || window.location.pathname);
 }
 
-// Theme and sidebar visibility are per-window display preferences, so they live in local storage.
+// Theme, window glass and sidebar visibility are per-window display preferences, so they live in local storage.
 function stored(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -110,6 +114,11 @@ function applyTheme(theme: Theme) {
   store("lgt.theme", theme);
 }
 
+function applySurface(frosted: boolean, theme: Theme) {
+  store("lgt.surface", frosted ? "frosted" : "opaque");
+  void applyWindowGlass(frosted, theme);
+}
+
 export const useUi = create<UiState>((set, get) => ({
   view: initialView,
   detailOpen: true,
@@ -119,6 +128,7 @@ export const useUi = create<UiState>((set, get) => ({
   paletteOpen: false,
   newChannelOpen: false,
   theme: storedTheme(),
+  frosted: stored("lgt.surface") !== "opaque",
   sidebarOpen: stored("lgt.sidebar") !== "closed",
   history: [initialView],
   historyIndex: 0,
@@ -176,8 +186,15 @@ export const useUi = create<UiState>((set, get) => ({
   toggleTheme() {
     const theme = get().theme === "dark" ? "light" : "dark";
     applyTheme(theme);
+    applySurface(get().frosted, theme);
     set({ theme });
+  },
+  toggleFrosted() {
+    const frosted = !get().frosted;
+    applySurface(frosted, get().theme);
+    set({ frosted });
   },
 }));
 
 applyTheme(useUi.getState().theme);
+applySurface(useUi.getState().frosted, useUi.getState().theme);

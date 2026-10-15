@@ -544,7 +544,8 @@ select {
   height: 4px;
   border-radius: 50%;
   background: currentColor;
-  animation: fv-dot-pulse 1.2s infinite var(--ease);
+  /* Stepped, not eased: a smooth fade repaints every frame, which keeps the GPU busy (and the window glass recompositing) while agents work. */
+  animation: fv-dot-pulse 1.2s infinite steps(2, jump-none);
 }
 
 .fv-working-dots i:nth-child(1) {
@@ -597,22 +598,9 @@ select {
   color: var(--working);
 }
 
+/* Static on purpose: an animated text shimmer repainted every frame and was the largest GPU cost while agents worked. */
 .fv-status--working .fv-status-text {
-  background: linear-gradient(90deg, var(--text-3) 0%, var(--working) 40%, var(--text-3) 80%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: fv-shimmer 2.2s linear infinite;
-}
-
-@keyframes fv-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -100% 0;
-  }
+  color: var(--working);
 }
 
 .fv-status--failed {

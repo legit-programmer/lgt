@@ -1652,5 +1652,21 @@ html.is-scanning body > :not(.scan-overlay) {
 .skill-executors { display: flex; flex-direction: column; gap: var(--space-300); }
 .skill-executor { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-200); }
 
-/* PERF-PROBE (temporary) */
-.fv-working-dots i { animation: none !important; }
+/*
+ * Window glass (lib/windowGlass.ts, Windows shell only). Windows draws Acrylic
+ * behind the transparent window, so the grounds clear and the panels become
+ * tints over the blurred desktop. The conversation pane keeps --glass-pane.
+ */
+:root[data-window-glass="on"] body,
+:root[data-window-glass="on"] .fv-backdrop {
+  background: transparent;
+}
+
+:root[data-window-glass="on"] .sidebar,
+:root[data-window-glass="on"] .topbar.has-sidebar .topbar-lead {
+  background: var(--window-glass-side);
+}
+
+:root[data-window-glass="on"] .detail {
+  background: var(--window-glass-detail);
+}

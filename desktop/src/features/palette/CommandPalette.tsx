@@ -1,11 +1,12 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
-import { ArchiveRestore, Bot, Hash, MessageSquare, Moon, Search, Sun } from "lucide-react";
+import { ArchiveRestore, Bot, Hash, MessageSquare, Moon, PanelsTopLeft, Search, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { AgentAvatar } from "../../components/Avatar";
 import { activeAgents, hueStyle } from "../../lib/agents";
+import { windowGlassAvailable } from "../../lib/windowGlass";
 import { useUi } from "../../store/ui";
 import { reportError, useWorkspace } from "../../store/workspace";
 
@@ -26,6 +27,8 @@ export function CommandPalette() {
   const view = useUi((s) => s.view);
   const theme = useUi((s) => s.theme);
   const toggleTheme = useUi((s) => s.toggleTheme);
+  const frosted = useUi((s) => s.frosted);
+  const toggleFrosted = useUi((s) => s.toggleFrosted);
   const setNewChannelOpen = useUi((s) => s.setNewChannelOpen);
   const agentsById = useWorkspace((s) => s.agents);
   const channels = useWorkspace((s) => s.channels);
@@ -61,6 +64,9 @@ export function CommandPalette() {
     { id: "new-agent", label: "New agent", icon: <Bot />, run: () => navigate({ kind: "agent-new", returnTo: view }) },
     { id: "new-channel", label: "New channel", icon: <Hash />, run: () => setNewChannelOpen(true) },
     { id: "theme", label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, run: toggleTheme },
+    ...(windowGlassAvailable()
+      ? [{ id: "surface", label: frosted ? "Switch to opaque window" : "Switch to frosted window", icon: <PanelsTopLeft />, run: toggleFrosted }]
+      : []),
   ].filter((a) => matches(a.label));
   const archived = Object.values(channels).filter((c) => c.kind === "channel" && c.archived_at && lower && matches(c.name));
   const restore = async (channelId: string) => {
