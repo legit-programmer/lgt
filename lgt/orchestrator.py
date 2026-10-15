@@ -469,16 +469,27 @@ class Orchestrator:
                                lambda sid, cwd: self.artifact_exists(agent.harness, sid, cwd),
                                self.settings.session_ttl_seconds)
 
-    def _publish_context(self, channel_id: str) -> None:
+    def _context_frames(self, channel_id: str) -> list[dict[str, Any]]:
+        frames = []
         for agent_id in self._agent_ids(channel_id):
-            self.bus.publish({"type": "context", **self.context_stats(channel_id, agent_id)})
+            try:
+                frames.append({"type": "context", **self.context_stats(channel_id, agent_id)})
+            except WorkspaceError as error:
+                # An agent whose harness can't be probed has no context to report;
+                # it must not break the socket or the channel write for everyone else.
+                log.warning("skipping context for agent %s in %s: %s", agent_id, channel_id, error)
+        return frames
+
+    def _publish_context(self, channel_id: str) -> None:
+        for frame in self._context_frames(channel_id):
+            self.bus.publish(frame)
 
     def snapshot_frames(self, channel_ids: set[str]) -> list[dict[str, Any]]:
         frames = [{"type": "channel_summary", **self.store.channel_summary(cid, self.human_id)}
                   for cid in sorted(channel_ids)]
         frames.extend({"type": "agent_status", **status} for status in self.agent_statuses())
-        frames.extend({"type": "context", **self.context_stats(cid, agent_id)}
-                      for cid in sorted(channel_ids) for agent_id in self._agent_ids(cid))
+        for cid in sorted(channel_ids):
+            frames.extend(self._context_frames(cid))
         frames.append({"type": "usage", "group_by": "agent", "totals": self.store.usage("agent")})
         for harness in self.harness_registry.list():
             limits = self.store.get_harness_limits(harness["harness"])

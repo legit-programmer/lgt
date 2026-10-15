@@ -22,7 +22,7 @@ summary: The harness registry (discovery, catalogs, capability-based validation,
   - for Codex, `client.models()` and `client.account()` through the SDK;
   - `--help` checks that confirm the Claude and Gemini capability flags.
   - Gemini auth stays `unknown`, because it has no read-only check.
-- **`probe_custom(command, extra_args)`** runs `<argv> --lgt-probe` and validates the descriptor in [docs/custom-harness.md](../../../docs/custom-harness.md). The result is cached per argv.
+- **`probe_custom(command, extra_args)`** runs `<argv> --lgt-probe` and validates the descriptor in [docs/custom-harness.md](../../../docs/custom-harness.md). The result is cached per argv. The cache is in memory, so `BackendRuntime.start` probes every stored agent once at launch (concurrently, logging failures). Without that, `capabilities_for` raised `harness custom is not probed` after every restart.
 - **`validate_agent(agent)`** is called from `Orchestrator.put_agent`. It rejects:
   - an unknown or uninstalled harness;
   - a model not in the catalog;

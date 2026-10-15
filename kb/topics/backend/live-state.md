@@ -3,7 +3,7 @@ id: 20261008-live-state
 title: Live state frames
 tags: [backend, api]
 created: 2026-10-08
-updated: 2026-10-11
+updated: 2026-10-15
 related: [20261008-websocket-protocol, 20261008-event-store, 20261008-screens, 20261008-context-and-sessions]
 summary: The server-computed state behind the sidebar, status dots, activity lines, context header and usage — channel summaries, agent statuses, context stats, usage totals, plan limits, profile — and when each is published.
 ---
@@ -13,6 +13,8 @@ summary: The server-computed state behind the sidebar, status dots, activity lin
 > Summary: The server-computed state behind the sidebar, status dots, activity lines, context header and usage — channel summaries, agent statuses, context stats, usage totals, plan limits, profile — and when each is published.
 
 The UI shows these objects as they are. Each one has an HTTP route for the first load and a WebSocket frame for changes. `Orchestrator.snapshot_frames` builds the initial set.
+
+Context frames go through `_context_frames`, which skips (and logs) an agent whose `context_stats` raises `WorkspaceError`, such as a custom agent whose command no longer probes. One such agent used to abort the WebSocket handshake, so the client reconnected in a loop and never received any state frames.
 
 | Object | HTTP | Built by | Published when |
 | --- | --- | --- | --- |

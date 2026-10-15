@@ -16,6 +16,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-15
 
+- Probe custom agents at startup and keep one unprobeable agent from breaking the WebSocket: after a restart, context stats for a custom agent raised `harness custom is not probed`, which aborted every connect, so agent cards showed no context or usage.
 - Stop oversized Claude tool results from failing the run: a tool result over `ndjson_line_limit` (usually an image read inline as base64) becomes an "output omitted" result instead of `claude exited 1 (NDJSON line exceeds … bytes)`. Other oversized lines still fail.
 - Rework the channel view after a UI critique: the conversation loses its pane box and sits on the window ground with a top fade and a hover-only scrollbar; Reply shows on hover; your messages take a faint fill instead of an outline; the top bar keeps only the primary pill, with a divider before the caption buttons; agent cards show now, last run, context and all-channel usage, with Remove in a ⋯ menu; Quit sits apart; the composer starts at one line; frosted surfaces collapse to a chrome and a pane level.
 - Make the light frosted window readable over dark wallpapers: a heavier light Acrylic tint, a paper ground behind the shell, and more opaque light side panels.

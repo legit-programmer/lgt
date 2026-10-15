@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import sys
+from pathlib import Path
 from dataclasses import asdict
 
 import pytest
@@ -10,6 +13,9 @@ from fastapi.testclient import TestClient
 from lgt.models import Agent
 from lgt.runtime import BackendRuntime, RuntimeConfig, application, load_config
 from tests.support import settings
+
+
+FIXTURE = str(Path(__file__).with_name("fake_streaming_cli.py"))
 
 
 def config_file(tmp_path, **extra):
@@ -155,3 +161,39 @@ async def test_runtime_keeps_one_writer_and_recovers_after_releasing_lock(tmp_pa
         await first.close()
     await second.start()
     await second.close()
+
+
+
+@pytest.mark.asyncio
+async def test_runtime_probes_custom_agents_after_restart(tmp_path, monkeypatch):
+    async def probe(self):
+        return {"version": "fixture", "capabilities": {}}
+
+    monkeypatch.setattr("lgt.runtime.CodexAppServerRunner.probe", probe)
+    monkeypatch.setenv("LGT_FAKE_HARNESS", "custom")
+    scripts = {handle: tmp_path / f"{handle}.py" for handle in ("good", "broken")}
+    for script in scripts.values():
+        shutil.copy(FIXTURE, script)
+    config = RuntimeConfig(settings(tmp_path), "deferred")
+    first = BackendRuntime(config)
+    await first.start()
+    try:
+        for handle, script in scripts.items():
+            agent = Agent(handle, handle, handle, "Helper", "custom", "auto", "Help",
+                          avatar={"style": "bottts", "seed": handle}, command=[sys.executable, str(script)])
+            await first.harness_registry.prepare_agent(agent)
+            first.put_agent(agent)
+    finally:
+        await first.close()
+
+    # The probe cache is empty after a restart, and one agent's command no longer works.
+    scripts["broken"].unlink()
+    second = BackendRuntime(config)
+    await second.start()
+    try:
+        dms = {second.store.get_agent(handle).dm_channel_id: handle for handle in scripts}
+        frames = second.snapshot_frames(set(dms))
+        assert {dms[f["channel_id"]] for f in frames if f["type"] == "context"} == {"good"}
+        assert any(f["type"] == "usage" for f in frames)
+    finally:
+        await second.close()

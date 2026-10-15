@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from dataclasses import MISSING, dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,9 @@ from .orchestrator import Orchestrator
 from .router import CLIRouter
 from .store import Store
 from .summarizer import CLISummarizer
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,15 @@ class BackendRuntime:
             self.harness_registry = HarnessRegistry(self.settings, self.config.codex_bin,
                 self.config.claude_command, self.config.gemini_command)
             await self.harness_registry.scan()
+            # Custom agents are probed per command, and that cache starts empty on every launch.
+            agents = self._store.list_agents()
+            probes = await asyncio.gather(*(self.harness_registry.prepare_agent(agent) for agent in agents),
+                                          return_exceptions=True)
+            for agent, result in zip(agents, probes):
+                if isinstance(result, Exception):
+                    log.warning("agent %s failed its startup probe: %s", agent.handle, result)
+                elif isinstance(result, BaseException):
+                    raise result
             self.harness_info = next((entry for entry in self.harness_registry.list() if entry["harness"] == "codex"), {})
             binary = bundled_codex_binary(self.config.codex_bin)
             claude = list(self.config.claude_command)
