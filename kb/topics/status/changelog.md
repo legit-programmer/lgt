@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-14
+updated: 2026-10-15
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,10 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-15
+
+- Support inline `<@agent_id:handoff>` and `<@agent_id:delegation>` in normal agent prose. Dispatch only after message completion, preserve task context and ownership checks, and render known targets as `@handle` in the desktop. Keep legacy transfers compatible and cover streaming, routing and rendering with tests.
 
 ## 2026-10-14
 

@@ -8,6 +8,8 @@ Skill discovery and invocation are implemented for Codex and Claude through `GET
 
 ## Open: found while building the desktop app
 
+Inline agent transfers are implemented through `<@agent_id:handoff>` and `<@agent_id:delegation>` in completed agent messages. The backend owns dispatch and ownership; the desktop renders known targets as `@handle`. See [agent transfers](../docs/backend-reference.md#channel-changes).
+
 These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. D1 is implemented. D2 through D6 remain open, and the app omits unsupported controls.
 
 ### D1. Daemon handshake (implemented)

@@ -3,14 +3,14 @@ id: 20261008-routing
 title: Routing
 tags: [backend, routing]
 created: 2026-10-08
-updated: 2026-10-13
+updated: 2026-10-15
 related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol, 20261012-message-replies, 20261013-skill-invocation]
-summary: Shared channel ownership, direct follow-ups, handoff versus delegation, router fallback during independent overlapping work, and model-routing contracts.
+summary: Shared channel ownership, inline handoff/delegation mentions, completion-only dispatch, router fallback during independent overlapping work, and model-routing contracts.
 ---
 
 # Routing
 
-> Summary: Shared channel ownership, direct follow-ups, handoff versus delegation, router fallback during independent overlapping work, and model-routing contracts.
+> Summary: Shared channel ownership, inline handoff/delegation mentions, completion-only dispatch, router fallback during independent overlapping work, and model-routing contracts.
 
 ## Files
 
@@ -35,7 +35,9 @@ summary: Shared channel ownership, direct follow-ups, handoff versus delegation,
 
 Explicit [skill invocations](skill-invocation.md) route to one validated executor with `method`/`reason_code: "skill"`. The primary is the default when eligible; other agents require user selection. This dispatch preserves primary ownership, skips the model router, and isolates the invocation in its own queue batch.
 
-An agent emits a complete `lgt-transfer` fenced JSON message containing `mode` (`handoff` or `delegation`), `target` (member handle or ID), and `text` (the task and context). `parse_transfer` does not interpret quoted examples or human messages. Custom harnesses can alternatively send a structured `transfer` on `message`.
+An agent includes `<@agent_id:handoff>` or `<@agent_id:delegation>` in normal prose. Targets accept member IDs or handles. The backend parses completed `message` outputs, never streaming `text_delta` events, and preserves the full message as task context. Code examples, blockquotes, and escaped markers do not dispatch work. Multiple delegation targets are supported, with at most one handoff per message and one transfer per target. Invalid messages fail before any recipient is dispatched. The desktop renders known targets as `@handle`.
+
+The complete `lgt-transfer` fenced JSON format remains supported, containing `mode` (`handoff` or `delegation`), `target`, and `text`. Custom harnesses can alternatively send a structured `transfer` on `message`. Committed transfers expose a `transfers` array with resolved targets, source and ownership version; single transfers also expose the legacy `transfer` object. Assigned-message context includes the transfer metadata. Human messages cannot issue transfer controls.
 
 Ordinary agent mentions and explicit delegation dispatch while preserving ownership. A handoff request must come from the current primary's current ownership version, with `allow_handoff` enabled and `routing_mode: primary`. Specialists delegate while router mode is active. It queues as part of the parent task. The receiver's `run_started` accepts the delivery for execution; `_accept_handoffs` then atomically updates ownership and the transferred chain's activity attribution. New selections, disabled policy, and removed receivers prevent a pending ownership transfer. Already delivered work remains delegation if superseded. Cancellation or failure before acceptance does not transfer ownership. Every transfer respects the hop limit.
 

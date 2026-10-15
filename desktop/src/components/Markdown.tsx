@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -9,10 +9,10 @@ interface MdNode {
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
-const MENTION = /(?<![\w@])@([\w.:-]+)/g;
+const INLINE_TRANSFER_OR_MENTION = /<@([\w.:-]+):(handoff|delegation)>|(?<![\w@])@([\w.:-]+)/g;
 
-/** Wraps known @handles in a mention span; code and links are left alone. */
-function remarkMentions(handles: ReadonlySet<string>) {
+/** Wraps known @handles and transfer targets in mention spans; code and links are left alone. */
+function remarkMentions(handles: ReadonlySet<string>, agents: Readonly<Record<string, { handle: string }>>, caret: boolean) {
   return () => (tree: MdNode) => {
     const walk = (node: MdNode) => {
       if (!node.children || node.type === "link" || node.type === "inlineCode" || node.type === "code") return;
@@ -25,14 +25,18 @@ function remarkMentions(handles: ReadonlySet<string>) {
         }
         let last = 0;
         const value = child.value;
-        for (const match of value.matchAll(MENTION)) {
-          if (!handles.has(match[1])) continue;
+        for (const match of value.matchAll(INLINE_TRANSFER_OR_MENTION)) {
+          const transferId = match[1];
+          const handle = transferId
+            ? agents[transferId]?.handle ?? (handles.has(transferId) ? transferId : undefined)
+            : match[3];
+          if (!handle || (!transferId && !handles.has(handle))) continue;
           const start = match.index ?? 0;
           if (start > last) next.push({ type: "text", value: value.slice(last, start) });
           next.push({
             type: "mention",
             data: { hName: "span", hProperties: { className: ["fv-mention"] } },
-            children: [{ type: "text", value: match[0] }],
+            children: [{ type: "text", value: `@${handle}` }],
           });
           last = start + match[0].length;
         }
@@ -41,6 +45,24 @@ function remarkMentions(handles: ReadonlySet<string>) {
       node.children = next;
     };
     walk(tree);
+
+    if (caret) {
+      const caretNode: MdNode = {
+        type: "caret",
+        data: { hName: "span", hProperties: { className: ["fv-caret"] } },
+      };
+      const appendToLastInlineBlock = (node: MdNode): boolean => {
+        const lastChild = node.children?.at(-1);
+        if (!lastChild) return false;
+        if (lastChild.type === "paragraph" || lastChild.type === "heading") {
+          lastChild.children ??= [];
+          lastChild.children.push(caretNode);
+          return true;
+        }
+        return appendToLastInlineBlock(lastChild);
+      };
+      if (!appendToLastInlineBlock(tree)) tree.children?.push(caretNode);
+    }
   };
 }
 
@@ -53,16 +75,16 @@ const components: Components = {
 interface MarkdownProps {
   text: string;
   handles: ReadonlySet<string>;
-  trailing?: ReactNode;
+  agents: Readonly<Record<string, { handle: string }>>;
+  caret?: boolean;
 }
 
-function MarkdownImpl({ text, handles, trailing }: MarkdownProps) {
+function MarkdownImpl({ text, handles, agents, caret }: MarkdownProps) {
   return (
     <>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMentions(handles)]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMentions(handles, agents, caret ?? false)]} components={components}>
         {text}
       </ReactMarkdown>
-      {trailing}
     </>
   );
 }

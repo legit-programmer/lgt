@@ -3,7 +3,7 @@ id: 20261008-timeline-model
 title: Timeline model
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-15
 related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle, 20261012-message-replies]
 summary: The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
 ---
@@ -34,6 +34,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 - **Continuations:** consecutive blocks from the same speaker drop the header (`cont`).
 - **Hidden blocks:** empty, finished segments are dropped.
 - **Replies:** committed human/agent messages offer whole-message replies and text-selection replies. Each source is a message event, rather than an entire run/tool group. Sent quotes render above the new message; nested quotes and tools are outside the selectable source body.
+- **Transfer mentions:** `Markdown` renders `<@agent_id:handoff>` and `<@agent_id:delegation>` as `@handle` using the backend's agent roster. Code examples stay literal. Rendering never dispatches work; the backend processes completed agent messages.
 
 ## Timeline component behavior
 

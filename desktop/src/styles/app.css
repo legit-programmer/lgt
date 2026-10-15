@@ -1651,3 +1651,6 @@ html.is-scanning body > :not(.scan-overlay) {
 .composer-skill { display: flex; align-items: center; gap: var(--space-200); flex-wrap: wrap; padding: var(--space-200); }
 .skill-executors { display: flex; flex-direction: column; gap: var(--space-300); }
 .skill-executor { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-200); }
+
+/* PERF-PROBE (temporary) */
+.fv-working-dots i { animation: none !important; }

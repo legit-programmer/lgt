@@ -8,7 +8,7 @@ import pytest
 from lgt.models import Agent, RoutingDecision, WorkspaceError
 from lgt.orchestrator import Orchestrator
 from lgt.store import Store
-from lgt.transfers import parse_transfer
+from lgt.transfers import parse_inline_transfers, parse_transfer
 from tests.support import ControlledFactory, FakeRouter, eventually, settings
 
 
@@ -332,3 +332,122 @@ async def test_multiple_mentions_and_router_assignments_have_deterministic_owner
     factory.started[3].finish()
     await eventually(lambda: not store.list_runs(cid, active_only=True))
     assert owner(store, cid) == "reviewer" and store.routing_state(cid)["routing_mode"] == "primary"
+
+
+@pytest.mark.parametrize("text", [
+    "`<@reviewer:delegation>`",
+    "`` <@reviewer:delegation> ` example ``",
+    "```python\n<@reviewer:delegation>\n```",
+    "~~~\n<@reviewer:handoff>\n~~~",
+    "```\n<@reviewer:handoff>",
+    "    <@reviewer:delegation>",
+    "\t<@reviewer:delegation>",
+    "> ```\n> <@reviewer:delegation>\n> ```",
+    "> <@reviewer:delegation>",
+    r"\<@reviewer:delegation>",
+])
+def test_inline_transfer_examples_do_not_execute(text):
+    assert parse_inline_transfers(text) == []
+
+
+def test_inline_transfers_allow_prose_and_reject_multiple_handoffs():
+    text = "Ready. <@assistant:handoff> Schedule it. <@reviewer:delegation> Review."
+    assert [(t["target"], t["mode"]) for t in parse_inline_transfers(text)] == [
+        ("assistant", "handoff"), ("reviewer", "delegation")]
+    assert all(t["text"] == text for t in parse_inline_transfers(text))
+    with pytest.raises(WorkspaceError, match="at most one handoff"):
+        parse_inline_transfers("<@assistant:handoff> <@reviewer:handoff>")
+
+
+@pytest.mark.asyncio
+async def test_inline_transfers_dispatch_only_complete_message_with_full_context(workspace):
+    orch, store, factory, router, cid = workspace
+    await orch.send_message(cid, "Implement", ["coder"])
+    await eventually(lambda: len(factory.started) == 1)
+    text = "I read the requirements. <@assistant:delegation> Check scheduling. <@reviewer:delegation> Review code."
+    factory.started[0].emit("text_delta", text=text)
+    await eventually(lambda: orch._partials.get(factory.started[0].turn.run.run_id) == text)
+    assert len(factory.started) == 1
+    assert not store.queue(cid, "awaiting_agent")
+    factory.started[0].emit("message", text=text)
+    await eventually(lambda: len(factory.started) == 3)
+    message = next(e for e in store.events(cid) if e.kind == "message" and e.author_kind == "agent")
+    assert message.payload["text"] == text
+    assert message.payload["mentions"] == ["assistant", "reviewer"]
+    assert len(message.payload["transfers"]) == 2
+    assert "transfer" not in message.payload
+    for runner in factory.started[1:]:
+        routing = runner.turn.prompt.split("<channel_routing>\n", 1)[1].split("\n</channel_routing>", 1)[0]
+        assigned = json.loads(routing[routing.index("{\"primary_agent_id\""):])["assigned_messages"]
+        assert assigned[0]["text"] == text
+        assert assigned[0]["transfers"] == message.payload["transfers"]
+    assert owner(store, cid) == "coder" and not router.calls
+
+
+@pytest.mark.asyncio
+async def test_mixed_inline_handoff_and_delegation_accept_only_handoff_recipient(workspace, monkeypatch):
+    orch, store, factory, _, cid = workspace
+    await orch.send_message(cid, "Implement", ["coder"])
+    await eventually(lambda: len(factory.started) == 1)
+    frames = []
+    publish = orch.bus.publish
+    def record(frame):
+        frames.append(frame)
+        publish(frame)
+    monkeypatch.setattr(orch.bus, "publish", record)
+    factory.started[0].emit("message", text="<@reviewer:delegation> Review. <@assistant:handoff> Own this.")
+    await eventually(lambda: len(factory.started) == 3 and owner(store, cid) == "assistant")
+    accepted = [e for e in store.events(cid) if e.kind == "agent_transfer" and e.payload["status"] == "accepted"]
+    assert len(accepted) == 1 and accepted[0].payload["targets"] == ["assistant"]
+    seqs = [frame["event"]["seq"] for frame in frames if frame["type"] == "event"]
+    assert seqs == sorted(seqs)
+
+
+@pytest.mark.asyncio
+async def test_rejected_inline_handoff_still_dispatches_delegation(workspace):
+    orch, store, factory, _, cid = workspace
+    await orch.patch_channel(cid, allow_handoff=False)
+    await orch.send_message(cid, "Implement", ["coder"])
+    await eventually(lambda: len(factory.started) == 1)
+    factory.started[0].emit("message", text="<@assistant:handoff> Own this. <@reviewer:delegation> Review.")
+    await eventually(lambda: len(factory.started) == 2)
+    assert factory.started[1].turn.agent.agent_id == "reviewer"
+    assert owner(store, cid) == "coder"
+    assert any(e.kind == "agent_transfer" and e.payload["status"] == "rejected" for e in store.events(cid))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["<@outside:delegation> Check", "<@coder:delegation> Check", "<@assistant:handoff> <@reviewer:handoff>"])
+async def test_invalid_inline_transfers_fail_without_partial_dispatch(workspace, text):
+    orch, store, factory, _, cid = workspace
+    await orch.send_message(cid, "Implement", ["coder"])
+    await eventually(lambda: len(factory.started) == 1)
+    factory.started[0].emit("message", text=text)
+    await eventually(lambda: store.get_run(factory.started[0].turn.run.run_id).status == "failed")
+    assert len(factory.started) == 1
+    assert not store.queue(cid, "awaiting_agent")
+    assert owner(store, cid) == "coder"
+
+
+@pytest.mark.asyncio
+async def test_code_examples_and_cancelled_stream_do_not_dispatch(workspace):
+    orch, store, factory, _, cid = workspace
+    await orch.send_message(cid, "Implement", ["coder"])
+    await eventually(lambda: len(factory.started) == 1)
+    factory.started[0].emit("message", text="Example: `<@reviewer:delegation>` and `@assistant`\n```\n<@assistant:handoff>\n```")
+    await eventually(lambda: any(e.kind == "message" and e.author_kind == "agent" for e in store.events(cid)))
+    assert len(factory.started) == 1
+    factory.started[0].emit("text_delta", text="<@assistant:handoff> Take over")
+    await eventually(lambda: bool(orch._partials))
+    await orch.cancel_run(factory.started[0].turn.run.run_id)
+    assert len(factory.started) == 1 and owner(store, cid) == "coder"
+
+
+@pytest.mark.asyncio
+async def test_human_typed_transfer_is_not_an_ownership_request(workspace):
+    orch, store, factory, _, cid = workspace
+    await orch.send_message(cid, "<@assistant:handoff> Example", ["coder"])
+    await eventually(lambda: len(factory.started) == 1)
+    assert factory.started[0].turn.agent.agent_id == "coder"
+    assert owner(store, cid) == "coder"
+    assert not any(e.kind == "agent_transfer" for e in store.events(cid))

@@ -1,16 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MessagePayload, WorkspaceEvent } from "../../api/types";
+import type { Agent, MessagePayload, WorkspaceEvent } from "../../api/types";
 import { HumanMessage, RunSegment, type BlockContext } from "./blocks";
 import { Composer } from "./Composer";
 import type { ReplyDraft } from "./ReplyQuote";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), commands: vi.fn(), channelSkills: vi.fn(), reportError: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  sendMessage: vi.fn(), commands: vi.fn(), channelSkills: vi.fn(), reportError: vi.fn(),
+  partials: {} as Record<string, { text: string }>,
+}));
 vi.mock("../../api/client", () => ({ api: { sendMessage: mocks.sendMessage, commands: mocks.commands, channelSkills: mocks.channelSkills } }));
 vi.mock("../../store/workspace", () => ({
   reportError: mocks.reportError,
-  useWorkspace: (selector: (state: { partials: object }) => unknown) => selector({ partials: {} }),
+  useWorkspace: (selector: (state: { partials: Record<string, { text: string }> }) => unknown) => selector({ partials: mocks.partials }),
 }));
 
 const message: WorkspaceEvent<MessagePayload> = {
@@ -30,6 +33,7 @@ const draft: ReplyDraft = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.partials = {};
   mocks.commands.mockResolvedValue([]);
   mocks.channelSkills.mockResolvedValue({ skills: [], errors: [], kind: "channel" });
   mocks.sendMessage.mockResolvedValue({});
@@ -62,6 +66,22 @@ function renderComposer(onClearReply = vi.fn()) {
 }
 
 describe("message replies", () => {
+  it("renders known inline transfer targets in live message text", () => {
+    mocks.partials["stream-run"] = { text: "Check with <@targetagent:delegation>." };
+    const liveCtx: BlockContext = {
+      ...ctx,
+      agents: { targetagent: { agent_id: "targetagent", handle: "builder" } as Agent },
+      handles: new Set(["builder"]),
+    };
+    const { container } = render(<RunSegment ctx={liveCtx} block={{
+      type: "run", key: "stream", runId: "stream-run", agentId: "source-agent", seq: 2, ts: message.ts,
+      messages: [], tools: [], live: true, status: "running", cont: false,
+    }} />);
+
+    expect(container.querySelector(".partial-text .fv-mention")?.textContent).toBe("@builder");
+    expect(container.querySelector(".partial-text .fv-caret")).toBeTruthy();
+  });
+
   it("offers whole-message and selected-text replies using rendered Markdown text", () => {
     const { container } = renderHuman();
     fireEvent.click(screen.getByRole("button", { name: "Reply to message #1" }));

@@ -343,9 +343,19 @@ export interface MessagePayload {
   text: string;
   mentions: string[];
   author_handle?: string;
+  transfer?: MessageTransfer;
+  transfers?: MessageTransfer[];
   attachments?: AttachmentSummary[];
   reply?: ReplyQuote;
   skill?: SkillInvocation;
+}
+
+export interface MessageTransfer {
+  mode: "handoff" | "delegation";
+  target: string;
+  text: string;
+  source: string;
+  ownership_version: number;
 }
 
 export interface ToolCallPayload {

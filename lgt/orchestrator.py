@@ -25,7 +25,7 @@ from .models import (
     TERMINAL_STATUSES, Turn, WorkspaceError, new_id, utc_now,
 )
 from .store import Store
-from .transfers import parse_transfer
+from .transfers import message_transfers, parse_inline_transfers, parse_transfer, without_code
 from .run_errors import duration_ms, failure_text, normalize_error
 from .replies import reply_snapshot
 from .skills import Skill, skill_instructions
@@ -1012,7 +1012,8 @@ class Orchestrator:
             owner = batch[0].task_owner_id or agent_id
             batch = [q for q in batch if (q.task_owner_id or agent_id) == owner]
             handoff_index = next((i for i, q in enumerate(batch) if
-                self.store.get_event(channel_id, q.event_seq).payload.get("transfer", {}).get("mode") == "handoff"), None)
+                any(t["mode"] == "handoff" and t["target"] == agent_id
+                    for t in message_transfers(self.store.get_event(channel_id, q.event_seq).payload))), None)
             # Accept each handoff in its own turn. Otherwise a coalesced turn
             # could transfer unrelated delegated work or accept two requests.
             if handoff_index is not None:
@@ -1222,18 +1223,29 @@ class Orchestrator:
             payload["author_handle"] = turn.agent.handle
             if output.kind == "message":
                 transfer = parse_transfer(payload["text"], payload.get("transfer"))
+                transfers = [transfer] if transfer else parse_inline_transfers(payload["text"])
                 if transfer:
-                    targets = self._mentions(run.channel_id, "", [transfer["target"]])
-                    if targets == [run.agent_id]:
-                        raise WorkspaceError("an agent cannot transfer a task to itself")
                     payload["text"] = transfer["text"]
-                    payload["transfer"] = {
-                        **transfer, "target": targets[0], "source": run.agent_id,
-                        "ownership_version": self.store.get_channel(run.channel_id).ownership_version,
-                    }
-                    payload["mentions"] = targets
-                else:
-                    payload["mentions"] = self._mentions(run.channel_id, payload["text"], None)
+                payload.pop("transfers", None)
+                payload.pop("transfer", None)
+                resolved = []
+                for item in transfers:
+                    target, = self._mentions(run.channel_id, "", [item["target"]])
+                    if target == run.agent_id:
+                        raise WorkspaceError("an agent cannot transfer a task to itself")
+                    if any(previous["target"] == target for previous in resolved):
+                        raise WorkspaceError("an agent message can transfer to each target only once")
+                    resolved.append({**item, "target": target, "source": run.agent_id,
+                                     "ownership_version": self.store.get_channel(run.channel_id).ownership_version})
+                if resolved:
+                    payload["transfers"] = resolved
+                    if len(resolved) == 1:
+                        payload["transfer"] = resolved[0]
+                # Code examples and typed mention syntax must not fall through to
+                # ordinary handle matching. Explicit transfers take precedence.
+                prose = re.sub(r"<@[^>]*>", " ", without_code(payload["text"]))
+                ordinary = [] if transfer else self._mentions(run.channel_id, prose, None)
+                payload["mentions"] = list(dict.fromkeys([item["target"] for item in resolved] + ordinary))
                 self._partials.pop(run.run_id, None)
             with self.store.transaction():
                 event = self._append(run.channel_id, output.kind, "agent", run.agent_id, payload,
@@ -1247,22 +1259,23 @@ class Orchestrator:
                             chain_id=trigger.chain_id, hop=hop,
                         ))
                     else:
-                        handoff = payload.get("transfer", {}).get("mode") == "handoff"
-                        permitted = not handoff or self._can_handoff(run.channel_id, run.agent_id, run.ownership_version)
-                        if permitted:
-                            notices.append(self._mention_decision(event, payload["mentions"]))
-                            for agent_id in payload["mentions"]:
+                        modes = {item["target"]: item["mode"] for item in message_transfers(payload)}
+                        can_handoff = self._can_handoff(run.channel_id, run.agent_id, run.ownership_version)
+                        recipients = [agent_id for agent_id in payload["mentions"]
+                                      if modes.get(agent_id) != "handoff" or can_handoff]
+                        if recipients:
+                            notices.append(self._mention_decision(event, recipients))
+                        for agent_id in payload["mentions"]:
+                            mode = modes.get(agent_id, "delegation")
+                            permitted = agent_id in recipients
+                            if permitted:
                                 self.store.enqueue(run.channel_id, event.seq, agent_id,
                                                    task_owner_id=run.task_owner_id or run.agent_id)
                             notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
-                                "mode": "handoff" if handoff else "delegation", "status": "requested",
-                                "source": run.agent_id, "targets": payload["mentions"], "message_seq": event.seq,
-                            }, chain_id=event.chain_id, hop=hop))
-                        else:
-                            notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
-                                "mode": "handoff", "status": "rejected", "source": run.agent_id,
-                                "targets": payload["mentions"], "message_seq": event.seq,
-                                "text": "Handoff rejected: disabled, ownership changed, or router mode is active. Use delegation instead.",
+                                "mode": mode, "status": "requested" if permitted else "rejected",
+                                "source": run.agent_id, "targets": [agent_id], "message_seq": event.seq,
+                                **({"text": "Handoff rejected: disabled, ownership changed, or router mode is active. Use delegation instead."}
+                                   if not permitted else {}),
                             }, chain_id=event.chain_id, hop=hop))
             self._publish(event)
             for notice in notices:
@@ -1304,12 +1317,15 @@ class Orchestrator:
     def _accept_handoffs(self, turn: Turn) -> None:
         for seq in turn.delivery_seqs:
             message = self.store.get_event(turn.channel.channel_id, seq)
-            transfer = message.payload.get("transfer", {})
-            if transfer.get("mode") != "handoff" or transfer.get("target") != turn.agent.agent_id:
+            transfer = next((item for item in message_transfers(message.payload)
+                             if item["mode"] == "handoff" and item["target"] == turn.agent.agent_id), None)
+            if transfer is None:
                 continue
             # run_started is the receiver accepting the delivery for execution.
             # A late start must not supersede a newer selection or assignment.
             already = any(e.kind == "agent_transfer" and e.payload.get("message_seq") == seq
+                          and e.payload.get("mode") == "handoff"
+                          and turn.agent.agent_id in e.payload.get("targets", [])
                           and e.payload.get("status") in {"accepted", "rejected"}
                           for e in self.store.events(turn.channel.channel_id, from_seq=seq + 1))
             if already:

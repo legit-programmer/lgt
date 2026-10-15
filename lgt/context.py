@@ -205,17 +205,22 @@ def render_turn(
         {"seq": seq, "author_id": message.author_id,
          "text": edits.get(seq, {}).get("text", message.payload.get("text", "")),
          **({"reply": message.payload["reply"]} if message.payload.get("reply") else {}),
-         "transfer": message.payload.get("transfer")}
+         "transfer": message.payload.get("transfer"),
+         "transfers": message.payload.get("transfers", [])}
         for seq in delivery_seqs if seq >= plan.start_seq and not edits.get(seq, {}).get("deleted")
         for message in [store.get_event(channel.channel_id, seq)]
     ]
     instructions = (
         "You are a member of this channel. Handle requests within your capabilities. "
         "The backend owns channel-wide conversation ownership. Task completion never changes it. "
-        "For work requiring another listed agent, emit a complete message using this format:\n"
-        '```lgt-transfer\n{"mode":"delegation","target":"agent handle or ID","text":"Task and relevant context"}\n```\n'
+        "For work requiring another listed agent, include <@agent_id:delegation> in your message, "
+        "followed by the task and relevant context. Use the exact agent_id from the roster. "
+        "For example: I reviewed the request. <@agent_id:handoff> Please implement the change. "
+        "The backend processes these markers only after the message is complete. "
+        "You may delegate to multiple agents in one message, but request at most one handoff. "
+        "Each recipient receives the full message. Code examples do not trigger transfers. "
         "Delegation keeps the primary owner; ordinary @mentions also delegate. "
-        "Only the current primary may use mode handoff when routing_mode is primary and allow_handoff is true, "
+        "Only the current primary may use <@agent_id:handoff> when routing_mode is primary and allow_handoff is true, "
         "to transfer the user's task and ownership. The receiver accepts when its harness starts the turn. "
         "If this turn receives a handoff, you become primary at turn start unless a newer selection superseded it. "
         "If handoff is disabled, delegate. Do not execute tasks outside your capabilities. "

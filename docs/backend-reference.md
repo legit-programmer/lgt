@@ -258,7 +258,16 @@ A deletion uses `deleted: true` in `edit_message`. Commands produce durable even
 
 ## Channel changes
 
-**Agent transfers.** Every channel turn includes current ownership, handoff policy, member handles/IDs/descriptions, and the messages assigned to this turn in `<channel_routing>`. Agents use this complete message to transfer work through any harness:
+**Agent transfers.** Every channel turn includes current ownership, handoff policy, member handles/IDs/descriptions, and the messages assigned to this turn in `<channel_routing>`. Agents can include a transfer mention in normal prose through any harness:
+
+```text
+Okay, I have read your requirements. <@coder_agent_id:handoff> Please implement the change.
+<@reviewer_agent_id:delegation> Please review this code.
+```
+
+Replace the target with a channel member's agent ID or handle. The desktop renders a known target as `@handle`. The backend processes transfers only when the harness emits a completed `message`; streamed `text_delta` events never dispatch work. Inline transfers preserve the complete original message as task context. Multiple delegation targets are supported, with at most one handoff per message and one transfer per target. Duplicate targets or multiple handoffs reject the message before dispatch. Code examples, blockquotes, and escaped markers do not dispatch work.
+
+The complete fenced JSON format remains supported:
 
 ````text
 ```lgt-transfer
@@ -266,7 +275,9 @@ A deletion uses `deleted: true` in `edit_message`. Commands produce durable even
 ```
 ````
 
-`mode: "delegation"` dispatches work while preserving ownership; ordinary agent `@mentions` also delegate. `mode: "handoff"` is available only to the current primary in `routing_mode: primary` when `allow_handoff` is true and its turn's ownership version is still current. The receiver's normalized `run_started` accepts the task for execution and atomically transfers ownership and activity attribution. A queued, cancelled, failed-before-start, or removed receiver does not acquire ownership. A newer selection, assignment, disabled policy, unavailable source, or router mode rejects the ownership transfer; already delivered work continues as delegation. Handoff control messages are parsed only from agent outputs and only when the complete text matches the control envelope. The stored message contains readable task text plus transfer metadata; quoted examples cannot change ownership. Invalid transfers fail the run, and transfers respect membership and the hop limit. Custom harnesses may send structured transfer metadata; see their [protocol](custom-harness.md).
+`mode: "delegation"` dispatches work while preserving ownership; ordinary agent `@mentions` also delegate. `mode: "handoff"` is available only to the current primary in `routing_mode: primary` when `allow_handoff` is true and its turn's ownership version is still current. The receiver's normalized `run_started` accepts the task for execution and atomically transfers ownership and activity attribution. A queued, cancelled, failed-before-start, or removed receiver does not acquire ownership. A newer selection, assignment, disabled policy, unavailable source, or router mode rejects the ownership transfer; already delivered work continues as delegation. Transfer controls are parsed only from completed agent outputs. The legacy fenced format must still occupy the complete message. Invalid transfers fail the run, and transfers respect membership and the hop limit. Custom harnesses may send structured transfer metadata; see their [protocol](custom-harness.md).
+
+Committed transfer messages include `transfers`, an array of objects with `mode`, resolved `target`, task `text`, `source`, and `ownership_version`. A single transfer also exposes the legacy `transfer` object. The `mentions` array contains resolved recipient IDs. These fields are available in assigned-message context so each recipient can identify its task and transfer mode.
 
 The append-only log records `ownership_changed` with `primary_agent_id`, `previous_agent_id`, `primary_handle`, `reason` (`user_selection`, `accepted_handoff`, or `router_assignment`), and `ownership_version`. `agent_transfer` records `mode`, `status` (`requested`, `accepted`, or `rejected`), `source`, `targets`, `message_seq`, and optional explanatory `text`. Agent progress, completion, and delegation messages never change ownership.
 

@@ -3,7 +3,7 @@ id: 20261008-run-lifecycle
 title: Run lifecycle
 tags: [backend, runs]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-15
 related: [20261008-dispatch-and-queue, 20261008-harness-adapters, 20261008-context-and-sessions, 20261008-live-state]
 summary: Run statuses and the events they emit, how runner output becomes log events, cancellation, failure normalization, and orphan recovery after a crash.
 ---
@@ -28,7 +28,7 @@ summary: Run statuses and the events they emit, how runner output becomes log ev
 | `process_started` | Stores the pgid or pid. |
 | `run_started` | Stores `harness_session_id`; the status becomes `running`. |
 | `text_delta` | Appended to the in-memory partial and published as a `delta` frame. **Not stored.** |
-| `message` | Appended as an agent `message` with `author_handle` and mentions. Clears the partial. Mentioned members are enqueued, up to `max_hops`. |
+| `message` | Parses inline handoff/delegation mentions and legacy transfer controls, then appends an agent `message` with `author_handle`, mentions and transfer metadata. Clears the partial. Eligible recipients are enqueued, up to `max_hops`. Streaming deltas never dispatch transfers. |
 | `tool_call`, `tool_result` | Appended. They also update the agent's live activity. |
 | `usage` | Accumulates the token counters and context usage on the run, then publishes `usage` and `context` frames. |
 | `limits` / `rate_limits` | Stores a `harness_limits` snapshot and publishes `harness_limits`. |

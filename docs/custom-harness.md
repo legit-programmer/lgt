@@ -43,7 +43,7 @@ Attachment paths refer to server storage. A harness can pass supported files int
 
 Tool calls and results are normalized before they enter the event log. The backend measures output bytes and lines before applying `tool_output_cap`. Token usage events are increments for the current run. `message` commits text to history; `text_delta` is live only. A successful run requires a terminal event with `ok: true` and a zero process exit. The terminal event must be the last stdout line. A failed terminal can include `error` and `cancelled`.
 
-Channel prompts include a `<channel_routing>` block with current ownership, the handoff policy, the channel roster and `assigned_messages`. A custom harness can transfer work with the same complete `lgt-transfer` fenced message supported by the other harnesses, or with structured metadata on a message:
+Channel prompts include a `<channel_routing>` block with current ownership, the handoff policy, the channel roster and `assigned_messages`. A custom harness can include `<@agent_id:handoff>` or `<@agent_id:delegation>` in normal message prose. Targets can also use channel-member handles. The backend dispatches only on a completed `message`, never on `text_delta`. Code examples remain literal. The complete `lgt-transfer` fenced format is also supported, as is structured metadata on a message:
 
 ```json
 {"type":"message","text":"Passing the calendar task to the assistant.","transfer":{"mode":"handoff","target":"assistant","text":"Schedule the requested meeting tomorrow with the agreed participants."}}

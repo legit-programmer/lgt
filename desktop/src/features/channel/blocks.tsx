@@ -43,7 +43,7 @@ function MessageContent({ message, text, ctx }: { message: WorkspaceEvent<Messag
   return (
     <div className="fv-reply-message" data-seq={message.seq}>
       {message.payload.reply ? <ReplyQuoteView quote={message.payload.reply} displayName={ctx.displayName} /> : null}
-      <div ref={body} className="fv-message-text"><Markdown text={text} handles={ctx.handles} /></div>
+      <div ref={body} className="fv-message-text"><Markdown text={text} handles={ctx.handles} agents={ctx.agents} /></div>
       <div className="fv-reply-actions">
         <button className="fv-btn fv-btn--ghost fv-btn--sm" aria-label={`Reply to message #${message.seq}`}
           onClick={() => ctx.onReply(message.seq)}><Reply /> Reply</button>
@@ -198,7 +198,9 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
             <MessageContent key={message.seq} message={message} text={message.payload.text} ctx={ctx} />
           ))}
           {live && partial ? (
-            <p className="partial-text">{partial}<span className="fv-caret" /></p>
+            <div className="partial-text">
+              <Markdown text={partial} handles={ctx.handles} agents={ctx.agents} caret />
+            </div>
           ) : null}
           {live && !partial && !block.messages.length && !block.tools.length && !queuedRun ? (
             <p className="partial-text fv-meta">Starting…</p>
