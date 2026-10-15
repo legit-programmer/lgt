@@ -1,4 +1,4 @@
-/* Layout: sidebar (solid) | glass conversation pane | detail panel (solid). */
+/* Layout: sidebar | conversation (no pane box) | detail panel. */
 
 .app-shell {
   display: flex;
@@ -109,6 +109,36 @@
   pointer-events: none;
 }
 
+/* Plain grey text: only the primary/router pill reads as a control's state. */
+.topbar-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-150);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: var(--type-meta);
+  white-space: nowrap;
+}
+
+.topbar-quiet svg {
+  width: 13px;
+  height: 13px;
+}
+
+button.topbar-quiet {
+  cursor: pointer;
+}
+
+button.topbar-quiet:hover {
+  color: var(--text-1);
+}
+
+.topbar-quiet--mono {
+  font: var(--type-meta-mono);
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -124,7 +154,17 @@
 
 .titlebar-controls {
   display: flex;
+  align-items: center;
   flex: none;
+}
+
+/* Keeps the app's own actions from running into minimise, maximise and close. */
+.titlebar-controls::before {
+  content: "";
+  width: 1px;
+  height: 18px;
+  margin-right: var(--space-200);
+  background: var(--stroke-2);
 }
 
 .titlebar-button {
@@ -419,16 +459,21 @@
   cursor: pointer;
 }
 
-.header-chip:hover {
-  background: var(--surface-4);
-}
-
 .timeline {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-anchor: auto;
   padding: var(--space-400) var(--space-400) var(--space-200);
+  /* Messages fade out under the pane's top edge instead of being cut mid-line. */
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--space-600));
+  /* With no pane edge the scrollbar would float in the gutter; show it on hover. */
+  scrollbar-color: transparent transparent;
+}
+
+.timeline:hover,
+.timeline:focus-within {
+  scrollbar-color: var(--stroke-2) transparent;
 }
 
 .timeline-inner {
@@ -504,6 +549,15 @@
   position: relative;
 }
 
+/* The conversation sits straight on the window ground: no pane box around the
+   timeline. It keeps fv-pane-glass for the pane-scoped well and line tokens. */
+.fv-pane-glass.conversation {
+  margin: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
 .conversation-composer {
   position: absolute;
   right: 0;
@@ -538,8 +592,7 @@
 .composer-input {
   display: block;
   width: 100%;
-  min-height: 56px;
-  padding: var(--space-400) var(--space-500) var(--space-200);
+  padding: var(--space-300) var(--space-500) var(--space-100);
   border: 0;
   background: transparent;
   color: var(--text-1);
@@ -567,7 +620,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-100);
-  padding: var(--space-150) var(--space-300) var(--space-300);
+  padding: var(--space-100) var(--space-200) var(--space-200);
 }
 
 .composer-hint {
@@ -669,6 +722,40 @@
   display: grid;
   flex: 1;
   min-width: 0;
+}
+
+.agent-card-facts {
+  padding: var(--space-250) 0 0;
+  border-top: 1px solid var(--stroke-1);
+}
+
+.agent-card-facts dd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-now {
+  color: var(--text-2);
+}
+
+.agent-card-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-card-link:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
+.agent-card-link.is-failed {
+  color: var(--failed-text);
 }
 
 .agent-card-actions {
@@ -1416,6 +1503,15 @@ button.fv-attachment {
   background: var(--surface-3);
 }
 
+/* Quit stops background runs, so it sits apart from the everyday buttons. */
+.sidebar-foot-quit {
+  margin-left: auto;
+}
+
+.sidebar-foot-quit:hover:not(:disabled) {
+  color: var(--failed-text);
+}
+
 /* Phone layout ---------------------------------------------------------------------
    Matches useCompactLayout() in lib/platform.ts. The sidebar becomes a drawer and
    the detail panel a sheet, both over the conversation; App.tsx closes them on
@@ -1654,22 +1750,33 @@ html.is-scanning body > :not(.scan-overlay) {
 
 /*
  * Window glass (lib/windowGlass.ts, Windows shell only). Windows draws Acrylic
- * behind the transparent window, so the grounds clear and the panels become
- * tints over the blurred desktop. The conversation pane keeps --glass-pane.
+ * behind the transparent window. The shell takes one chrome tint, so the
+ * sidebar, top bar, detail panel and gutters read as one surface and the raw
+ * wallpaper never shows. Form and onboarding panes are the second, denser
+ * level; the conversation has no pane box and sits on the chrome tint.
  */
 :root[data-window-glass="on"] body {
   background: transparent;
 }
 
 :root[data-window-glass="on"] .fv-backdrop {
-  background: var(--window-glass-ground);
+  background: var(--window-glass-chrome);
 }
 
 :root[data-window-glass="on"] .sidebar,
-:root[data-window-glass="on"] .topbar.has-sidebar .topbar-lead {
-  background: var(--window-glass-side);
+:root[data-window-glass="on"] .topbar.has-sidebar .topbar-lead,
+:root[data-window-glass="on"] .detail {
+  background: transparent;
 }
 
-:root[data-window-glass="on"] .detail {
-  background: var(--window-glass-detail);
+:root[data-window-glass="on"] .fv-pane-glass:not(.conversation) {
+  background: var(--window-glass-pane);
+}
+
+/* As phone drawers the side panels cover the pane, so they need their own fill. */
+@media (max-width: 760px) {
+  :root[data-window-glass="on"] .sidebar,
+  :root[data-window-glass="on"] .detail {
+    background: var(--glass-overlay);
+  }
 }

@@ -44,7 +44,7 @@ function MessageContent({ message, text, ctx }: { message: WorkspaceEvent<Messag
     <div className="fv-reply-message" data-seq={message.seq}>
       {message.payload.reply ? <ReplyQuoteView quote={message.payload.reply} displayName={ctx.displayName} /> : null}
       <div ref={body} className="fv-message-text"><Markdown text={text} handles={ctx.handles} agents={ctx.agents} /></div>
-      <div className="fv-reply-actions">
+      <div className={`fv-reply-actions${selection ? " has-selection" : ""}`}>
         <button className="fv-btn fv-btn--ghost fv-btn--sm" aria-label={`Reply to message #${message.seq}`}
           onClick={() => ctx.onReply(message.seq)}><Reply /> Reply</button>
         {selection ? (

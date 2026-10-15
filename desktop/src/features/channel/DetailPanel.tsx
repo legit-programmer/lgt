@@ -1,18 +1,19 @@
 import { AgentInference } from "../../components/AgentInference";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bot, ListFilter, Pencil, PlusCircle, RefreshCw, Square, X } from "lucide-react";
+import { ArrowLeft, Bot, ListFilter, MoreHorizontal, Pencil, PlusCircle, RefreshCw, Square, UserMinus, X } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/client";
 import type { Agent, ChannelSummary, HarnessLimits, LimitWindow, Run } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { StatusBadge } from "../../components/Status";
 import { activeAgents, cliLine, hueStyle } from "../../lib/agents";
-import { clockTime, duration, relativeTime, tokens } from "../../lib/format";
+import { clockTime, duration, plural, relativeTime, tokens } from "../../lib/format";
 import { useUi } from "../../store/ui";
-import { reportError, useWorkspace } from "../../store/workspace";
+import { contextKey, reportError, useWorkspace } from "../../store/workspace";
 
 export function DetailPanel({ channel, members }: { channel: ChannelSummary; members: Agent[] }) {
   const tab = useUi((s) => s.detailTab);
@@ -113,13 +114,15 @@ function AgentCard({ agent, channel }: { agent: Agent; channel: ChannelSummary }
   return (
     <div className="fv-card agent-card">
       <div className="agent-card-top">
-        <AgentAvatar agent={agent} status={state} />
+        {/* The badge carries the status here; a ring on the avatar would repeat it. */}
+        <AgentAvatar agent={agent} />
         <div className="agent-card-text">
           <span className="fv-name" style={hueStyle(agent)}><AgentInference agent={agent}>{agent.handle}</AgentInference></span>
           <span className="fv-meta fv-mono fv-provider-label"><ProviderLogo harness={agent.harness} />{cliLine(agent, harnesses.data)}</span>
         </div>
         <StatusBadge state={state} since={state === "working" ? here?.started_at : undefined} />
       </div>
+      <AgentFacts agent={agent} channel={channel} working={state === "working"} />
       <div className="agent-card-actions">
         <button className="fv-btn fv-btn--sm" onClick={() => showRuns(agent.agent_id)}>
           <ListFilter /> Runs{running ? ` · ${running} running` : ""}
@@ -128,9 +131,18 @@ function AgentCard({ agent, channel }: { agent: Agent; channel: ChannelSummary }
           <Pencil /> Edit config
         </button>
         <span className="conversation-head-spacer" />
-        <button className="fv-icon-btn fv-icon-btn--sm" aria-label={`Remove ${agent.handle} from #${channel.name}`} onClick={() => setConfirming(true)}>
-          <X />
-        </button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button className="fv-icon-btn fv-icon-btn--sm" aria-label={`More actions for ${agent.handle}`}><MoreHorizontal /></button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content className="fv-menu fv-glass" align="end" sideOffset={6}>
+              <DropdownMenu.Item className="fv-menu-item fv-menu-item--danger" onSelect={() => setConfirming(true)}>
+                <UserMinus /> Remove from #{channel.name}
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
       <Dialog.Root open={confirming} onOpenChange={setConfirming}>
         <Dialog.Portal>
@@ -148,6 +160,47 @@ function AgentCard({ agent, channel }: { agent: Agent; channel: ChannelSummary }
         </Dialog.Portal>
       </Dialog.Root>
     </div>
+  );
+}
+
+/** What the agent is doing, its last run and context here, and its token use: all server state. */
+function AgentFacts({ agent, channel, working }: { agent: Agent; channel: ChannelSummary; working: boolean }) {
+  const status = useWorkspace((s) => s.statuses[agent.agent_id]);
+  const stats = useWorkspace((s) => s.contexts[contextKey(channel.channel_id, agent.agent_id)]);
+  const usage = useWorkspace((s) => s.usage.find((row) => row.agent === agent.agent_id));
+  const runsInfo = useWorkspace((s) => s.runs);
+  const showRuns = useUi((s) => s.showRuns);
+  // Refetch when one of this agent's runs here changes status.
+  const version = Object.values(runsInfo).filter((r) => r.channel_id === channel.channel_id && r.agent_id === agent.agent_id)
+    .map((r) => `${r.run_id}:${r.status}`).join("|");
+  const last = useQuery({
+    queryKey: ["runs", channel.channel_id, agent.agent_id, 1, version],
+    queryFn: () => api.runs({ channel_id: channel.channel_id, agent_id: agent.agent_id, limit: 1 }),
+    placeholderData: (previous) => previous,
+  });
+  const run = last.data?.[0];
+  // The activity is per agent, so it only names this channel's work when that is the agent's one run.
+  const activity = working && status?.active_runs.length === 1 ? status.activity : null;
+  return (
+    <dl className="run-facts agent-card-facts">
+      {activity ? <><dt>Now</dt><dd className="agent-card-now" title={activity.summary}>{activity.summary}</dd></> : null}
+      <dt>Last run</dt>
+      <dd>
+        {run ? (
+          <button className={`agent-card-link${run.status === "failed" ? " is-failed" : ""}`}
+            onClick={() => showRuns(agent.agent_id, run.run_id)}>
+            {run.status} · {run.started_at ? relativeTime(run.started_at) : "queued"} · {tokens(run.tokens_total)} tok
+          </button>
+        ) : last.isSuccess ? "none here" : "–"}
+      </dd>
+      <dt>Context</dt>
+      <dd>
+        {stats ? `${plural(stats.messages_in_context, "msg")}${stats.context_tokens !== null ? ` · ${tokens(stats.context_tokens)}` : ""}${
+          stats.model_context_window ? ` / ${tokens(stats.model_context_window)}` : ""}` : "–"}
+      </dd>
+      <dt>All channels</dt>
+      <dd>{usage ? `${tokens(usage.tokens_total)} tok · ${plural(usage.run_count, "run")}` : "no runs"}</dd>
+    </dl>
   );
 }
 

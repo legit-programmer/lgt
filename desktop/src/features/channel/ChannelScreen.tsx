@@ -150,7 +150,7 @@ function CwdButton({ channel }: { channel: ChannelSummary }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button className="fv-chip fv-chip--mono header-chip" title={channel.cwd}>
+        <button className="topbar-quiet topbar-quiet--mono header-chip" title={channel.cwd}>
           <Folder /> <span className="chip-text">{displayPath(channel.cwd)}</span>
         </button>
       </DropdownMenu.Trigger>
@@ -215,7 +215,7 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
     <TopBarSlot target="title">
       <Hash className="topbar-hash" />
       <h1 className="topbar-heading">{channel.name}</h1>
-      <span className="fv-chip topbar-passive">
+      <span className="topbar-quiet topbar-passive">
         {members.length === 0 ? "no agents" : working ? `${working} of ${members.length} working` : `${plural(members.length, "agent")} · ${idle ? "idle" : "busy"}`}
       </span>
       <CwdButton channel={channel} />

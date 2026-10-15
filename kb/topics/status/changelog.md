@@ -16,6 +16,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-15
 
+- Rework the channel view after a UI critique: the conversation loses its pane box and sits on the window ground with a top fade and a hover-only scrollbar; Reply shows on hover; your messages take a faint fill instead of an outline; the top bar keeps only the primary pill, with a divider before the caption buttons; agent cards show now, last run, context and all-channel usage, with Remove in a ⋯ menu; Quit sits apart; the composer starts at one line; frosted surfaces collapse to a chrome and a pane level.
 - Make the light frosted window readable over dark wallpapers: a heavier light Acrylic tint, a paper ground behind the shell, and more opaque light side panels.
 - Add a frosted window on Windows: a transparent window with Acrylic, tinted side panels, and a **Frosted window** toggle in the channel menu and the command palette. Make the working label static and step the working dots, because their per-frame repaints, not the blur, cost the GPU.
 - Support inline `<@agent_id:handoff>` and `<@agent_id:delegation>` in normal agent prose. Dispatch only after message completion, preserve task context and ownership checks, and render known targets as `@handle` in the desktop. Keep legacy transfers compatible and cover streaming, routing and rendering with tests.

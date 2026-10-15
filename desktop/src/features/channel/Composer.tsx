@@ -320,7 +320,7 @@ export function Composer({ channelId, placeholder, members, allowMentions, disab
       <textarea
         ref={area}
         className="composer-input"
-        rows={2}
+        rows={1}
         value={text}
         placeholder={placeholder}
         disabled={disabled}

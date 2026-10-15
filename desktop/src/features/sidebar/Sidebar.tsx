@@ -114,7 +114,7 @@ export function Sidebar() {
         </button>
         {/* Mobile apps don't quit themselves; Disconnect lives in the connection dialog. */}
         {isTauri() && !isMobile ? (
-          <button className="fv-icon-btn" disabled={quitting} onClick={() => void quit()}
+          <button className="fv-icon-btn sidebar-foot-quit" disabled={quitting} onClick={() => void quit()}
             aria-label={quitting ? "Quitting Lgt" : "Quit Lgt"}
             title={isRemoteConnection() ? "Quit Lgt" : "Quit Lgt and stop background runs"}>
             <Power />

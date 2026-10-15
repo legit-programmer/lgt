@@ -3,7 +3,7 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-14
+updated: 2026-10-15
 related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
@@ -30,7 +30,7 @@ The composer lists skills across Codex and Claude installations through `/` and 
 ## Top bar
 
 `components/TopBar.tsx` holds the sidebar toggle, back/forward and the "new" menu. Each screen portals its header into it through `TopBarSlot`:
-- **Channel:** `#name`, working count, cwd menu; search, panel toggle, more.
+- **Channel:** `#name`, working count and cwd menu as plain grey text, the primary/router pill; search, panel toggle, more, then a divider before the caption buttons.
 - **DM:** avatar, handle, status, CLI and model, cwd, context stats; Fresh context, search, edit.
 - **Agent form:** "New agent" or "Edit …"; Retire.
 
@@ -53,6 +53,10 @@ The composer lists skills across Codex and Claude installations through `/` and 
 - Tray icon, notifications and start at login: still unimplemented. The daemon lifecycle prerequisite (D1) is now available.
 
 See [open gaps](../status/open-gaps.md).
+
+## Agents tab cards
+
+Each card in `DetailPanel.tsx` shows the agent's avatar without a status ring (the badge carries the status), then `AgentFacts`: **Now** (the server's activity summary, only when this is the agent's one active run), **Last run** in this channel (`GET /runs?limit=1`, refetched when one of its runs changes status; it opens the run in the Runs view), **Context** here (messages, tokens and window from the context frame) and **All channels** token use. Remove from the channel moved into a ⋯ menu with a confirmation dialog. In the sidebar footer, Quit sits apart at the right and hovers red. The composer starts at one line and grows as you type.
 
 ## Related
 
