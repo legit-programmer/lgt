@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 
 if os.name == "nt":
@@ -224,24 +225,53 @@ async def spawn_command(
         raise
 
 
-async def read_lines(stream: asyncio.StreamReader, line_limit: int) -> AsyncIterator[str]:
-    """Read UTF-8 NDJSON lines while rejecting a line over ``line_limit`` bytes."""
+@dataclass(frozen=True)
+class OversizedLine:
+    """A line over the limit: its first ``line_limit`` bytes and its full size."""
+
+    head: bytes
+    size: int
+
+
+async def read_lines(stream: asyncio.StreamReader, line_limit: int, *,
+                     keep_oversized: bool = False) -> AsyncIterator[str | OversizedLine]:
+    """Read UTF-8 NDJSON lines while rejecting a line over ``line_limit`` bytes.
+
+    With ``keep_oversized`` an over-limit line yields an :class:`OversizedLine`
+    instead of raising. Bytes past the limit are discarded, so memory stays bounded.
+    """
     if line_limit <= 0:
         raise ValueError("line_limit must be positive")
     pending = bytearray()
-    while chunk := await stream.read(65536):
-        for segment in chunk.split(b"\n")[:-1]:
-            if len(pending) + len(segment) > line_limit:
-                raise ValueError(f"NDJSON line exceeds {line_limit} bytes")
+    dropped = 0
+
+    def add(segment: bytes) -> None:
+        nonlocal dropped
+        room = line_limit - len(pending)
+        if len(segment) <= room and not dropped:
             pending.extend(segment)
-            yield pending.removesuffix(b"\r").decode("utf-8")
-            pending.clear()
-        tail = chunk.rsplit(b"\n", 1)[-1]
-        if len(pending) + len(tail) > line_limit:
+            return
+        if not keep_oversized:
             raise ValueError(f"NDJSON line exceeds {line_limit} bytes")
-        pending.extend(tail)
-    if pending:
-        yield pending.removesuffix(b"\r").decode("utf-8")
+        pending.extend(segment[:room])
+        dropped += len(segment) - room
+
+    def finish() -> str | OversizedLine:
+        nonlocal dropped
+        line = (OversizedLine(bytes(pending), len(pending) + dropped) if dropped
+                else pending.removesuffix(b"\r").decode("utf-8"))
+        pending.clear()
+        dropped = 0
+        return line
+
+    while chunk := await stream.read(65536):
+        *complete, tail = chunk.split(b"\n")
+        for segment in complete:
+            add(segment)
+            yield finish()
+        add(tail)
+    if pending or dropped:
+        yield finish()
 
 
 def _windows_launcher() -> int:

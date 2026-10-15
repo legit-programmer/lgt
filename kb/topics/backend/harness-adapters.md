@@ -3,7 +3,7 @@ id: 20261008-harness-adapters
 title: Harness adapters
 tags: [backend, harness]
 created: 2026-10-08
-updated: 2026-10-13
+updated: 2026-10-15
 related: [20261008-run-lifecycle, 20261008-process-hosting, 20261008-full-permission-agents, 20261008-open-gaps, 20261013-skill-invocation]
 summary: The harness registry (discovery, catalogs, capability-based validation, runner factory) and the Codex, Claude, Gemini, and custom adapters that turn CLI output into normalized events.
 ---
@@ -49,7 +49,7 @@ summary: The harness registry (discovery, catalogs, capability-based validation,
 
 `StreamingRunner` handles everything shared by the NDJSON adapters:
 - spawning through `processes.spawn_command` in the channel cwd;
-- bounded stdout lines (`ndjson_line_limit`);
+- bounded stdout lines (`ndjson_line_limit`). An oversized line goes to the runner's `oversized` hook, which fails the run by default. `ClaudeRunner` overrides it for tool results: Claude prints each tool result as one `user` line with images inline as base64, so reading a large screenshot used to kill the run with `NDJSON line exceeds … bytes`. Now the result becomes `[Output omitted: …]` with `truncated: true` and the run continues. Any other oversized Claude line still fails;
 - the stderr log file;
 - terminating the process tree on cancel;
 - the rule that a run fails without a terminal event or with a nonzero exit.

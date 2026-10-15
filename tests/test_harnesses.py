@@ -52,6 +52,31 @@ async def test_streaming_adapters_normalize_subprocess(tmp_path, monkeypatch, ki
         assert report["context_tokens"] == 100
 
 
+@pytest.mark.asyncio
+async def test_claude_oversized_tool_result_is_omitted_not_fatal(tmp_path, monkeypatch):
+    monkeypatch.setenv("LGT_FAKE_HARNESS", "claude")
+    monkeypatch.setenv("LGT_FAKE_OVERSIZED", "image")
+    runner = ClaudeRunner((sys.executable, FIXTURE), tool_output_cap=1000, line_limit=8192,
+                          cancel_grace_seconds=.1, log_dir=tmp_path)
+    events = [item async for item in runner.start(turn(tmp_path, "claude"))]
+    assert events[-1].data["ok"] is True
+    result = next(e for e in events if e.kind == "tool_result")
+    assert result.data["tool_call_id"] == "t1" and result.data["truncated"] is True
+    assert result.data["bytes"] > 8192
+    assert "Output omitted" in result.data["output"] and "8192-byte" in result.data["output"]
+
+
+@pytest.mark.asyncio
+async def test_claude_oversized_non_tool_result_still_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("LGT_FAKE_HARNESS", "claude")
+    monkeypatch.setenv("LGT_FAKE_OVERSIZED", "message")
+    runner = ClaudeRunner((sys.executable, FIXTURE), tool_output_cap=1000, line_limit=8192,
+                          cancel_grace_seconds=.1, log_dir=tmp_path)
+    events = [item async for item in runner.start(turn(tmp_path, "claude"))]
+    assert events[-1].data["ok"] is False
+    assert "exceeds 8192 bytes" in events[-1].data["error"]["message"]
+
+
 @pytest.mark.parametrize("trailing", ["invalid", "message", "terminal"])
 @pytest.mark.asyncio
 async def test_post_terminal_corruption_fails_custom_run(tmp_path, monkeypatch, trailing):

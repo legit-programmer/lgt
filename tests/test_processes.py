@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from lgt.processes import read_lines, spawn_command
+from lgt.processes import OversizedLine, read_lines, spawn_command
 
 
 @pytest.mark.asyncio
@@ -48,6 +48,19 @@ async def test_rejects_oversized_line(tmp_path):
     try:
         with pytest.raises(ValueError, match="exceeds 32 bytes"):
             _ = [line async for line in read_lines(tree.process.stdout, 32)]
+    finally:
+        await tree.close()
+
+
+@pytest.mark.asyncio
+async def test_keeps_bounded_head_of_oversized_line(tmp_path):
+    tree = await spawn_command(
+        [sys.executable, "-c", "print('a'); print('y' * 200000); print('b')"], str(tmp_path), line_limit=32,
+    )
+    try:
+        lines = [line async for line in read_lines(tree.process.stdout, 32, keep_oversized=True)]
+        assert lines[0] == "a" and lines[2] == "b"
+        assert lines[1] == OversizedLine(b"y" * 32, len(b"y" * 200000) + (1 if os.name == "nt" else 0))
     finally:
         await tree.close()
 

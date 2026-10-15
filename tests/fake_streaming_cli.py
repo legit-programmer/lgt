@@ -57,7 +57,14 @@ elif mode == "claude":
     send({"type": "assistant", "message": {"content": [
         {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "a.py"}},
         {"type": "text", "text": "Done"}]}})
-    send({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "line1\nline2\n"}]}})
+    oversized = os.environ.get("LGT_FAKE_OVERSIZED")
+    if oversized == "image":
+        send({"type": "user", "message": {"content": [{"tool_use_id": "t1", "type": "tool_result", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "A" * 20000}}]}]}})
+    else:
+        send({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "line1\nline2\n"}]}})
+    if oversized == "message":
+        send({"type": "assistant", "message": {"content": [{"type": "text", "text": "x" * 20000}]}})
     send({"type": "result", "is_error": False, "usage": {"input_tokens": 10, "output_tokens": 3,
           "cache_read_input_tokens": 2, "cache_creation_input_tokens": 1}})
 else:

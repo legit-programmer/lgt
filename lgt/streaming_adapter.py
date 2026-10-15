@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from .models import NormalizedEvent, Turn
-from .processes import ProcessTree, read_lines, spawn_command
+from .processes import OversizedLine, ProcessTree, read_lines, spawn_command
 
 
 def capped_output(value: Any, cap: int) -> dict[str, Any]:
@@ -119,6 +120,10 @@ class StreamingRunner:
     def translate(self, event: dict[str, Any]) -> list[NormalizedEvent]:
         raise NotImplementedError
 
+    def oversized(self, line: OversizedLine) -> list[NormalizedEvent]:
+        """Handle a stdout line over ``line_limit``; failing the run is the default."""
+        raise ValueError(f"NDJSON line exceeds {self.line_limit} bytes")
+
     async def cancel(self, reason: str) -> None:
         self._cancelled = True
         tree = self._tree
@@ -152,9 +157,13 @@ class StreamingRunner:
                 await proc.stdin.drain()
             if proc.stdin:
                 proc.stdin.close()
-            async for line in read_lines(proc.stdout, self.line_limit):
+            async for line in read_lines(proc.stdout, self.line_limit, keep_oversized=True):
                 if terminal_seen and self.terminal_is_last:
                     raise ValueError("custom harness emitted data after its terminal event")
+                if isinstance(line, OversizedLine):
+                    for item in self.oversized(line):
+                        yield item
+                    continue
                 try:
                     decoded = json.loads(line)
                 except (UnicodeError, json.JSONDecodeError) as exc:
@@ -197,6 +206,9 @@ class StreamingRunner:
             terminal["ok"] = False
             terminal["error"] = structured_error("run cancelled", cancelled=True)
         yield NormalizedEvent("run_finished", terminal)
+
+
+_TOOL_USE_ID = re.compile(rb'"tool_use_id"\s*:\s*"([^"\\]+)"')
 
 
 class ClaudeRunner(StreamingRunner):
@@ -262,6 +274,24 @@ class ClaudeRunner(StreamingRunner):
                 "cancelled": False}))
             return items
         return []
+
+    def oversized(self, line: OversizedLine) -> list[NormalizedEvent]:
+        """Replace an over-limit tool result, such as a screenshot read, with a note.
+
+        Claude prints each tool result as one ``user`` line, with images inline as
+        base64, so a large image can pass ``line_limit`` in an otherwise healthy run.
+        Any other oversized line still fails the run.
+        """
+        call_ids = list(dict.fromkeys(match.decode("utf-8", "replace")
+                                      for match in _TOOL_USE_ID.findall(line.head)))
+        if not call_ids or b'"type":"user"' not in line.head.replace(b" ", b""):
+            return super().oversized(line)
+        note = (f"[Output omitted: this tool result was {line.size} bytes, over the "
+                f"{self.line_limit}-byte ndjson_line_limit.]")
+        results = [tool_result(call_id, note, self.tool_output_cap) for call_id in call_ids]
+        for result in results:
+            result.data.update(bytes=line.size, truncated=True)
+        return results
 
 
 class GeminiRunner(StreamingRunner):

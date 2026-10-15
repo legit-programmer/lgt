@@ -3,7 +3,7 @@ id: 20261008-process-hosting
 title: Process hosting
 tags: [backend, process]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-15
 related: [20261008-harness-adapters, 20261008-run-lifecycle, 20261008-routing, 20261008-known-issues]
 summary: How CLI child processes are spawned without a shell, grouped so the whole tree can be killed (Windows Job Objects, POSIX process groups), and bounded; plus the Codex SDK byte host and one-shot CLI calls.
 ---
@@ -26,7 +26,7 @@ summary: How CLI child processes are spawned without a shell, grouped so the who
 - **The whole tree dies together.**
   - Windows assigns each child to a Job Object, and the SDK host closes its job when the backend's stdin reaches EOF.
   - POSIX starts children in their own process group and kills the group.
-- **Bounded output:** stdout lines are capped by `ndjson_line_limit`, and one-shot output by a byte limit. Exceeding the limit fails the call rather than truncating it silently.
+- **Bounded output:** stdout lines are capped by `ndjson_line_limit`, and one-shot output by a byte limit. Exceeding the limit fails the call rather than truncating it silently. The one exception is opt-in: `read_lines(..., keep_oversized=True)` yields an `OversizedLine` (the first `line_limit` bytes plus the full size) and discards the rest, so a runner can replace that line with a visible note. Only `ClaudeRunner` uses it, for tool results; see [Harness adapters](harness-adapters.md).
 - **Child processes are started with `sys.executable`.** Both the launcher and `sdk_host.py` are run this way, which matters for packaging: a frozen PyInstaller or Nuitka executable breaks this, so ship a real interpreter instead.
 
 ## Related
