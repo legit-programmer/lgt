@@ -3,7 +3,7 @@ id: 20261008-runtime-and-config
 title: Runtime and configuration
 tags: [backend, config]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-18
 related: [20261008-explicit-configuration, 20261008-harness-adapters, 20261008-running-locally, 20261008-event-store, 20261010-desktop-daemon, 20261012-device-pairing]
 summary: How the backend starts (entry point, config loading, lock, harness scan, orchestrator start), every setting, and the data directory layout.
 ---
@@ -20,7 +20,7 @@ summary: How the backend starts (entry point, config loading, lock, harness scan
    1. Acquires `RuntimeLock` on `data_dir/workspace.lock` (`lgt/locking.py`). A second backend on the same data directory fails to start.
    2. Opens `Store` (`data_dir/workspace.sqlite3`), which applies `schema.sql` and `_migrate`.
    3. Builds `HarnessRegistry` and calls `scan()` to detect paths, versions, auth, models and capabilities.
-   4. Builds `CLIRouter` and, when `checkpoint_mode` is `cli`, `CLISummarizer`.
+   4. Builds `CLISummarizer` when `checkpoint_mode` is `cli`.
    5. Builds the `Orchestrator` with the registry's runner factory and its `artifact_exists`.
    6. Calls `Orchestrator.start()`. That marks leftover active runs `failed` with code `orphaned`, replays the durable queue of every channel, and starts the attachment retention loop.
 4. `BackendRuntime.__getattr__` forwards to the orchestrator, so the gateway treats the runtime as an orchestrator.
@@ -29,7 +29,7 @@ Desktop startup adds `--daemon`, plus `--port 0` only for a local-only listener.
 
 ## Configuration file
 
-`load_config` (`lgt/runtime.py`) accepts only these top-level keys: `settings`, `checkpoint_mode`, `codex_bin`, `claude_command`, `gemini_command`, and `codex_router_command`. Unknown keys are rejected.
+`load_config` (`lgt/runtime.py`) accepts only these top-level keys: `settings`, `checkpoint_mode`, `codex_bin`, `claude_command`, `gemini_command`, and `codex_checkpoint_command`. Legacy router configuration names are accepted as compatibility aliases for checkpoint settings; unrelated unknown keys are rejected.
 
 **Required settings, with no defaults** (see [explicit configuration](../decisions/explicit-configuration.md)):
 
@@ -40,7 +40,8 @@ Desktop startup adds `--daemon`, plus `--port 0` only for a local-only listener.
 | `tool_output_cap` | Bytes of tool output stored per result. |
 | `concurrent_runs` | The global run semaphore. |
 | `replay_cap` | The WebSocket replay limit, which is also the live buffer size. |
-| `router_timeout_seconds`, `router_context_events`, `router_model`, `codex_router_model`, `router_attempts` | Router behavior. |
+| `startup_timeout_seconds` | SDK initialization and thread/turn setup timeout. |
+| `checkpoint_timeout_seconds`, `checkpoint_claude_model`, `checkpoint_codex_model`, `checkpoint_attempts` | Checkpoint summary calls. |
 | `session_ttl_seconds` | Null means sessions never expire. |
 | `ndjson_line_limit` | The maximum length of one CLI output line. |
 | `cancel_grace_seconds` | The wait before a forced kill. |
@@ -60,7 +61,7 @@ Desktop startup adds `--daemon`, plus `--port 0` only for a local-only listener.
 | `advertised_url` | `null` (reachable HTTP(S) origin for pairing) |
 
 Two further rules:
-- `route_after_active` is fixed to `false`. Setting it in the file is an error.
+- Legacy `router_context_events` and `route_after_active` are ignored. Legacy model, attempts, command, and timeout names map to checkpoint settings; the old timeout also supplies the startup timeout. Conflicting old and new names are rejected.
 - `checkpoint_mode` must be `cli` or `deferred`.
 
 `Settings.__post_init__` (`lgt/config.py`) validates types and ranges. For example, `checkpoint_tail_chars` must be smaller than `checkpoint_threshold`, and `allowed_origins` must be exact origins without wildcards.

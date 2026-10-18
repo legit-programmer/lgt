@@ -296,40 +296,24 @@ function ToolRow({ entry, child }: { entry: ToolEntry; child?: boolean }) {
 
 export function RoutingNotice({ event, ctx }: { event: WorkspaceEvent<RoutingPayload>; ctx: BlockContext }) {
   const payload = event.payload;
-  const [adding, setAdding] = useState<string | null>(null);
-  if (payload.reason_code === "none" || !payload.agents.length) {
-    const suggestions = (payload.suggested_agents ?? []).filter((id) => !ctx.memberIds.has(id) && ctx.agents[id] && !ctx.agents[id].retired_at);
-    const add = async (agentId: string) => {
-      setAdding(agentId);
-      try {
-        await api.addMember(ctx.channelId, agentId);
-      } catch (error) {
-        reportError(error);
-      } finally {
-        setAdding(null);
-      }
-    };
-    return (
-      <div className="fv-notice fv-notice--failed">
-        <Ban />
-        <span className="notice-text">routed → none · {payload.reason}</span>
-        {suggestions.map((id) => (
-          <button key={id} className="fv-btn fv-btn--sm" onClick={() => add(id)} disabled={adding === id}>
-            Add {ctx.agents[id].handle}
-          </button>
-        ))}
-      </div>
-    );
-  }
-  const reason = payload.reason_code === "router_failed_random"
-    ? `router failed, picked at random${payload.error ? ` · ${payload.error}` : ""}`
-    : `reason: ${payload.reason}`;
+  const targets = payload.agents.map((id) => ctx.agents[id]).filter((agent): agent is Agent => !!agent);
+  const historicSuggestions = (payload.suggested_agents ?? []).map((id) => ctx.agents[id]).filter((agent): agent is Agent => !!agent);
+  const reason = payload.reason ? `reason: ${payload.reason}` : null;
+  const error = payload.error ? `error: ${payload.error}` : null;
   return (
-    <div className="fv-notice">
-      <ArrowRight />
-      <span>routed →</span>
-      {payload.agents.map((id) => <AgentChip key={id} agent={ctx.agents[id]} />)}
-      <span>{reason}</span>
+    <div className={`fv-notice${targets.length ? "" : " fv-notice--failed"}`}>
+      {targets.length ? <ArrowRight /> : <Ban />}
+      {targets.length ? (
+        <>
+          <span>{payload.method === "router" ? "Previously routed to" : "Delivered to"}</span>
+          {targets.map((agent) => <AgentChip key={agent.agent_id} agent={agent} />)}
+        </>
+      ) : <span className="notice-text">No agent received this message</span>}
+      {reason ? <span>{reason}</span> : null}
+      {error ? <span>{error}</span> : null}
+      {historicSuggestions.length ? (
+        <span className="fv-meta">Suggested then: {historicSuggestions.map((agent) => `@${agent.handle}`).join(", ")}</span>
+      ) : null}
     </div>
   );
 }

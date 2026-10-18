@@ -22,7 +22,8 @@ async def drain(stream):
 
 
 @pytest.mark.asyncio
-async def test_native_server_boot_http_websocket_and_replay_without_model_calls(tmp_path):
+async def test_native_server_boot_http_websocket_and_replay_without_model_calls(tmp_path, monkeypatch):
+    monkeypatch.setenv("LGT_FAKE_HARNESS", "custom")
     repo = Path(__file__).resolve().parents[1]
     raw = json.loads((repo / "config.example.json").read_text(encoding="utf-8"))
     raw["settings"]["data_dir"] = str(tmp_path / "data")
@@ -52,7 +53,15 @@ async def test_native_server_boot_http_websocket_and_replay_without_model_calls(
                         pass
                     await asyncio.sleep(0.05)
             assert health.json()["application"] == "lgt"
-            response = await client.post(base + "/channels", json={"name": "smoke"})
+            agent_response = await client.post(base + "/agents", json={
+                "agent_id": "fixture", "handle": "fixture", "name": "Fixture", "description": "Local test agent",
+                "harness": "custom", "model": "auto", "system_prompt": "Help",
+                "command": [sys.executable, str(repo / "tests" / "fake_streaming_cli.py")],
+            })
+            assert agent_response.status_code == 201, agent_response.text
+            response = await client.post(base + "/channels", json={
+                "name": "smoke", "agent_ids": ["fixture"], "primary_agent_id": "fixture",
+            })
             assert response.status_code == 201, response.text
             cid = response.json()["channel_id"]
             async with websockets.connect(f"ws://127.0.0.1:{port}/ws", proxy=None) as ws:
@@ -70,17 +79,23 @@ async def test_native_server_boot_http_websocket_and_replay_without_model_calls(
                 while True:
                     frame = json.loads(await asyncio.wait_for(ws.recv(), 5))
                     frames.append(frame)
-                    if frame["type"] == "queue" and frame["items"] == []:
-                        break
+                    if frame["type"] == "error":
+                        pytest.fail(str(frame))
+                    if frame["type"] == "event" and frame["event"]["kind"] == "run_status":
+                        status = frame["event"]["payload"]["status"]
+                        assert status not in {"failed", "cancelled"}, frame
+                        if status == "completed":
+                            break
                 events = [frame for frame in frames if frame["type"] == "event"]
-                assert [frame["event"]["kind"] for frame in events] == ["message", "routing_decision"]
-                message, routing = events
+                assert [frame["event"]["kind"] for frame in events[:2]] == ["message", "routing_decision"]
+                message, routing = events[:2]
                 assert message["event"]["kind"] == "message"
                 assert routing["event"]["kind"] == "routing_decision"
-                assert routing["event"]["payload"]["agents"] == []
-                assert routing["event"]["payload"]["reason_code"] == "none"
+                assert routing["event"]["payload"]["agents"] == ["fixture"]
+                assert routing["event"]["payload"]["reason_code"] == "primary"
             history = (await client.get(base + f"/channels/{cid}/events")).json()
-            assert [event["seq"] for event in history] == [1, 2]
+            assert [event["seq"] for event in history] == list(range(1, len(history) + 1))
+            assert history[:2] == [message["event"], routing["event"]]
             async with websockets.connect(f"ws://127.0.0.1:{port}/ws", proxy=None) as ws:
                 await ws.send(json.dumps({"last_id": message["event"]["id"]}))
                 replay = json.loads(await asyncio.wait_for(ws.recv(), 5))

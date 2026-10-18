@@ -13,21 +13,20 @@ from lgt.models import Agent, Run, WorkspaceError
 from lgt.orchestrator import Orchestrator
 from lgt.run_errors import normalize_error
 from lgt.store import Store
-from tests.support import ControlledFactory, FakeRouter, eventually, settings
+from tests.support import ControlledFactory, eventually, settings
 
 
 @pytest.fixture
 async def workspace(tmp_path):
     store = Store(tmp_path / "workspace.sqlite")
     factory = ControlledFactory()
-    router = FakeRouter(["alpha"])
-    orch = Orchestrator(store, settings(tmp_path), router, factory, lambda *args: True, human_id="local")
+    orch = Orchestrator(store, settings(tmp_path), factory, lambda *args: True, human_id="local")
     for name in ("alpha", "beta"):
         orch.put_agent(Agent(name, name, name.title(), f"{name} specialist", "codex", "", "help"))
-    channel = orch.create_channel("general", agent_ids=["alpha"])
+    channel = orch.create_channel("general", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     try:
-        yield orch, store, factory, router, channel
+        yield orch, store, factory, channel
     finally:
         await orch.close()
         store.close()
@@ -42,7 +41,7 @@ def frames(subscription):
 
 @pytest.mark.asyncio
 async def test_agent_identity_auto_dm_and_retirement_stop_future_deliveries(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     original = store.get_agent("alpha")
     assert original.dm_channel_id and store.get_channel(original.dm_channel_id).kind == "dm"
     assert original.avatar["seed"] == "alpha"
@@ -67,7 +66,7 @@ async def test_agent_identity_auto_dm_and_retirement_stop_future_deliveries(work
 
 @pytest.mark.asyncio
 async def test_unsupported_resume_and_failed_agent_creation_leave_consistent_state(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "first", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].finish()
@@ -93,31 +92,22 @@ async def test_unsupported_resume_and_failed_agent_creation_leave_consistent_sta
 
 
 @pytest.mark.asyncio
-async def test_routing_records_mentions_and_suggests_outside_members(workspace):
-    orch, store, factory, router, channel = workspace
+async def test_dispatch_records_mentions_and_primary(workspace):
+    orch, store, factory, channel = workspace
     message = await orch.send_message(channel.channel_id, "work", ["alpha"])
     decision = next(event for event in store.events(channel.channel_id) if event.kind == "routing_decision")
-    assert decision.payload == {"for_seqs": [message.seq], "agents": ["alpha"], "suggested_agents": [],
+    assert decision.payload == {"for_seqs": [message.seq], "agents": ["alpha"],
                                 "method": "mention", "reason_code": "mention", "reason": "explicit mentions"}
-    await eventually(lambda: len(factory.started) == 1)
-    factory.started[0].finish()
-    await eventually(lambda: not store.list_runs(channel.channel_id, active_only=True))
-    router.picks = ["beta"]
-    fresh = orch.create_channel("outside routing", agent_ids=["alpha"])
-    channel = fresh
-    outside = await orch.send_message(channel.channel_id, "need beta expertise")
-    await eventually(lambda: any(event.kind == "routing_decision" and outside.seq in event.payload["for_seqs"]
-                                 for event in store.events(channel.channel_id)))
+    next_message = await orch.send_message(channel.channel_id, "need more expertise")
     result = [event for event in store.events(channel.channel_id) if event.kind == "routing_decision"][-1]
-    assert result.payload["agents"] == [] and result.payload["suggested_agents"] == ["beta"]
-    assert result.payload["reason_code"] == "none"
-    assert len(factory.started) == 1
-    assert next(entry for entry in router.calls[-1].roster if entry["agent_id"] == "beta")["in_channel"] is False
+    assert result.payload["for_seqs"] == [next_message.seq]
+    assert result.payload["agents"] == ["alpha"] and result.payload["method"] == "primary"
+    assert "suggested_agents" not in result.payload
 
 
 @pytest.mark.asyncio
 async def test_live_status_usage_context_and_cross_window_read_state(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     first = orch.bus.subscribe({channel.channel_id}, 1000)
     second = orch.bus.subscribe({channel.channel_id}, 1000)
     await orch.send_message(channel.channel_id, "work", ["alpha"])
@@ -156,7 +146,7 @@ async def test_live_status_usage_context_and_cross_window_read_state(workspace):
 
 @pytest.mark.asyncio
 async def test_run_failure_has_server_written_text_and_structured_error(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     runner = factory.started[0]
@@ -175,7 +165,7 @@ async def test_run_failure_has_server_written_text_and_structured_error(workspac
 
 @pytest.mark.asyncio
 async def test_legacy_lifecycle_is_upgraded_without_editing_the_event_log(workspace):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     trigger = store.append_event(channel.channel_id, "message", "human", "local", {"text": "old request"})
     store.create_run(Run("legacy", channel.channel_id, "alpha", trigger.seq, 1, trigger.seq, "cold", "codex",
                          channel.cwd, status="failed", error="timed out", exit_code=1,
@@ -196,7 +186,7 @@ async def chunks(value):
 
 @pytest.mark.asyncio
 async def test_concurrent_upload_quota_and_retention_keep_sent_files(workspace):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     orch.settings = replace(orch.settings, attachment_channel_quota_bytes=5)
     results = await asyncio.gather(
         orch.create_attachment(channel.channel_id, "first.txt", "text/plain", chunks(b"abc")),
@@ -215,24 +205,24 @@ async def test_concurrent_upload_quota_and_retention_keep_sent_files(workspace):
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_is_atomic_and_commands_and_suggestions_are_server_owned(workspace):
-    orch, store, _, router, channel = workspace
+async def test_bootstrap_is_atomic_and_commands_are_server_owned(workspace):
+    orch, store, _, channel = workspace
     catalog = next(item for item in orch.harness_registry._catalog if item["harness"] == "codex")
     catalog["models"] = [{"id": "fixture", "label": "Fixture", "description": "Test", "default": True}]
     subscription = orch.bus.subscribe({channel.channel_id}, 1000)
     before = len(store.list_agents())
-    Path(channel.cwd).mkdir(parents=True, exist_ok=True)
+    Path(channel.cwd, "coder").mkdir(parents=True, exist_ok=True)
     with pytest.raises(WorkspaceError, match="unavailable"):
-        await orch.bootstrap(["coder", "missing"], channel.cwd)
+        await orch.bootstrap(["coder", "missing"], channel.cwd, "coder")
     original = store.set_agent_dm_channel
     def fail_dm(*args):
         raise RuntimeError("failed midway")
     store.set_agent_dm_channel = fail_dm
     with pytest.raises(RuntimeError, match="midway"):
-        await orch.bootstrap(["coder", "docs"], channel.cwd)
+        await orch.bootstrap(["coder", "docs"], channel.cwd, "coder")
     store.set_agent_dm_channel = original
     assert len(store.list_agents()) == before and frames(subscription) == []
-    result = await orch.bootstrap(["coder", "docs"], channel.cwd)
+    result = await orch.bootstrap(["coder", "docs"], channel.cwd, "coder")
     assert result["channel"]["name"] == "general" and len(result["agents"]) == 2
     assert all(agent["dm_channel_id"] for agent in result["agents"])
     assert any(frame["type"] == "agent" for frame in frames(subscription))
@@ -242,17 +232,6 @@ async def test_bootstrap_is_atomic_and_commands_and_suggestions_are_server_owned
     assert cwd_event.kind == "cwd_changed" and store.get_channel(channel.channel_id).cwd == str(target)
     assert (await orch.send_message(channel.channel_id, "/new")).kind == "context_reset"
     assert (await orch.send_message(channel.channel_id, "/cancel")).payload["code"] == "cancel"
-    calls = []
-    async def suggest(roster):
-        calls.append(roster)
-        return ["Review the project", "Plan the change", "Update the docs"]
-    router.suggestions = suggest
-    assert len(await orch.channel_suggestions(channel.channel_id)) == 3
-    await orch.channel_suggestions(channel.channel_id)
-    assert len(calls) == 1
-    orch.put_agent(replace(store.get_agent("alpha"), description="new work"))
-    await orch.channel_suggestions(channel.channel_id)
-    assert len(calls) == 2
     profile = await orch.update_profile("Local user")
     assert profile == store.get_human_profile("local")
     assert any(frame["type"] == "me" and frame["display_name"] == "Local user" for frame in frames(subscription))

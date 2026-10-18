@@ -16,6 +16,7 @@ export function NewChannelDialog() {
   const agents = activeAgents(agentsById);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [primaryAgentId, setPrimaryAgentId] = useState("");
   const [cwd, setCwd] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -23,11 +24,15 @@ export function NewChannelDialog() {
     if (!open) return;
     setName("");
     setSelected([]);
+    setPrimaryAgentId("");
     setCwd(null);
   }, [open]);
 
-  const toggle = (agentId: string) =>
-    setSelected((current) => (current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId]));
+  const toggle = (agentId: string) => {
+    const next = selected.includes(agentId) ? selected.filter((id) => id !== agentId) : [...selected, agentId];
+    setSelected(next);
+    if (primaryAgentId && !next.includes(primaryAgentId)) setPrimaryAgentId("");
+  };
 
   const browse = async () => {
     const picked = await pickFolder("Working directory for the new channel", cwd);
@@ -37,10 +42,12 @@ export function NewChannelDialog() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmed = name.trim().replace(/^#/, "");
-    if (!trimmed) return;
+    if (!trimmed || !selected.length || !primaryAgentId || !selected.includes(primaryAgentId)) return;
     setSaving(true);
     try {
-      const channel = await api.createChannel({ name: trimmed, kind: "channel", agent_ids: selected, cwd });
+      const channel = await api.createChannel({
+        name: trimmed, kind: "channel", agent_ids: selected, primary_agent_id: primaryAgentId, cwd,
+      });
       setOpen(false);
       await useWorkspace.getState().refreshSummaries();
       openChannel(channel.channel_id);
@@ -58,7 +65,7 @@ export function NewChannelDialog() {
         <Dialog.Content className="fv-dialog fv-glass">
           <Dialog.Title className="fv-dialog-title">New channel</Dialog.Title>
           <Dialog.Description className="fv-dialog-desc">
-            Put several agents in a channel to hand work between them.
+            Choose the agents for this channel and the one that leads the conversation. Agents can hand work to each other as needed.
           </Dialog.Description>
           <form onSubmit={submit} className="new-channel-form">
             <div className="fv-field">
@@ -83,8 +90,19 @@ export function NewChannelDialog() {
                   })}
                 </div>
               ) : (
-                <span className="fv-hint">Create an agent first, or add agents to the channel later.</span>
+                <span className="fv-hint">Create an agent before starting a channel.</span>
               )}
+            </div>
+            <div className="fv-field">
+              <label htmlFor="channel-primary-agent">Primary agent</label>
+              <select id="channel-primary-agent" className="fv-input" value={primaryAgentId}
+                onChange={(e) => setPrimaryAgentId(e.target.value)} disabled={!selected.length} required>
+                <option value="">Choose who leads this conversation</option>
+                {agents.filter((agent) => selected.includes(agent.agent_id)).map((agent) => (
+                  <option key={agent.agent_id} value={agent.agent_id}>{agent.handle}</option>
+                ))}
+              </select>
+              <span className="fv-hint">You can mention another agent or accept a handoff later.</span>
             </div>
             <div className="fv-field">
               <span className="fv-field-label">Working directory</span>
@@ -97,7 +115,8 @@ export function NewChannelDialog() {
             </div>
             <div className="fv-dialog-actions">
               <Dialog.Close asChild><button type="button" className="fv-btn fv-btn--ghost">Cancel</button></Dialog.Close>
-              <button type="submit" className="fv-btn fv-btn--primary" disabled={saving || !name.trim()}>Create channel</button>
+              <button type="submit" className="fv-btn fv-btn--primary"
+                disabled={saving || !name.trim() || !selected.length || !primaryAgentId}>Create channel</button>
             </div>
           </form>
         </Dialog.Content>

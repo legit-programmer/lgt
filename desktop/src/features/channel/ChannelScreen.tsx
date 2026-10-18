@@ -3,7 +3,7 @@ import { ProviderLogo } from "../../components/ProviderLogo";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Archive, ArrowRightLeft, Check, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search,
+  Archive, Check, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search, UserPlus, UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
@@ -112,17 +112,21 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
           empty={<EmptyChannel channel={channel} members={members} />}
         />
         <div ref={composerArea} className="conversation-composer">
-          <Composer
-            channelId={channelId}
-            members={members}
-            allowMentions={!isDm}
-            skillRevision={`${channel.cwd}:${channel.primary_agent_id}:${members.map((member) => `${member.agent_id}:${member.updated_at}`).join(",")}`}
-            reply={reply}
-            replyLoading={replyLoading}
-            displayName={ctx.displayName}
-            onClearReply={clearReply}
-            placeholder={isDm ? `Message ${agent?.handle ?? channel.name} — / for commands` : `Message #${channel.name} — @ to mention, / for commands`}
-          />
+          {!isDm && channel.routing_mode === "unassigned" ? (
+            <PrimaryRequired channel={channel} members={members} />
+          ) : (
+            <Composer
+              channelId={channelId}
+              members={members}
+              allowMentions={!isDm}
+              skillRevision={`${channel.cwd}:${channel.primary_agent_id}:${members.map((member) => `${member.agent_id}:${member.updated_at}`).join(",")}`}
+              reply={reply}
+              replyLoading={replyLoading}
+              displayName={ctx.displayName}
+              onClearReply={clearReply}
+              placeholder={isDm ? `Message ${agent?.handle ?? channel.name} — / for commands` : `Message #${channel.name} — @ to mention, / for commands`}
+            />
+          )}
         </div>
       </section>
       {!isDm && detailOpen ? <DetailPanel channel={channel} members={members} /> : null}
@@ -181,7 +185,6 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
   const touchPanels = useTouchPanels();
   const [renaming, setRenaming] = useState(false);
   const [savingHandoff, setSavingHandoff] = useState(false);
-  const primary = members.find((a) => a.agent_id === channel.primary_agent_id);
   const working = new Set(channel.active_runs.filter((r) => r.status !== "queued").map((r) => r.agent_id)).size;
   const idle = members.every((a) => statuses[a.agent_id]?.state !== "working");
 
@@ -219,9 +222,7 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
         {members.length === 0 ? "no agents" : working ? `${working} of ${members.length} working` : `${plural(members.length, "agent")} · ${idle ? "idle" : "busy"}`}
       </span>
       <CwdButton channel={channel} />
-      <span className="fv-chip topbar-passive" title="Unmentioned messages go here. Mention an agent to select it for the channel.">
-        <ArrowRightLeft /> {channel.routing_mode === "primary" && primary ? `Primary: ${primary.handle}` : "Router"}
-      </span>
+      <PrimaryAgentControl channel={channel} members={members} />
     </TopBarSlot>
     <TopBarSlot target="actions">
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
@@ -261,6 +262,76 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
     </TopBarSlot>
     <RenameDialog channel={channel} open={renaming} onOpenChange={setRenaming} />
     </>
+  );
+}
+
+export function PrimaryAgentControl({ channel, members, prominent = false }: {
+  channel: ChannelSummary;
+  members: Agent[];
+  prominent?: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const eligibleMembers = members.filter((agent) => !agent.retired_at);
+  const primary = eligibleMembers.find((agent) => agent.agent_id === channel.primary_agent_id);
+  const choose = async (agentId: string) => {
+    if (agentId === channel.primary_agent_id) return;
+    setSaving(true);
+    try {
+      await api.setPrimary(channel.channel_id, agentId);
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button className={prominent ? "fv-btn fv-btn--primary" : "topbar-quiet header-chip"}
+          disabled={saving || eligibleMembers.length === 0}
+          aria-label={primary ? `Primary agent: ${primary.handle}` : "Choose a primary agent"}
+          title={eligibleMembers.length ? "Choose which agent leads this channel" : "Add an active agent before choosing a primary"}>
+          <UserRound /> <span className={prominent ? undefined : "topbar-label"}>
+            {saving ? "Saving…" : primary ? `Primary: ${primary.handle}` : "Choose primary"}
+          </span>
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="fv-menu fv-glass" align={prominent ? "center" : "start"} sideOffset={6}>
+          <DropdownMenu.Label className="fv-menu-label fv-label">Primary agent</DropdownMenu.Label>
+          {eligibleMembers.map((agent) => (
+            <DropdownMenu.Item key={agent.agent_id} className="fv-menu-item" onSelect={() => void choose(agent.agent_id)}>
+              <AgentAvatar agent={agent} />
+              <span>{agent.handle}</span>
+              {agent.agent_id === channel.primary_agent_id ? <Check /> : null}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function PrimaryRequired({ channel, members }: { channel: ChannelSummary; members: Agent[] }) {
+  const setDetailOpen = useUi((state) => state.setDetailOpen);
+  const setDetailTab = useUi((state) => state.setDetailTab);
+  const hasActiveMember = members.some((agent) => !agent.retired_at);
+  return (
+    <div className="primary-required" role="status">
+      <div className="primary-required-copy">
+        <UserRound />
+        <div>
+          <strong>Choose a primary agent to start this conversation.</strong>
+          <span className="fv-meta">The primary handles unmentioned messages. Agents can hand work to each other as needed.</span>
+        </div>
+      </div>
+      {hasActiveMember ? <PrimaryAgentControl channel={channel} members={members} prominent /> : (
+        <button className="fv-btn fv-btn--primary" onClick={() => { setDetailOpen(true); setDetailTab("agents"); }}>
+          <UserPlus /> Add an active agent
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -220,7 +220,7 @@ def render_turn(
         "You may delegate to multiple agents in one message, but request at most one handoff. "
         "Each recipient receives the full message. Code examples do not trigger transfers. "
         "Delegation keeps the primary owner; ordinary @mentions also delegate. "
-        "Only the current primary may use <@agent_id:handoff> when routing_mode is primary and allow_handoff is true, "
+        "Only the current primary may use <@agent_id:handoff> when allow_handoff is true, "
         "to transfer the user's task and ownership. The receiver accepts when its harness starts the turn. "
         "If this turn receives a handoff, you become primary at turn start unless a newer selection superseded it. "
         "If handoff is disabled, delegate. Do not execute tasks outside your capabilities. "

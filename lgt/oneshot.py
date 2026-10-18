@@ -140,7 +140,7 @@ async def invoke_cli(
 
 
 def make_cli_invoker(*, output_limit_bytes: int):
-    """Bind an explicit capture bound into the router/summarizer invoke contract."""
+    """Bind an explicit capture bound into the summarizer invoke contract."""
 
     async def invoke(argv: list[str], cwd: str, prompt: str, timeout: float) -> str:
         return await invoke_cli(

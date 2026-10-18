@@ -86,16 +86,20 @@ class ReadBody(_StrictModel):
 class ChannelPatch(_StrictModel):
     name: str | None = Field(default=None, min_length=1)
     allow_handoff: bool | None = None
+    primary_agent_id: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def require_change(self) -> ChannelPatch:
-        if self.name is None and self.allow_handoff is None:
-            raise ValueError("provide name or allow_handoff")
+        if "primary_agent_id" in self.model_fields_set and self.primary_agent_id is None:
+            raise ValueError("primary_agent_id cannot be null")
+        if self.name is None and self.allow_handoff is None and self.primary_agent_id is None:
+            raise ValueError("provide name, allow_handoff or primary_agent_id")
         return self
 
 
 class BootstrapBody(_StrictModel):
     agent_templates: list[str]
+    primary_agent_template: str = Field(min_length=1)
     cwd: str
 
 
@@ -116,6 +120,7 @@ class ChannelCreate(_StrictModel):
     name: str = Field(min_length=1)
     kind: Literal["channel", "dm"] = "channel"
     agent_ids: list[str] | None = None
+    primary_agent_id: str | None = Field(default=None, min_length=1)
     cwd: str | None = None
 
 
@@ -596,7 +601,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
 
     @app.post("/bootstrap", status_code=201)
     async def bootstrap(body: BootstrapBody):
-        result = await orch.bootstrap(body.agent_templates, body.cwd)
+        result = await orch.bootstrap(body.agent_templates, body.cwd, body.primary_agent_template)
         _refresh_bus_channels(orch)
         return _plain(result)
 
@@ -696,6 +701,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             body.kind,
             body.agent_ids,
             body.cwd,
+            primary_agent_id=body.primary_agent_id,
         )
         _refresh_bus_channels(orch)
         return _plain(channel)
@@ -703,7 +709,8 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     @app.patch("/channels/{channel_id}")
     async def patch_channel(channel_id: str, body: ChannelPatch):
         _require_channel(orch, channel_id)
-        return _plain(await orch.patch_channel(channel_id, name=body.name, allow_handoff=body.allow_handoff))
+        return _plain(await orch.patch_channel(channel_id, name=body.name, allow_handoff=body.allow_handoff,
+                                               primary_agent_id=body.primary_agent_id))
 
     @app.post("/channels/{channel_id}/unarchive")
     async def unarchive_channel(channel_id: str):
@@ -719,11 +726,6 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     async def context_stats(channel_id: str, agent_id: str | None = None):
         _require_channel(orch, channel_id)
         return _plain(orch.context_stats(channel_id, agent_id))
-
-    @app.get("/channels/{channel_id}/suggestions")
-    async def channel_suggestions(channel_id: str):
-        _require_channel(orch, channel_id)
-        return _plain(await orch.channel_suggestions(channel_id))
 
     @app.get("/channels/{channel_id}/members")
     async def list_members(channel_id: str):

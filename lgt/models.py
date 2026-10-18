@@ -214,27 +214,6 @@ class NormalizedEvent:
     data: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class RoutingRequest:
-    channel: Channel
-    roster: list[dict[str, Any]]
-    context: str
-    messages: list[Event]
-
-
-@dataclass(frozen=True)
-class RoutingDecision:
-    agents: list[str]
-    reason: str
-    error: str | None = None
-    suggested_agents: list[str] = field(default_factory=list)
-    reason_code: str = "router"
-
-
-class Router(Protocol):
-    async def route(self, request: RoutingRequest) -> RoutingDecision: ...
-
-
 class Runner(Protocol):
     def start(self, turn: Turn) -> AsyncIterator[NormalizedEvent]: ...
 

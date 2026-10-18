@@ -9,7 +9,7 @@ from lgt.harnesses import HarnessRegistry, _claude_reasoning, _codex_model, _mod
 from lgt.models import Agent, WorkspaceError
 from lgt.orchestrator import Orchestrator
 from lgt.streaming_adapter import ClaudeRunner, CustomRunner
-from tests.support import ControlledFactory, FakeRouter, settings
+from tests.support import ControlledFactory, settings
 from tests.test_gateway import ThreadSafeStore, _with_peer
 
 
@@ -26,7 +26,7 @@ def registry(tmp_path):
 def test_inference_routes_validate_preserve_and_broadcast(tmp_path):
     store = ThreadSafeStore(tmp_path / 'inference.db')
     catalog = registry(tmp_path)
-    orch = Orchestrator(store, settings(tmp_path), FakeRouter(), ControlledFactory(),
+    orch = Orchestrator(store, settings(tmp_path), ControlledFactory(),
                         lambda *args: True, human_id='local', harness_registry=catalog)
     original = Agent('a', 'builder', 'Builder', 'Help', 'codex', 'one', 'Prompt',
                      extra_args=[], avatar={'style': 'critters', 'seed': 'seed'})
@@ -121,7 +121,7 @@ async def test_busy_agent_update_changes_next_run_not_active_snapshot(tmp_path):
     from lgt.store import Store
     store = Store(tmp_path / 'busy.db')
     factory = ControlledFactory()
-    orch = Orchestrator(store, settings(tmp_path), FakeRouter(), factory, lambda *args: True,
+    orch = Orchestrator(store, settings(tmp_path), factory, lambda *args: True,
                         human_id='local', harness_registry=registry(tmp_path))
     orch.put_agent(Agent('a', 'a', 'A', '', 'codex', 'one', '', reasoning_effort='low'))
     await orch.start()

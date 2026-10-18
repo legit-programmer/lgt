@@ -3,7 +3,7 @@ id: 20261008-running-locally
 title: Running locally
 tags: [ops, config]
 created: 2026-10-08
-updated: 2026-10-10
+updated: 2026-10-18
 related: [20261010-desktop-daemon, 20261008-runtime-and-config, 20261008-origins-and-media, 20261008-testing]
 summary: Step-by-step commands to run the backend and the desktop app together for development, including the config the desktop needs and how to point the app at another backend.
 ---
@@ -54,8 +54,6 @@ The Tauri shell starts the backend automatically. `LGT_CONFIG` selects an absolu
 
 Each of these calls a real model on your account:
 - sending a message;
-- routing an unmentioned channel message (Claude Haiku by default);
-- **Try asking** suggestions;
 - checkpoint summaries, when `checkpoint_mode` is `cli`.
 
 Use a scratch `data_dir` and cwd for experiments.

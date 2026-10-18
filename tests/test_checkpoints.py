@@ -8,7 +8,7 @@ from lgt.context import cold_plan, render_delta, render_turn
 from lgt.models import Agent
 from lgt.orchestrator import Orchestrator
 from lgt.store import Store
-from tests.support import ControlledFactory, FakeRouter, eventually, settings
+from tests.support import ControlledFactory, eventually, settings
 
 
 class DeferredSummarizer:
@@ -42,14 +42,13 @@ async def checkpoint_workspace(tmp_path):
             checkpoint_tail_chars=30,
             checkpoint_summary_chars=128,
         ),
-        FakeRouter(["alpha"]),
         runner_factory,
         lambda _harness, _session_id, _cwd: True,
         human_id="local",
         summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel("checkpoint tests", agent_ids=["alpha"])
+    channel = orch.create_channel("checkpoint tests", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     yield orch, store, runner_factory, channel, summarizer
     await orch.close()
@@ -77,10 +76,10 @@ async def test_async_checkpoint_keeps_its_captured_covers_seq_when_messages_arri
     orch = Orchestrator(
         store,
         settings(tmp_path, checkpoint_threshold=80, checkpoint_tail_chars=30, checkpoint_summary_chars=128),
-        FakeRouter(), runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
+        runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel("captured", agent_ids=["alpha"])
+    channel = orch.create_channel("captured", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     old_text = "OLD TASK " + ("long context " * 16)
     try:
@@ -124,10 +123,10 @@ async def test_checkpoint_retains_the_recent_raw_tail_for_cold_rebuild(tmp_path)
     orch = Orchestrator(
         store,
         settings(tmp_path, checkpoint_threshold=80, checkpoint_tail_chars=30, checkpoint_summary_chars=128),
-        FakeRouter(), runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
+        runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel("raw tail", agent_ids=["alpha"])
+    channel = orch.create_channel("raw tail", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     old_text = "SUMMARIZED OLD MATERIAL " + ("obsolete detail " * 12)
     try:
@@ -161,10 +160,10 @@ async def test_rolling_checkpoint_prompt_includes_the_previous_summary(tmp_path)
     orch = Orchestrator(
         store,
         settings(tmp_path, checkpoint_threshold=80, checkpoint_tail_chars=30, checkpoint_summary_chars=128),
-        FakeRouter(), runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
+        runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel("rolling", agent_ids=["alpha"])
+    channel = orch.create_channel("rolling", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     try:
         await start_and_finish(orch, runner_factory, channel, "FIRST CONTEXT " + ("detail " * 20), "first reply")
@@ -198,10 +197,10 @@ async def test_reset_or_edit_to_covered_seq_while_pending_rejects_stale_checkpoi
     orch = Orchestrator(
         store,
         settings(tmp_path, checkpoint_threshold=80, checkpoint_tail_chars=30, checkpoint_summary_chars=128),
-        FakeRouter(), runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
+        runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel(f"stale {change}", agent_ids=["alpha"])
+    channel = orch.create_channel(f"stale {change}", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     old_text = "COVERED MESSAGE " + ("important history " * 15)
     try:
@@ -237,10 +236,10 @@ async def test_failed_summary_keeps_previous_checkpoint_and_counter(tmp_path):
     orch = Orchestrator(
         store,
         settings(tmp_path, checkpoint_threshold=80, checkpoint_tail_chars=30, checkpoint_summary_chars=128),
-        FakeRouter(), runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
+        runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel("failure", agent_ids=["alpha"])
+    channel = orch.create_channel("failure", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     try:
         await start_and_finish(orch, runner_factory, channel, "OLD LOG " + ("old detail " * 20), "first answer")
@@ -277,10 +276,10 @@ async def test_raw_tool_result_does_not_increase_rendered_checkpoint_counter(tmp
     orch = Orchestrator(
         store,
         settings(tmp_path, checkpoint_threshold=200, checkpoint_tail_chars=30, checkpoint_summary_chars=128),
-        FakeRouter(), runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
+        runner_factory, lambda *_: True, human_id="local", summarizer=summarizer,
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
-    channel = orch.create_channel("tool output", agent_ids=["alpha"])
+    channel = orch.create_channel("tool output", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.start()
     try:
         await orch.send_message(channel.channel_id, "small request", ["alpha"])

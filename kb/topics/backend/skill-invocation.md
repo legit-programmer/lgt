@@ -3,7 +3,7 @@ id: 20261013-skill-invocation
 title: Skill discovery and invocation
 tags: [backend, harness, routing, desktop, security]
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-18
 related: [20261008-harness-adapters, 20261008-routing, 20261008-full-permission-agents, 20261008-screens]
 summary: Harness-owned installations, server-computed executors, explicit channel and DM selection, native invocation, and declared/runtime permission checks.
 ---
@@ -12,7 +12,7 @@ summary: Harness-owned installations, server-computed executors, explicit channe
 
 `lgt/skills.py` owns `Skill`, `ClaudeSkillDiscovery`, `CodexSkillDiscovery`, requirement parsing, and eligibility. `HarnessRegistry.skill_adapters` is the discovery extension point; `discover_skills` isolates errors per harness. Codex calls typed native `skills/list` through the pinned SDK; Claude reads effective user/project/local skills, legacy commands, plugin installations and enabled settings. Identical names across harnesses keep separate installation IDs. Gemini/custom discovery is not yet implemented.
 
-`Orchestrator.channel_skills` and `_skill_catalog` compute candidate reasons, eligible members, primary defaults and recommendations. `invoke_skill` and `send_message` validate and append through the channel mailbox. Skills bypass the router, preserve the primary, and run in separate queue batches. A non-primary executor requires explicit selection. DMs never execute through a different agent. `_execute` rechecks queued installations and configurations before starting. Backend changes wait for active runs to finish and then cold-render the stored transcript.
+`Orchestrator.channel_skills` and `_skill_catalog` compute candidate reasons, eligible members, primary defaults and recommendations. `invoke_skill` and `send_message` validate and append through the channel mailbox. Skills preserve the primary and run in separate queue batches. A non-primary executor requires explicit selection. DMs never execute through a different agent. `_execute` rechecks queued installations and configurations before starting. Backend changes wait for active runs to finish and then cold-render the stored transcript.
 
 Requirements are explicit `lgt.required_tools` frontmatter; absent declarations are unknown. Claude `allowed-tools` is not a required-tool declaration. Allowlisted Claude agents need the native `Skill` tool enabled. No invocation changes the agent's tool policy. Native `Skill` invocation and Codex `SkillInput` preserve harness loading and arguments. Claude runtime `permission_denials` become `permission` failures; incompatible queued invocations fail with `skill_unavailable`. Terminal events carry the skill snapshot for recovery.
 

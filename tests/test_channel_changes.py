@@ -7,24 +7,23 @@ import pytest
 
 from lgt.attachments import AttachmentTooLarge, safe_filename
 from lgt.codex_adapter import _turn_input
-from lgt.models import Agent, RoutingDecision, WorkspaceError
+from lgt.models import Agent, WorkspaceError
 from lgt.orchestrator import Orchestrator
 from lgt.store import Store
-from tests.support import ControlledFactory, FakeRouter, eventually, settings
+from tests.support import ControlledFactory, eventually, settings
 
 
 @pytest.fixture
 async def workspace(tmp_path):
     store = Store(tmp_path / "db.sqlite")
     factory = ControlledFactory()
-    router = FakeRouter(["alpha"])
-    orch = Orchestrator(store, settings(tmp_path / "data"), router, factory,
+    orch = Orchestrator(store, settings(tmp_path / "data"), factory,
                         lambda harness, sid, cwd: True, human_id="local")
     for name in ["alpha", "beta"]:
         orch.put_agent(Agent(name, name, name, name + " specialist", "codex", "", "help"))
-    channel = orch.create_channel("test", agent_ids=["alpha", "beta"])
+    channel = orch.create_channel("test", agent_ids=["alpha", "beta"], primary_agent_id="alpha")
     await orch.start()
-    yield orch, store, factory, router, channel
+    yield orch, store, factory, channel
     await orch.close()
     store.close()
 
@@ -43,7 +42,7 @@ async def chunks(*parts: bytes):
 
 @pytest.mark.asyncio
 async def test_cwd_change_waits_for_idle_channel_and_forces_cold_rebuild(workspace, tmp_path):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "first", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     target = tmp_path / "elsewhere"
@@ -69,7 +68,7 @@ async def test_cwd_change_waits_for_idle_channel_and_forces_cold_rebuild(workspa
 
 @pytest.mark.asyncio
 async def test_cwd_change_validates_paths_and_returns_to_managed_directory(workspace, tmp_path):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     with pytest.raises(WorkspaceError, match="absolute"):
         await orch.set_channel_cwd(channel.channel_id, "relative/path")
     with pytest.raises(WorkspaceError, match="existing directory"):
@@ -89,7 +88,7 @@ async def test_cwd_change_validates_paths_and_returns_to_managed_directory(works
 
 @pytest.mark.asyncio
 async def test_remove_member_cancels_its_run_and_pending_deliveries(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     queued = await orch.send_message(channel.channel_id, "more", ["alpha"])
@@ -104,7 +103,7 @@ async def test_remove_member_cancels_its_run_and_pending_deliveries(workspace):
     assert [m["member_id"] for m in store.members(channel.channel_id) if m["member_kind"] == "agent"] == ["beta"]
     await asyncio.sleep(0.05)
     assert len(factory.started) == 1
-    with pytest.raises(WorkspaceError, match="not a channel member"):
+    with pytest.raises(WorkspaceError, match="choose a primary"):
         await orch.send_message(channel.channel_id, "hi", ["alpha"])
     with pytest.raises(KeyError):
         await orch.remove_member(channel.channel_id, "alpha")
@@ -112,7 +111,7 @@ async def test_remove_member_cancels_its_run_and_pending_deliveries(workspace):
 
 @pytest.mark.asyncio
 async def test_member_events_render_and_re_adding_is_recorded_once(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.remove_member(channel.channel_id, "alpha")
     orch.add_member(channel.channel_id, "alpha")
     orch.add_member(channel.channel_id, "alpha")
@@ -125,30 +124,22 @@ async def test_member_events_render_and_re_adding_is_recorded_once(workspace):
 
 @pytest.mark.asyncio
 async def test_dm_agent_cannot_be_removed(workspace):
-    orch, _, _, _, _ = workspace
+    orch, _, _, _ = workspace
     dm = orch.create_channel("alpha", "dm", ["alpha"])
     with pytest.raises(WorkspaceError, match="archive the DM"):
         await orch.remove_member(dm.channel_id, "alpha")
 
 
 @pytest.mark.asyncio
-async def test_routing_result_drops_an_agent_removed_while_routing(workspace):
-    orch, store, factory, router, channel = workspace
-    gate = asyncio.Event()
-
-    async def slow_route(request):
-        await gate.wait()
-        return RoutingDecision(["alpha"], "fixture")
-
-    router.route = slow_route
-    await orch.send_message(channel.channel_id, "who takes this")
+async def test_removing_primary_requires_explicit_replacement(workspace):
+    orch, store, factory, channel = workspace
     await orch.remove_member(channel.channel_id, "alpha")
-    gate.set()
-    await eventually(lambda: "routing_decision" in kinds(store, channel.channel_id))
-    decision = store.events(channel.channel_id)[-1]
-    assert decision.payload["agents"] == []
-    await asyncio.sleep(0.05)
-    assert factory.started == []
+    with pytest.raises(WorkspaceError, match="choose a primary"):
+        await orch.send_message(channel.channel_id, "who takes this")
+    await orch.patch_channel(channel.channel_id, primary_agent_id="beta")
+    await orch.send_message(channel.channel_id, "who takes this")
+    await eventually(lambda: len(factory.started) == 1)
+    assert factory.started[0].turn.agent.agent_id == "beta"
 
 
 # Queued deliveries
@@ -156,7 +147,7 @@ async def test_routing_result_drops_an_agent_removed_while_routing(workspace):
 
 @pytest.mark.asyncio
 async def test_cancelling_a_queued_message_retracts_it(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     queued = await orch.send_message(channel.channel_id, "never mind this", ["alpha"])
@@ -178,7 +169,7 @@ async def test_cancelling_a_queued_message_retracts_it(workspace):
 
 @pytest.mark.asyncio
 async def test_cancelling_one_recipient_keeps_a_delivered_message(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     both = await orch.send_message(channel.channel_id, "@alpha @beta look at this")
@@ -192,28 +183,19 @@ async def test_cancelling_one_recipient_keeps_a_delivered_message(workspace):
 
 
 @pytest.mark.asyncio
-async def test_cancelling_during_routing_discards_the_routing_result(workspace):
-    orch, store, factory, router, channel = workspace
-    gate = asyncio.Event()
-
-    async def slow_route(request):
-        await gate.wait()
-        return RoutingDecision(["alpha"], "fixture")
-
-    router.route = slow_route
-    message = await orch.send_message(channel.channel_id, "route me")
-    assert orch.queue_items(channel.channel_id)[0]["state"] == "awaiting_route"
-    event = await orch.cancel_delivery(channel.channel_id, message.seq)
-    assert event.payload["agent_ids"] == [None] and event.payload["retracted"]
-    gate.set()
-    await asyncio.sleep(0.05)
-    assert "routing_decision" not in kinds(store, channel.channel_id)
+async def test_legacy_pending_routing_is_cancelled_with_visible_notice(workspace):
+    orch, store, factory, channel = workspace
+    message = store.append_event(channel.channel_id, "message", "human", "local", {"text": "old work"})
+    queued = store.enqueue(channel.channel_id, message.seq, state="awaiting_route")
+    await orch._call(channel.channel_id, lambda: orch._pump(channel.channel_id))
+    assert store.get_queue_item(queued.queue_id).state == "cancelled"
+    assert store.events(channel.channel_id)[-1].payload["code"] == "routing_removed"
     assert factory.started == []
 
 
 @pytest.mark.asyncio
 async def test_queue_frames_follow_pending_deliveries(workspace):
-    orch, _, factory, _, channel = workspace
+    orch, _, factory, channel = workspace
     subscription = orch.bus.subscribe({channel.channel_id}, capacity=100)
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
@@ -236,7 +218,7 @@ async def test_queue_frames_follow_pending_deliveries(workspace):
 
 @pytest.mark.asyncio
 async def test_attachment_is_bound_once_and_reaches_the_triggered_turn(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     image = await orch.create_attachment(channel.channel_id, "../shot.png", "image/png; q=1", chunks(b"\x89PNG", b"data"))
     notes = await orch.create_attachment(channel.channel_id, "notes.txt", None, chunks(b"hello"))
     assert (image.filename, image.media_type, image.size_bytes) == ("shot.png", "image/png", 8)
@@ -263,13 +245,13 @@ async def test_attachment_is_bound_once_and_reaches_the_triggered_turn(workspace
 
 @pytest.mark.asyncio
 async def test_attachment_limits_ownership_and_unsent_deletion(workspace):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     limit = orch.settings.attachment_max_bytes
     with pytest.raises(AttachmentTooLarge):
         await orch.create_attachment(channel.channel_id, "big.bin", None, chunks(b"x" * limit, b"y"))
     assert not orch.settings.attachment_dir.exists() or not any(orch.settings.attachment_dir.iterdir())
 
-    other = orch.create_channel("other", agent_ids=["beta"])
+    other = orch.create_channel("other", agent_ids=["beta"], primary_agent_id="beta")
     foreign = await orch.create_attachment(other.channel_id, "a.txt", "text/plain", chunks(b"a"))
     with pytest.raises(WorkspaceError, match="another channel"):
         await orch.send_message(channel.channel_id, "x", ["alpha"], [foreign.attachment_id])

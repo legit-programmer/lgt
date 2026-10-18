@@ -3,7 +3,7 @@ id: 20261008-system-overview
 title: System overview
 tags: [overview]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-18
 related: [20261008-repo-map, 20261008-glossary, 20261008-desktop-architecture, 20261008-dispatch-and-queue, 20261008-no-frontend-workarounds, 20261008-event-store, 20261008-context-and-sessions, 20261008-gateway-http, 20261012-device-pairing]
 summary: What Lgt is, its two halves (Python backend and Tauri desktop app), and how a message flows from the composer to an agent and back.
 ---
@@ -14,7 +14,7 @@ summary: What Lgt is, its two halves (Python backend and Tauri desktop app), and
 
 ## Context
 
-Lgt is a local, single-user workspace where one person talks to a team of AI coding agents. Each agent is a configuration that runs a coding CLI already installed on the machine: Codex, Claude Code, Gemini, or a custom stdio command. Agents work in DMs (one agent) and channels (several agents). Channels retain a shared primary agent for unmentioned messages; the router handles initial assignments and independent overlapping work.
+Lgt is a local, single-user workspace where one person talks to a team of AI coding agents. Each agent is a configuration that runs a coding CLI already installed on the machine: Codex, Claude Code, Gemini, or a custom stdio command. Agents work in DMs (one agent) and channels (several agents). Channels require members and an explicitly selected primary. Unmentioned messages use that primary even during independent overlapping work.
 
 ## Details
 
@@ -33,8 +33,7 @@ The backend is the source of truth. The desktop app derives nothing on its own; 
 2. `Orchestrator.send_message` (`lgt/orchestrator.py`) appends an immutable `message` event and enqueues deliveries:
    - in a DM, to its single agent;
    - with mentions, to each mentioned agent, plus a `routing_decision` event with `method: "mention"`;
-   - without mentions, directly to the eligible channel primary unless independent tasks overlap;
-   - otherwise, as one `awaiting_route` item for the router.
+   - without mentions, directly to the eligible channel primary. Channels without a valid primary reject sends before appending a message.
 3. The channel's mailbox pumps the queue. Each idle agent gets a `Run`, and its turn prompt is rendered from the log (`lgt/context.py`).
 4. A harness adapter starts the CLI and turns its output into normalized events: text deltas, tool calls and results, messages, usage, and the terminal event.
 5. Each event is appended to the log and published on the event bus. The WebSocket gateway forwards it to the desktop, together with state frames (channel summaries, agent status, context, usage).

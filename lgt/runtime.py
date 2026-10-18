@@ -14,7 +14,6 @@ from .harnesses import HarnessRegistry
 from .locking import RuntimeLock
 from .oneshot import make_cli_invoker
 from .orchestrator import Orchestrator
-from .router import CLIRouter
 from .store import Store
 from .summarizer import CLISummarizer
 
@@ -28,7 +27,7 @@ class RuntimeConfig:
     checkpoint_mode: str
     codex_bin: str | None = None
     claude_command: tuple[str, ...] = ("claude",)
-    codex_router_command: tuple[str, ...] | None = None
+    codex_checkpoint_command: tuple[str, ...] | None = None
     gemini_command: tuple[str, ...] = ("gemini",)
 
 
@@ -38,14 +37,33 @@ def load_config(path: str | Path) -> RuntimeConfig:
     raw = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("settings"), dict):
         raise ValueError("configuration must contain a settings object")
-    unknown = set(raw) - {"settings", "checkpoint_mode", "codex_bin", "claude_command", "codex_router_command", "gemini_command"}
+    unknown = set(raw) - {
+        "settings", "checkpoint_mode", "codex_bin", "claude_command",
+        "codex_checkpoint_command", "codex_router_command", "gemini_command",
+    }
     if unknown:
         raise ValueError(f"unknown configuration fields: {', '.join(sorted(unknown))}")
     values = dict(raw["settings"])
-    # The user's override supersedes the spec's hold-until-active-runs-finish rule.
-    if "route_after_active" in values:
-        raise ValueError("route_after_active is fixed to false for this workspace")
-    values["route_after_active"] = False
+    # Older configurations called the checkpoint settings router settings. Keep
+    # loading those files, but only apply the values to checkpoint summarization.
+    legacy_timeout = values.pop("router_timeout_seconds", MISSING)
+    legacy_fields = {
+        "router_model": "checkpoint_claude_model",
+        "codex_router_model": "checkpoint_codex_model",
+        "router_attempts": "checkpoint_attempts",
+    }
+    for old, new in legacy_fields.items():
+        if old in values:
+            if new in values:
+                raise ValueError(f"cannot specify both {old} and {new}")
+            values[new] = values.pop(old)
+    values.pop("router_context_events", None)
+    values.pop("route_after_active", None)
+    if legacy_timeout is not MISSING:
+        if "checkpoint_timeout_seconds" in values:
+            raise ValueError("cannot specify both router_timeout_seconds and checkpoint_timeout_seconds")
+        values["checkpoint_timeout_seconds"] = legacy_timeout
+        values.setdefault("startup_timeout_seconds", legacy_timeout)
     all_fields = {field.name: field for field in fields(Settings)}
     required = {name for name, field in all_fields.items() if field.default is MISSING and field.default_factory is MISSING}
     missing, extras = required - values.keys(), values.keys() - all_fields.keys()
@@ -63,8 +81,12 @@ def load_config(path: str | Path) -> RuntimeConfig:
     if mode not in {"cli", "deferred"}:
         raise ValueError("checkpoint_mode must explicitly be cli or deferred")
     commands: dict[str, tuple[str, ...] | None] = {}
-    for name in ("claude_command", "codex_router_command", "gemini_command"):
-        value = raw.get(name, ["claude"] if name == "claude_command" else ["gemini"] if name == "gemini_command" else None)
+    if "codex_checkpoint_command" in raw and "codex_router_command" in raw:
+        raise ValueError("cannot specify both codex_router_command and codex_checkpoint_command")
+    legacy_command = raw.get("codex_router_command")
+    for name in ("claude_command", "codex_checkpoint_command", "gemini_command"):
+        default = ["claude"] if name == "claude_command" else ["gemini"] if name == "gemini_command" else None
+        value = raw.get(name, legacy_command if name == "codex_checkpoint_command" and "codex_router_command" in raw else default)
         if value is not None and (not isinstance(value, list) or not value
                                   or any(not isinstance(part, str) or not part for part in value)):
             raise ValueError(f"{name} must be a nonempty argv array")
@@ -113,21 +135,24 @@ class BackendRuntime:
                 elif isinstance(result, BaseException):
                     raise result
             self.harness_info = next((entry for entry in self.harness_registry.list() if entry["harness"] == "codex"), {})
-            binary = bundled_codex_binary(self.config.codex_bin)
-            claude = list(self.config.claude_command)
-            cli_args = dict(
-                claude_command=claude,
-                codex_command=list(self.config.codex_router_command or (binary,)),
-                cwd=str(self.settings.data_dir), timeout_seconds=self.settings.router_timeout_seconds,
-                attempts=self.settings.router_attempts, claude_model=self.settings.router_model,
-                codex_model=self.settings.codex_router_model,
-                invoke=make_cli_invoker(output_limit_bytes=self.settings.ndjson_line_limit),
-            )
+            summarizer = None
+            if self.config.checkpoint_mode == "cli":
+                binary = bundled_codex_binary(self.config.codex_bin)
+                summarizer = CLISummarizer(
+                    claude_command=list(self.config.claude_command),
+                    codex_command=list(self.config.codex_checkpoint_command or (binary,)),
+                    cwd=str(self.settings.data_dir),
+                    timeout_seconds=self.settings.checkpoint_timeout_seconds,
+                    attempts=self.settings.checkpoint_attempts,
+                    claude_model=self.settings.checkpoint_claude_model,
+                    codex_model=self.settings.checkpoint_codex_model,
+                    invoke=make_cli_invoker(output_limit_bytes=self.settings.ndjson_line_limit),
+                )
             self._orch = Orchestrator(
-                self._store, self.settings, CLIRouter(**cli_args), self.harness_registry.runner,
+                self._store, self.settings, self.harness_registry.runner,
                 self.harness_registry.artifact_exists,
                 human_id=self.human_id,
-                summarizer=CLISummarizer(**cli_args) if self.config.checkpoint_mode == "cli" else None,
+                summarizer=summarizer,
                 harness_registry=self.harness_registry,
             )
             await self._orch.start()

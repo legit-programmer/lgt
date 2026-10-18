@@ -70,7 +70,7 @@ Adapters expose per-model reasoning modes and defaults through the harness catal
 
 | UI element | Backend contract | Reference |
 | --- | --- | --- |
-| Channel primary/router indicator and automatic handoff toggle | Persisted channel ownership, computed `routing_mode` / `active_task_agent_ids`, `PATCH /channels/{id}` with `allow_handoff`, ownership and transfer events | [backend reference](../docs/backend-reference.md#channel-changes) |
+| Channel primary selection and indicator and automatic handoff toggle | Persisted channel ownership, computed `routing_mode` / `active_task_agent_ids`, `PATCH /channels/{id}` with `primary_agent_id` and `allow_handoff`, ownership and transfer events | [backend reference](../docs/backend-reference.md#channel-changes) |
 | Change working directory | `PUT /channels/{id}/cwd`, `cwd_changed` event, cold rebuild of affected sessions | [backend reference](../docs/backend-reference.md#channel-changes) |
 | Remove an agent from a channel (× in the detail panel) | `DELETE /channels/{id}/members/{agent_id}`, `member_removed` / `member_added` events | same |
 | Queued message, "sends when it's free", Cancel | `GET /channels/{id}/queue`, live `queue` frame, `POST /channels/{id}/messages/{seq}/cancel`, `cancel_delivery` WS command, `delivery_cancelled` event | same |
@@ -174,11 +174,9 @@ tool_result {tool_call_id, is_error, exit_code, duration_ms, bytes, lines, trunc
 
 `summary` is the row text, e.g. "playwright.config.ts workers: 8 → 4". Line count is measured before truncation, because only the backend sees the full output.
 
-### 10. Routing explanations
+### 10. Direct dispatch and primary selection
 
-- **Mention routing has no record.** Explicit mentions skip the router and write no `routing_decision`. Record one with `method: "mention"` and `reason: "explicit mentions"`.
-- **"No agent here" should suggest one.** Let the router see agents outside the channel and return `suggested_agents` with "routed → none". This produces the hint "add shell-ops to this channel".
-- **Reason codes.** Add `reason_code` (`mention`, `router`, `router_failed_random`, `none`) next to the free-text reason.
+Implemented: explicit mention, primary, and skill decisions are recorded. New channels require members and an explicit primary; legacy unassigned channels expose primary selection. The model router, outside-agent suggestions, and random fallback have been removed.
 
 ### 11. Context stats
 
@@ -221,7 +219,6 @@ Needed:
 | Slash commands ("/ for commands") | `GET /commands` returns the server-side registry (`/new`, `/cwd`, `/cancel` …). Commands run on the server, as `/new` does today. |
 | Channel management | Rename (`PATCH /channels/{id}`), unarchive. `create_channel` should also require an existing directory, as `set_channel_cwd` now does. |
 | Onboarding starter agents | `GET /templates` returns presets filtered by detected harnesses and tools. `POST /bootstrap {agent_templates, cwd}` creates the agents and #general atomically. |
-| "Try asking" prompts | `GET /channels/{id}/suggestions`, generated from the roster's descriptions with the router model and cached per roster. |
 | Human profile ("You", "Y") | `GET /me` with a display name, editable. |
 | Attachment follow-ups | Remove unsent uploads after a retention window. Add a per-channel quota. Pass PDFs and other files as native inputs where a harness supports them. Serve thumbnails for large images. |
 | Proactive agent posts (#infra-alerts "Disk usage on build-02 at 91%") | Agents run today only in response to messages. Scheduled or event-triggered runs need a product decision before a contract. |

@@ -21,27 +21,46 @@ FIXTURE = str(Path(__file__).with_name("fake_streaming_cli.py"))
 def config_file(tmp_path, **extra):
     values = asdict(settings(tmp_path / "data"))
     values["data_dir"] = "data"
-    values.pop("route_after_active")
     raw = {"settings": values, "checkpoint_mode": "deferred", **extra}
     path = tmp_path / "config.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
     return path
 
 
-def test_runtime_loads_explicit_settings_and_immediate_routing(tmp_path):
+def test_runtime_loads_explicit_settings_without_router_configuration(tmp_path):
     config = load_config(config_file(tmp_path))
     assert config.settings.data_dir == tmp_path / "data"
-    assert not config.settings.route_after_active
+    assert config.settings.startup_timeout_seconds == 1
+    assert config.settings.checkpoint_timeout_seconds == 1
     assert config.checkpoint_mode == "deferred"
 
 
-def test_configuration_cannot_choose_old_hold_routing(tmp_path):
+def test_legacy_router_configuration_only_maps_to_checkpoint_and_startup(tmp_path):
     path = config_file(tmp_path)
     raw = json.loads(path.read_text())
-    raw["settings"]["route_after_active"] = True
+    values = raw["settings"]
+    values.pop("startup_timeout_seconds")
+    values.pop("checkpoint_timeout_seconds")
+    values.pop("checkpoint_claude_model")
+    values.pop("checkpoint_codex_model")
+    values.pop("checkpoint_attempts")
+    values.update(
+        router_timeout_seconds=4.5,
+        router_context_events=50,
+        router_model="legacy-model",
+        codex_router_model="legacy-codex-model",
+        router_attempts=3,
+        route_after_active=False,
+    )
+    raw["codex_router_command"] = ["codex", "--legacy"]
     path.write_text(json.dumps(raw))
-    with pytest.raises(ValueError, match="fixed to false"):
-        load_config(path)
+    config = load_config(path)
+    assert config.settings.startup_timeout_seconds == 4.5
+    assert config.settings.checkpoint_timeout_seconds == 4.5
+    assert config.settings.checkpoint_claude_model == "legacy-model"
+    assert config.settings.checkpoint_codex_model == "legacy-codex-model"
+    assert config.settings.checkpoint_attempts == 3
+    assert config.codex_checkpoint_command == ("codex", "--legacy")
 
 
 def test_settings_and_checkpoint_selection_have_no_implicit_defaults(tmp_path):
@@ -56,6 +75,12 @@ def test_settings_and_checkpoint_selection_have_no_implicit_defaults(tmp_path):
     raw.pop("checkpoint_mode")
     path.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="checkpoint_mode"):
+        load_config(path)
+    path = config_file(tmp_path)
+    raw = json.loads(path.read_text())
+    raw["settings"].pop("startup_timeout_seconds")
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="startup_timeout_seconds"):
         load_config(path)
 
 
@@ -99,50 +124,18 @@ def test_remote_configuration_keeps_old_configs_compatible(tmp_path):
     assert load_config(path).settings.advertised_url == "https://lgt.example"
 
 
-def test_real_runtime_http_and_ws_use_database_on_server_thread(tmp_path, monkeypatch):
+def test_real_runtime_starts_without_router_or_checkpoint_cli(tmp_path, monkeypatch):
     async def probe(self):
         return {"version": "fixture", "capabilities": {"app_server": True}}
 
     monkeypatch.setattr("lgt.runtime.CodexAppServerRunner.probe", probe)
-    async def forbidden_cli(*args, **kwargs):
-        pytest.fail("empty channels must not invoke a model CLI")
-    monkeypatch.setattr("lgt.runtime.make_cli_invoker", lambda **kwargs: forbidden_cli)
+    monkeypatch.setattr(
+        "lgt.runtime.make_cli_invoker",
+        lambda **kwargs: pytest.fail("deferred checkpoints must not create a model CLI invoker"),
+    )
     app = application(config_file(tmp_path))
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 42000)) as client:
         assert client.get("/health").json()["application"] == "lgt"
-        # No agent is seeded and this empty channel does not call either router CLI.
-        channel = client.post("/channels", json={"name": "general"}).json()
-        cid = channel["channel_id"]
-        with client.websocket_connect("/ws", headers={"host": "127.0.0.1"}) as socket:
-            socket.send_json({"last_id": 0})
-            initial = []
-            while True:
-                frame = socket.receive_json()
-                initial.append(frame)
-                if frame["type"] == "me":
-                    break
-            assert any(frame["type"] == "channel_summary" and frame["channel_id"] == cid
-                       for frame in initial)
-            socket.send_json({"type": "send_message", "channel_id": cid, "text": "hello"})
-            frames = []
-            while True:
-                frame = socket.receive_json()
-                frames.append(frame)
-                if frame["type"] == "queue" and frame["items"] == []:
-                    break
-            events = [frame for frame in frames if frame["type"] == "event"]
-            queues = [frame for frame in frames if frame["type"] == "queue"]
-            assert queues[0]["items"][0]["state"] == "awaiting_route"
-            human, routing = events
-            assert human["event"]["payload"]["text"] == "hello"
-            assert routing["event"]["kind"] == "routing_decision"
-            assert routing["event"]["payload"]["agents"] == []
-        events = client.get(f"/channels/{cid}/events").json()
-        assert [e["seq"] for e in events] == [1, 2]
-    # Runtime shutdown releases its lock and retains its durable log.
-    second = application(tmp_path / "config.json")
-    with TestClient(second, base_url="http://127.0.0.1", client=("127.0.0.1", 42000)) as client:
-        assert client.get(f"/channels/{cid}/events").json() == events
 
 
 @pytest.mark.asyncio

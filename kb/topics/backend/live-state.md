@@ -3,7 +3,7 @@ id: 20261008-live-state
 title: Live state frames
 tags: [backend, api]
 created: 2026-10-08
-updated: 2026-10-15
+updated: 2026-10-18
 related: [20261008-websocket-protocol, 20261008-event-store, 20261008-screens, 20261008-context-and-sessions]
 summary: The server-computed state behind the sidebar, status dots, activity lines, context header and usage — channel summaries, agent statuses, context stats, usage totals, plan limits, profile — and when each is published.
 ---
@@ -30,7 +30,7 @@ Context frames go through `_context_frames`, which skips (and logs) an agent who
 - **Read cursors are server state** (`POST /channels/{id}/read {seq}`). They advance monotonically and survive restarts. Unread counts include agent messages after the cursor.
 - **Previews follow edits**, and deletions hide the original text.
 - **No currency:** `cost_usd` is never returned. Usage means token counters and the harness's own plan-limit windows.
-- **Ownership is channel-wide:** the desktop uses the server's `routing_mode` and stored primary. It never guesses the next recipient from completion order or the last speaker. Delegated task activity is attributed to its parent; independent overlap temporarily uses the router.
+- **Ownership is channel-wide:** the desktop uses the server's `routing_mode` and stored primary. It never guesses the next recipient from completion order or the last speaker. Delegated task activity is attributed to its parent; independent overlap keeps the selected primary. An unavailable primary reports `routing_mode: unassigned` until the user selects a member.
 
 ## Related
 

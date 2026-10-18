@@ -15,13 +15,12 @@ class Settings:
     tool_output_cap: int
     concurrent_runs: int
     replay_cap: int
-    router_timeout_seconds: float
-    router_context_events: int
-    route_after_active: bool
+    startup_timeout_seconds: float
+    checkpoint_timeout_seconds: float
     session_ttl_seconds: float | None
-    router_model: str
-    codex_router_model: str | None
-    router_attempts: int
+    checkpoint_claude_model: str
+    checkpoint_codex_model: str | None
+    checkpoint_attempts: int
     ndjson_line_limit: int
     cancel_grace_seconds: float
     checkpoint_threshold: int
@@ -47,8 +46,8 @@ class Settings:
         if not isinstance(self.data_dir, Path) or not self.data_dir.is_absolute():
             raise ValueError("data_dir must be an absolute Path")
         for name in (
-            "tool_output_cap", "concurrent_runs", "replay_cap", "router_context_events",
-            "router_attempts", "ndjson_line_limit", "checkpoint_threshold",
+            "tool_output_cap", "concurrent_runs", "replay_cap", "checkpoint_attempts",
+            "ndjson_line_limit", "checkpoint_threshold",
             "checkpoint_tail_chars", "checkpoint_summary_chars", "attachment_max_bytes",
             "attachment_channel_quota_bytes", "thumbnail_max_dimension",
         ):
@@ -56,13 +55,16 @@ class Settings:
                 raise ValueError(f"{name} must be positive")
         if type(self.max_hops) is not int or self.max_hops < 0:
             raise ValueError("max_hops must be nonnegative")
-        for name in ("router_timeout_seconds", "cancel_grace_seconds", "session_ttl_seconds", "attachment_retention_seconds"):
+        for name in (
+            "startup_timeout_seconds", "checkpoint_timeout_seconds", "cancel_grace_seconds",
+            "session_ttl_seconds", "attachment_retention_seconds",
+        ):
             value = getattr(self, name)
             if value is None and name == "session_ttl_seconds":
                 continue
             if type(value) not in (int, float) or not math.isfinite(value):
                 raise ValueError(f"{name} must be a finite number")
-        if self.router_timeout_seconds <= 0 or self.cancel_grace_seconds < 0:
+        if self.startup_timeout_seconds <= 0 or self.checkpoint_timeout_seconds <= 0 or self.cancel_grace_seconds < 0:
             raise ValueError("invalid timeout or cancellation grace period")
         if self.session_ttl_seconds is not None and self.session_ttl_seconds <= 0:
             raise ValueError("session TTL must be positive or None")
@@ -88,14 +90,12 @@ class Settings:
         object.__setattr__(self, "allowed_origins", tuple(dict.fromkeys(self.allowed_origins)))
         if self.checkpoint_tail_chars >= self.checkpoint_threshold:
             raise ValueError("checkpoint tail must be smaller than checkpoint threshold")
-        if type(self.route_after_active) is not bool:
-            raise ValueError("route_after_active must be boolean")
-        if not isinstance(self.router_model, str) or not self.router_model:
-            raise ValueError("router_model must be nonempty")
-        if self.codex_router_model is not None and (
-            not isinstance(self.codex_router_model, str) or not self.codex_router_model
+        if not isinstance(self.checkpoint_claude_model, str) or not self.checkpoint_claude_model:
+            raise ValueError("checkpoint_claude_model must be nonempty")
+        if self.checkpoint_codex_model is not None and (
+            not isinstance(self.checkpoint_codex_model, str) or not self.checkpoint_codex_model
         ):
-            raise ValueError("codex_router_model must be nonempty or null")
+            raise ValueError("checkpoint_codex_model must be nonempty or null")
 
     @property
     def database_path(self) -> Path:

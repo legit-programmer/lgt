@@ -10,21 +10,20 @@ from lgt.orchestrator import Orchestrator
 from lgt.context import render_delta
 from lgt.replies import REPLY_QUOTE_MAX_CHARS
 from lgt.store import Store
-from tests.support import ControlledFactory, FakeRouter, eventually, settings
+from tests.support import ControlledFactory, eventually, settings
 
 
 @pytest.fixture
 async def workspace(tmp_path):
     store = Store(tmp_path / "db.sqlite")
     factory = ControlledFactory()
-    router = FakeRouter(["alpha"])
-    orch = Orchestrator(store, settings(tmp_path), router, factory,
+    orch = Orchestrator(store, settings(tmp_path), factory,
                         lambda harness, sid, cwd: True, human_id="local")
     for name in ["alpha", "beta"]:
         orch.put_agent(Agent(name, name, name, name + " specialist", "codex", "", "help"))
-    channel = orch.create_channel("test", agent_ids=["alpha", "beta"])
+    channel = orch.create_channel("test", agent_ids=["alpha", "beta"], primary_agent_id="alpha")
     await orch.start()
-    yield orch, store, factory, router, channel
+    yield orch, store, factory, channel
     await orch.close()
     store.close()
 
@@ -37,7 +36,7 @@ def append_reply_source(store, channel, text):
 
 @pytest.mark.asyncio
 async def test_reply_targets_author_and_includes_text_only_after_context_reset(workspace):
-    orch, store, factory, router, channel = workspace
+    orch, store, factory, channel = workspace
     source = append_reply_source(store, channel, "Use this approach. @alpha")
     store.append_event(channel.channel_id, "tool_call", "agent", "beta",
                        {"tool_call_id": "read", "name": "Read", "input": {"path": "private"}},
@@ -51,7 +50,6 @@ async def test_reply_targets_author_and_includes_text_only_after_context_reset(w
     assert reply.payload["text"] == "explain that"
     assert reply.payload["reply"]["text"] == "Use this approach. @alpha"
     assert store.get_channel(channel.channel_id).primary_agent_id == "beta"
-    assert not router.calls
     turn = factory.started[0].turn
     assert turn.agent.agent_id == "beta"
     assert '"reply":' in turn.prompt  # assigned_messages carries the quote too
@@ -63,7 +61,7 @@ async def test_reply_targets_author_and_includes_text_only_after_context_reset(w
 
 @pytest.mark.asyncio
 async def test_reply_selection_and_explicit_mentions_override_author(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     source = append_reply_source(store, channel, "Choose **option B**. @beta")
     reply = await orch.send_message(channel.channel_id, "@alpha implement this", reply_to_seq=source.seq,
                                     reply_selection="option B")
@@ -80,7 +78,7 @@ async def test_reply_selection_and_explicit_mentions_override_author(workspace):
 
 @pytest.mark.asyncio
 async def test_reply_snapshot_uses_current_edit_is_bounded_and_does_not_nest_quotes(workspace):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     source = store.append_event(channel.channel_id, "message", "human", "local",
                                 {"text": "old", "reply": {"text": "NESTED QUOTE"}})
     await orch.edit_message(channel.channel_id, source.seq, text="x" * (REPLY_QUOTE_MAX_CHARS + 1))
@@ -100,7 +98,7 @@ async def test_reply_snapshot_uses_current_edit_is_bounded_and_does_not_nest_quo
 
 @pytest.mark.asyncio
 async def test_invalid_reply_creates_no_message_or_delivery(workspace):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     source = store.append_event(channel.channel_id, "message", "human", "local", {"text": "gone"})
     await orch.edit_message(channel.channel_id, source.seq, deleted=True)
     tool = store.append_event(channel.channel_id, "tool_result", "agent", "alpha",
@@ -118,7 +116,7 @@ async def test_invalid_reply_creates_no_message_or_delivery(workspace):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("unavailable", ["removed", "retired"])
 async def test_reply_to_unavailable_agent_fails_instead_of_routing_elsewhere(workspace, unavailable):
-    orch, store, _, _, channel = workspace
+    orch, store, _, channel = workspace
     source = append_reply_source(store, channel, "answer")
     if unavailable == "removed":
         store.remove_member(channel.channel_id, "agent", "beta")
@@ -130,7 +128,7 @@ async def test_reply_to_unavailable_agent_fails_instead_of_routing_elsewhere(wor
 
 @pytest.mark.asyncio
 async def test_reply_text_that_looks_like_a_command_is_sent_as_a_reply(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     source = append_reply_source(store, channel, "Try /new")
     reply = await orch.send_message(channel.channel_id, "/new", reply_to_seq=source.seq)
     await eventually(lambda: len(factory.started) == 1)
@@ -139,7 +137,7 @@ async def test_reply_text_that_looks_like_a_command_is_sent_as_a_reply(workspace
 
 @pytest.mark.asyncio
 async def test_busy_agent_messages_coalesce_without_advancing_to_current_max(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     first = await orch.send_message(channel.channel_id, "first", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     runner = factory.started[0]
@@ -163,14 +161,13 @@ async def test_busy_agent_messages_coalesce_without_advancing_to_current_max(wor
 
 
 @pytest.mark.asyncio
-async def test_unmentioned_message_queues_to_busy_primary_without_router(workspace):
-    orch, store, factory, router, channel = workspace
+async def test_unmentioned_message_queues_to_busy_primary(workspace):
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "start", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     routed = await orch.send_message(channel.channel_id, "more work")
     await eventually(lambda: bool(store.queue(channel.channel_id, "awaiting_agent")))
     assert len(factory.started) == 1
-    assert not router.calls
     assert store.get_channel(channel.channel_id).primary_agent_id == "alpha"
     assert store.queue(channel.channel_id, "awaiting_agent")[0].event_seq == routed.seq
     factory.started[0].finish()
@@ -179,19 +176,18 @@ async def test_unmentioned_message_queues_to_busy_primary_without_router(workspa
 
 
 @pytest.mark.asyncio
-async def test_idle_other_agent_runs_in_parallel_and_mentions_bypass_router(workspace):
-    orch, _, factory, router, channel = workspace
+async def test_idle_other_agent_runs_in_parallel_with_explicit_mentions(workspace):
+    orch, _, factory, channel = workspace
     await orch.send_message(channel.channel_id, "alpha work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     await orch.send_message(channel.channel_id, "beta work", ["beta"])
     await eventually(lambda: len(factory.started) == 2)
     assert {r.turn.agent.agent_id for r in factory.started} == {"alpha", "beta"}
-    assert not router.calls
 
 
 @pytest.mark.asyncio
 async def test_rendered_author_handle_is_saved_in_the_immutable_log(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].finish()
@@ -204,7 +200,7 @@ async def test_rendered_author_handle_is_saved_in_the_immutable_log(workspace):
 
 @pytest.mark.asyncio
 async def test_reset_during_run_forces_cold_from_reset(workspace):
-    orch, _, factory, _, channel = workspace
+    orch, _, factory, channel = workspace
     await orch.send_message(channel.channel_id, "old instruction", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     await orch.new_context(channel.channel_id)
@@ -218,7 +214,7 @@ async def test_reset_during_run_forces_cold_from_reset(workspace):
 
 @pytest.mark.asyncio
 async def test_edit_seen_message_invalidates_session_and_does_not_rewrite_log(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     original = await orch.send_message(channel.channel_id, "original", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].finish()
@@ -234,7 +230,7 @@ async def test_edit_seen_message_invalidates_session_and_does_not_rewrite_log(wo
 
 @pytest.mark.asyncio
 async def test_partial_deltas_are_live_and_cancel_commits_one_terminal(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     subscription = orch.bus.subscribe({channel.channel_id}, 100)
     await orch.send_message(channel.channel_id, "work", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
@@ -253,7 +249,7 @@ async def test_partial_deltas_are_live_and_cancel_commits_one_terminal(workspace
 
 @pytest.mark.asyncio
 async def test_cancel_queued_before_execute_starts(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch._semaphore.acquire()
     await orch._semaphore.acquire()
     await orch._semaphore.acquire()
@@ -268,28 +264,27 @@ async def test_cancel_queued_before_execute_starts(workspace):
 
 
 @pytest.mark.asyncio
-async def test_dm_bypasses_router_and_has_one_agent(workspace):
-    orch, _, factory, router, _ = workspace
-    dm = orch.create_channel("dm", kind="dm", agent_ids=["alpha"])
+async def test_dm_dispatches_to_its_one_agent(workspace):
+    orch, _, factory, _ = workspace
+    dm = orch.create_channel("dm", kind="dm", agent_ids=["alpha"], primary_agent_id="alpha")
     await orch.send_message(dm.channel_id, "hello")
     await eventually(lambda: len(factory.started) == 1)
     assert factory.started[0].turn.agent.agent_id == "alpha"
-    assert not router.calls
     with pytest.raises(WorkspaceError):
         orch.add_member(dm.channel_id, "beta")
 
 
 @pytest.mark.asyncio
 async def test_unsupported_codex_tool_scope_is_not_silently_ignored(workspace):
-    orch, store, _, _, _ = workspace
+    orch, store, _, _ = workspace
     agent = replace(store.get_agent("alpha"), allowed_tools=["Read"])
     with pytest.raises(WorkspaceError, match="cannot enforce"):
         orch.put_agent(agent)
 
 
 @pytest.mark.asyncio
-async def test_hop_limit_stops_agent_loop_without_router(workspace):
-    orch, store, factory, router, channel = workspace
+async def test_hop_limit_stops_agent_loop(workspace):
+    orch, store, factory, channel = workspace
     origin = await orch.send_message(channel.channel_id, "begin", ["alpha"])
     for count, target in enumerate(["beta", "alpha", "beta", "alpha"]):
         await eventually(lambda count=count: len(factory.started) == count + 1)
@@ -300,18 +295,17 @@ async def test_hop_limit_stops_agent_loop_without_router(workspace):
     agent_messages = [e for e in store.events(channel.channel_id) if e.author_kind == "agent"]
     assert [e.hop for e in agent_messages] == [0, 1, 2, 3]
     assert {e.chain_id for e in agent_messages} == {origin.id}
-    assert not router.calls
 
 
 @pytest.mark.asyncio
 async def test_orphan_recovery_marks_dirty_then_replays_durable_queue(tmp_path):
     store = Store(tmp_path / "db.sqlite")
     factory = ControlledFactory()
-    orch = Orchestrator(store, settings(tmp_path), FakeRouter(), factory,
+    orch = Orchestrator(store, settings(tmp_path), factory,
                         lambda *args: True, human_id="local")
     agent = Agent("alpha", "alpha", "alpha", "specialist", "codex", "", "help")
     orch.put_agent(agent)
-    channel = orch.create_channel("test", agent_ids=["alpha"])
+    channel = orch.create_channel("test", agent_ids=["alpha"], primary_agent_id="alpha")
     first = store.append_event(channel.channel_id, "message", "human", "local", {"text": "old", "mentions": []})
     store.create_run(Run("orphan", channel.channel_id, "alpha", first.seq, 1, 1, "cold", "codex", channel.cwd, status="running"))
     store.put_session(Session("alpha", channel.channel_id, "codex", "sid", channel.cwd, 1, agent.fingerprint(), "clean"))
@@ -330,7 +324,7 @@ async def test_orphan_recovery_marks_dirty_then_replays_durable_queue(tmp_path):
 
 @pytest.mark.asyncio
 async def test_completed_session_is_dirtied_by_subsequent_failed_turn(workspace):
-    orch, store, factory, _, channel = workspace
+    orch, store, factory, channel = workspace
     await orch.send_message(channel.channel_id, "first", ["alpha"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].finish()

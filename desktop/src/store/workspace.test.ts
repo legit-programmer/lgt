@@ -52,19 +52,19 @@ describe("workspace frames", () => {
     expect(state.me?.display_name).toBe("Sam");
   });
 
-  it("uses server ownership across routing mode changes and ignores completion order", () => {
+  it("uses server ownership state and ignores run completion as an ownership signal", () => {
     const summary: ChannelSummary = {
       channel_id: "c1", kind: "channel", name: "General", cwd: "/tmp", cwd_managed: false,
-      next_seq: 1, created_at: "t", archived_at: null, primary_agent_id: "a2", ownership_version: 2,
-      allow_handoff: false, routing_mode: "router", active_task_agent_ids: ["a1", "a2"],
+      next_seq: 1, created_at: "t", archived_at: null, primary_agent_id: null, ownership_version: 0,
+      allow_handoff: false, routing_mode: "unassigned", active_task_agent_ids: [],
       members: [], last_activity_at: "t", preview: null, unread_count: 0, active_runs: [],
     };
     const apply = useWorkspace.getState().applyFrame;
     apply({ type: "channel_summary", ...summary });
     apply({ type: "event", event: event(4, "run_status", { run_id: "r1", agent_id: "a1", status: "completed" }, { run_id: "r1" }) });
-    expect(useWorkspace.getState().channels.c1.primary_agent_id).toBe("a2");
-    expect(useWorkspace.getState().channels.c1.routing_mode).toBe("router");
-    apply({ type: "channel_summary", ...summary, routing_mode: "primary", active_task_agent_ids: ["a2"] });
+    expect(useWorkspace.getState().channels.c1.primary_agent_id).toBeNull();
+    expect(useWorkspace.getState().channels.c1.routing_mode).toBe("unassigned");
+    apply({ type: "channel_summary", ...summary, primary_agent_id: "a2", ownership_version: 1, routing_mode: "primary" });
     expect(useWorkspace.getState().channels.c1).toMatchObject({ primary_agent_id: "a2", routing_mode: "primary", allow_handoff: false });
   });
 });

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from lgt.gateway import create_app
 from lgt.models import Agent
 from lgt.orchestrator import Orchestrator
-from tests.support import ControlledFactory, FakeRouter, settings
+from tests.support import ControlledFactory, settings
 from tests.test_gateway import ThreadSafeStore, _with_peer
 
 
@@ -14,11 +14,11 @@ from tests.test_gateway import ThreadSafeStore, _with_peer
 def routes(tmp_path):
     store = ThreadSafeStore(tmp_path / "db.sqlite")
     factory = ControlledFactory()
-    orch = Orchestrator(store, settings(tmp_path / "data", attachment_max_bytes=16), FakeRouter(["alpha"]),
+    orch = Orchestrator(store, settings(tmp_path / "data", attachment_max_bytes=16),
                         factory, lambda harness, sid, cwd: True, human_id="local")
     for name in ["alpha", "beta"]:
         orch.put_agent(Agent(name, name, name, name + " specialist", "codex", "", "help"))
-    channel = orch.create_channel("test", agent_ids=["alpha", "beta"])
+    channel = orch.create_channel("test", agent_ids=["alpha", "beta"], primary_agent_id="alpha")
     with TestClient(_with_peer(create_app(orch)), base_url="http://127.0.0.1") as client:
         yield client, orch, factory, channel.channel_id
     store.close()

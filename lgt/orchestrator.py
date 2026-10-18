@@ -4,7 +4,6 @@ import asyncio
 import inspect
 import logging
 import os
-import random
 import re
 import signal
 from collections import defaultdict
@@ -21,7 +20,7 @@ from .config import Settings
 from .context import cold_plan, render_delta, render_turn, rendered_size, resolve_session
 from .models import (
     PENDING_QUEUE_STATES, Agent, Attachment, Channel, Event, NormalizedEvent, QueueItem,
-    Router, RoutingDecision, RoutingRequest, Run, Runner, RunnerFactory, Session,
+    Run, Runner, RunnerFactory, Session,
     TERMINAL_STATUSES, Turn, WorkspaceError, new_id, utc_now,
 )
 from .store import Store
@@ -70,14 +69,13 @@ class ChannelMailbox:
 
 class Orchestrator:
     def __init__(
-        self, store: Store, settings: Settings, router: Router, runner_factory: RunnerFactory,
+        self, store: Store, settings: Settings, runner_factory: RunnerFactory,
         artifact_exists: Callable[[str, str, str], bool], *, human_id: str,
         summarizer: Summarizer | None = None,
         harness_registry: Any = None,
     ) -> None:
         self.store = store
         self.settings = settings
-        self.router = router
         self.runner_factory = runner_factory
         self.artifact_exists = artifact_exists
         self.human_id = human_id
@@ -91,7 +89,6 @@ class Orchestrator:
         self._run_tasks: dict[str, asyncio.Task] = {}
         self._turns: dict[str, Turn] = {}
         self._runners: dict[str, Runner] = {}
-        self._route_tasks: dict[str, asyncio.Task] = {}
         self._checkpoint_tasks: dict[str, asyncio.Task] = {}
         self._partials: dict[str, str] = {}
         self._cancelled: set[str] = set()
@@ -99,8 +96,6 @@ class Orchestrator:
         self._published_summaries: dict[str, dict[str, Any]] = {}
         self._published_statuses: dict[str, dict[str, Any]] = {}
         self._activities: dict[str, dict[str, Any]] = {}
-        self._suggestions: dict[str, tuple[str, list[str]]] = {}
-        self._suggestion_tasks: dict[str, asyncio.Task] = {}
         self._retention_task: asyncio.Task | None = None
         self._semaphore = asyncio.Semaphore(settings.concurrent_runs)
         self._closing = False
@@ -158,7 +153,7 @@ class Orchestrator:
         if self._closing:
             return
         self._closing = True
-        auxiliary = [*self._route_tasks.values(), *self._checkpoint_tasks.values(), *self._suggestion_tasks.values()]
+        auxiliary = list(self._checkpoint_tasks.values())
         if self._retention_task:
             auxiliary.append(self._retention_task)
         for task in auxiliary:
@@ -220,13 +215,17 @@ class Orchestrator:
 
     def create_channel(
         self, name: str, kind: str = "channel", agent_ids: list[str] | None = None,
-        cwd: str | None = None,
+        cwd: str | None = None, primary_agent_id: str | None = None,
     ) -> Channel:
         agents = list(dict.fromkeys(agent_ids or []))
         if kind not in {"channel", "dm"} or not name.strip():
             raise WorkspaceError("a channel needs a name and kind channel or dm")
         if kind == "dm" and len(agents) != 1:
             raise WorkspaceError("a DM needs exactly one agent")
+        if kind == "channel" and (not agents or primary_agent_id not in agents):
+            raise WorkspaceError("add at least one agent and choose a channel primary agent")
+        if kind == "dm" and primary_agent_id is not None and primary_agent_id not in agents:
+            raise WorkspaceError("the primary agent must be a channel member")
         configs = [self.store.get_agent(agent_id) for agent_id in agents]
         if any(agent.retired_at for agent in configs):
             raise WorkspaceError("retired agents cannot join a channel")
@@ -241,7 +240,8 @@ class Orchestrator:
             raise WorkspaceError("channel cwd must be an existing directory")
         if managed:
             path.mkdir(parents=True, exist_ok=True)
-        channel = Channel(channel_id, kind, name.strip(), str(path), managed)
+        channel = Channel(channel_id, kind, name.strip(), str(path), managed,
+                          primary_agent_id=agents[0] if kind == "dm" else primary_agent_id)
         self.store.create_channel(channel, [("human", self.human_id), *[("agent", a) for a in agents]])
         self._refresh_subscriptions()
         self._publish_summary(channel_id)
@@ -517,7 +517,7 @@ class Orchestrator:
         agent = self.store.get_agent(agent_id)
         if agent.retired_at:
             return agent
-        # Mark retirement first so pending router replies cannot dispatch to it.
+        # Mark retirement before stopping and removing its pending work.
         self.store.retire_agent(agent_id)
         for channel in self.store.list_channels(self.human_id):
             if agent_id not in self._agent_ids(channel.channel_id):
@@ -534,7 +534,8 @@ class Orchestrator:
         return retired
 
     async def patch_channel(self, channel_id: str, name: str | None = None,
-                            archived: bool | None = None, allow_handoff: bool | None = None) -> Channel:
+                            archived: bool | None = None, allow_handoff: bool | None = None,
+                            primary_agent_id: str | None = None) -> Channel:
         def patch() -> Channel:
             channel = self.store.get_channel(channel_id)
             if not any(member["member_kind"] == "human" and member["member_id"] == self.human_id
@@ -545,6 +546,10 @@ class Orchestrator:
             if archived is False and channel.kind == "dm":
                 if any(self.store.get_agent(agent_id).retired_at for agent_id in self._agent_ids(channel_id)):
                     raise WorkspaceError("a retired agent's DM cannot be unarchived")
+            if primary_agent_id is not None:
+                if (primary_agent_id not in self._agent_ids(channel_id)
+                        or self.store.get_agent(primary_agent_id).retired_at):
+                    raise WorkspaceError("the primary agent must be an available channel member")
             with self.store.transaction():
                 self.store.patch_channel(channel_id, name=name, archived=archived, allow_handoff=allow_handoff)
                 if archived:
@@ -555,7 +560,10 @@ class Orchestrator:
                                      {"name": self.store.get_channel(channel_id).name,
                                       "archived_at": self.store.get_channel(channel_id).archived_at,
                                       **({"allow_handoff": allow_handoff} if allow_handoff is not None else {})})
+                ownership = self._set_owner(event, primary_agent_id, "user_selection") if primary_agent_id is not None else None
             self._publish(event)
+            if ownership:
+                self._publish(ownership)
             self._pump(channel_id)
             return self.store.get_channel(channel_id)
         channel = await self._call(channel_id, patch)
@@ -577,11 +585,13 @@ class Orchestrator:
         from .services import template_catalog
         return template_catalog(self.harness_registry.list())
 
-    async def bootstrap(self, agent_templates: list[str], cwd: str) -> dict[str, Any]:
+    async def bootstrap(self, agent_templates: list[str], cwd: str, primary_agent_template: str) -> dict[str, Any]:
         if not Path(cwd).is_absolute() or not Path(cwd).is_dir():
             raise WorkspaceError("bootstrap cwd must be an existing absolute directory")
         if not agent_templates or len(set(agent_templates)) != len(agent_templates):
             raise WorkspaceError("choose one or more distinct agent templates")
+        if primary_agent_template not in agent_templates:
+            raise WorkspaceError("choose a primary agent from the selected templates")
         catalog = {template["id"]: template for template in self.templates()}
         if set(agent_templates) - catalog.keys():
             raise WorkspaceError("a requested template is unavailable")
@@ -606,7 +616,8 @@ class Orchestrator:
                 dm = Channel(new_id(), "dm", agent.name, cwd, False)
                 self.store.create_channel(dm, [("human", self.human_id), ("agent", agent.agent_id)])
                 self.store.set_agent_dm_channel(agent.agent_id, dm.channel_id)
-            general = Channel(new_id(), "channel", "general", cwd, False)
+            general = Channel(new_id(), "channel", "general", cwd, False,
+                              primary_agent_id=agents[agent_templates.index(primary_agent_template)].agent_id)
             self.store.create_channel(general, [("human", self.human_id), *[("agent", agent.agent_id) for agent in agents]])
         self._refresh_subscriptions()
         created = [self.store.get_agent(agent.agent_id) for agent in agents]
@@ -616,29 +627,6 @@ class Orchestrator:
         self._publish_summary(general.channel_id)
         self._publish_agent_statuses()
         return {"agents": [asdict(agent) for agent in created], "channel": asdict(general)}
-
-    async def channel_suggestions(self, channel_id: str) -> list[str]:
-        self.store.get_channel(channel_id)
-        agents = [self.store.get_agent(agent_id) for agent_id in self._agent_ids(channel_id)
-                  if not self.store.get_agent(agent_id).retired_at]
-        key = str([(agent.agent_id, agent.fingerprint(), agent.description) for agent in agents])
-        cached = self._suggestions.get(channel_id)
-        if cached and cached[0] == key:
-            return cached[1]
-        if not agents:
-            return []
-        if channel_id not in self._suggestion_tasks:
-            async def generate() -> list[str]:
-                try:
-                    generate_fn = getattr(self.router, "suggestions", None)
-                    prompts = await generate_fn([asdict(agent) for agent in agents]) if generate_fn else []
-                    prompts = [prompt.strip() for prompt in prompts if isinstance(prompt, str) and prompt.strip()][:3]
-                    self._suggestions[channel_id] = (key, prompts)
-                    return prompts
-                finally:
-                    self._suggestion_tasks.pop(channel_id, None)
-            self._suggestion_tasks[channel_id] = asyncio.create_task(generate())
-        return await asyncio.shield(self._suggestion_tasks[channel_id])
 
     def preview_reply(self, channel_id: str, reply_to_seq: int,
                       reply_selection: str | None = None) -> dict:
@@ -732,6 +720,8 @@ class Orchestrator:
 
         async def accept() -> Event:
             channel = self._assert_channel(channel_id)
+            if channel.kind != "dm" and self.store.routing_state(channel_id)["routing_mode"] != "primary":
+                raise WorkspaceError("add an agent and choose a primary agent before starting a conversation")
             skill = None
             message_text = text
             skill_arguments = text
@@ -796,8 +786,8 @@ class Orchestrator:
                 payload["attachments"] = [attachment.summary() for attachment in files]
             with self.store.transaction():
                 event = self._append(channel_id, "message", "human", self.human_id, payload)
-                routing = self._append(channel_id, "routing_decision", "system", "router", {
-                    "for_seqs": [event.seq], "agents": targets, "suggested_agents": [],
+                routing = self._append(channel_id, "routing_decision", "system", "system", {
+                    "for_seqs": [event.seq], "agents": targets,
                     "method": "skill", "reason_code": "skill", "reason": f"explicit skill invocation: {skill.name}",
                 }, chain_id=event.chain_id) if skill else self._mention_decision(event, targets) if targets else None
                 ownership = None
@@ -810,17 +800,13 @@ class Orchestrator:
                         ownership = self._set_owner(event, targets[-1], "user_selection")
                     for agent_id in targets:
                         self.store.enqueue(channel_id, event.seq, agent_id)
-                elif self.store.routing_state(channel_id)["routing_mode"] == "primary":
+                else:
                     primary = self.store.get_channel(channel_id).primary_agent_id
-                    routing = self._append(channel_id, "routing_decision", "system", "router", {
-                        "for_seqs": [event.seq], "agents": [primary], "suggested_agents": [],
+                    routing = self._append(channel_id, "routing_decision", "system", "system", {
+                        "for_seqs": [event.seq], "agents": [primary],
                         "method": "primary", "reason_code": "primary", "reason": "channel primary agent",
                     }, chain_id=event.chain_id)
                     self.store.enqueue(channel_id, event.seq, primary)
-                else:
-                    wait_for = ([r.run_id for r in self.store.list_runs(channel_id, active_only=True)]
-                                if self.settings.route_after_active else [])
-                    self.store.enqueue(channel_id, event.seq, wait_for=wait_for, state="awaiting_route")
             self._publish(event)
             if routing:
                 self._publish(routing)
@@ -956,8 +942,8 @@ class Orchestrator:
         self._publish_agent_statuses()
 
     def _mention_decision(self, message: Event, targets: list[str]) -> Event:
-        return self._append(message.channel_id, "routing_decision", "system", "router", {
-            "for_seqs": [message.seq], "agents": targets, "suggested_agents": [],
+        return self._append(message.channel_id, "routing_decision", "system", "system", {
+            "for_seqs": [message.seq], "agents": targets,
             "method": "mention", "reason_code": "mention", "reason": "explicit mentions",
         }, chain_id=message.chain_id, hop=message.hop)
 
@@ -992,23 +978,18 @@ class Orchestrator:
         if channel.archived_at:
             return
         active = self.store.list_runs(channel_id, active_only=True)
-        active_ids = {r.run_id for r in active}
         busy = {r.agent_id for r in active}
-        ready_route = [q for q in self.store.queue(channel_id, "awaiting_route")
-                       if not active_ids.intersection(q.wait_for)]
-        if ready_route and channel_id not in self._route_tasks:
-            members = set(self._agent_ids(channel_id))
-            roster = [{"agent_id": agent.agent_id, "handle": agent.handle,
-                       "description": agent.description, "busy": agent.agent_id in busy,
-                       "in_channel": agent.agent_id in members}
-                      for agent in self.store.list_agents()]
-            events = self.store.events(channel_id)
-            from_seq = events[-self.settings.router_context_events].seq if len(events) >= self.settings.router_context_events else 1
-            request = RoutingRequest(
-                channel, roster, render_delta(self.store, "", channel_id, from_seq, channel.next_seq - 1, "cold"),
-                [self.store.get_event(channel_id, q.event_seq) for q in ready_route],
-            )
-            self._route_tasks[channel_id] = asyncio.create_task(self._route(channel_id, ready_route, request))
+        # Old workspaces may have pending model-routing deliveries. Preserve
+        # their messages and make the cancellation visible instead of guessing.
+        for queued in self.store.queue(channel_id, "awaiting_route"):
+            trigger = self.store.get_event(channel_id, queued.event_seq)
+            with self.store.transaction():
+                self.store.update_queue(queued.queue_id, state="cancelled")
+                event = self._append(channel_id, "system", "system", "system", {
+                    "code": "routing_removed", "for_seq": queued.event_seq,
+                    "text": "Pending automatic assignment cancelled. Choose a primary agent and resend the message.",
+                }, chain_id=trigger.chain_id, hop=trigger.hop)
+            self._publish(event)
 
         batches: dict[str, list[QueueItem]] = defaultdict(list)
         for queued in self.store.queue(channel_id, "awaiting_agent"):
@@ -1036,60 +1017,6 @@ class Orchestrator:
             if skill_index is not None:
                 batch = batch[:skill_index] if skill_index else batch[:1]
             self._dispatch(channel_id, agent_id, batch)
-
-    async def _route(self, channel_id: str, batch: list[QueueItem], request: RoutingRequest) -> None:
-        try:
-            try:
-                decision = await self.router.route(request)
-                if (set(decision.agents) | set(decision.suggested_agents)) - {r["agent_id"] for r in request.roster}:
-                    raise ValueError("router selected an agent outside the roster")
-            except Exception as error:
-                members = [entry for entry in request.roster if entry.get("in_channel", True)]
-                picks = [random.choice(members)["agent_id"]] if members else []
-                decision = RoutingDecision(picks, "Router failed; random member takes charge.", str(error),
-                                           reason_code="router_failed_random" if picks else "none")
-            await self._call(channel_id, lambda: self._apply_route(
-                channel_id, batch, decision, request.channel.ownership_version))
-        except asyncio.CancelledError:
-            raise
-        finally:
-            self._route_tasks.pop(channel_id, None)
-            if not self._closing:
-                await self._call(channel_id, lambda: self._pump(channel_id))
-
-    def _apply_route(self, channel_id: str, batch: list[QueueItem], decision: RoutingDecision,
-                     ownership_version: int) -> None:
-        # Deliveries may have been cancelled, or agents removed, while routing ran.
-        batch = [q for q in batch if self.store.get_queue_item(q.queue_id).state == "awaiting_route"]
-        if not batch:
-            return
-        members = set(self._agent_ids(channel_id))
-        available = {agent.agent_id for agent in self.store.list_agents()}
-        suggested = [agent_id for agent_id in dict.fromkeys([*decision.suggested_agents, *decision.agents])
-                     if agent_id in available and agent_id not in members]
-        decision = replace(decision, agents=[a for a in decision.agents if a in members and a in available],
-                           suggested_agents=suggested)
-        trigger = self.store.get_event(channel_id, max(q.event_seq for q in batch))
-        payload: dict[str, Any] = {"for_seqs": [q.event_seq for q in batch],
-                                   "agents": decision.agents, "reason": decision.reason,
-                                   "suggested_agents": decision.suggested_agents, "method": "router",
-                                   "reason_code": decision.reason_code if decision.agents else "none"}
-        if decision.error:
-            payload["error"] = decision.error
-        with self.store.transaction():
-            event = self._append(channel_id, "routing_decision", "system", "router", payload,
-                                 chain_id=trigger.chain_id, hop=trigger.hop)
-            ownership = None
-            if decision.agents and self.store.get_channel(channel_id).ownership_version == ownership_version:
-                ownership = self._set_owner(trigger, decision.agents[0], "router_assignment")
-            for queued in batch:
-                self.store.update_queue(queued.queue_id, state="dispatched" if decision.agents else "dropped")
-                for agent_id in dict.fromkeys(decision.agents):
-                    self.store.enqueue(channel_id, queued.event_seq, agent_id)
-        self._publish(event)
-        if ownership:
-            self._publish(ownership)
-        self._pump(channel_id)
 
     def _dispatch(self, channel_id: str, agent_id: str, batch: list[QueueItem]) -> None:
         agent = self.store.get_agent(agent_id)
@@ -1285,7 +1212,7 @@ class Orchestrator:
                             notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
                                 "mode": mode, "status": "requested" if permitted else "rejected",
                                 "source": run.agent_id, "targets": [agent_id], "message_seq": event.seq,
-                                **({"text": "Handoff rejected: disabled, ownership changed, or router mode is active. Use delegation instead."}
+                                **({"text": "Handoff rejected: disabled or ownership changed. Use delegation instead."}
                                    if not permitted else {}),
                             }, chain_id=event.chain_id, hop=hop))
             self._publish(event)

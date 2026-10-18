@@ -81,7 +81,7 @@ def test_ownership_columns_migrate_existing_database_without_changing_log(tmp_pa
         assert reopened.get_channel("c").allow_handoff is True
         assert reopened.get_run("r").task_owner_id is None
         assert reopened.queue("c")[0].task_owner_id is None
-        assert reopened.routing_state("c") == {"routing_mode": "router", "active_task_agent_ids": ["a"]}
+        assert reopened.routing_state("c") == {"routing_mode": "unassigned", "active_task_agent_ids": ["a"]}
     finally:
         reopened.close()
 

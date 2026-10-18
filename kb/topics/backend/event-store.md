@@ -3,7 +3,7 @@ id: 20261008-event-store
 title: Event store
 tags: [backend, storage]
 created: 2026-10-08
-updated: 2026-10-11
+updated: 2026-10-18
 related: [20261008-glossary, 20261008-dispatch-and-queue, 20261008-live-state, 20261008-attachments, 20261008-mutable-channel-cwd]
 summary: The SQLite schema, the append-only event log and its event kinds, triggers that enforce invariants, migrations, FTS search, and the summary and usage queries.
 ---
@@ -55,8 +55,8 @@ The original `channels_cwd_immutable` trigger is dropped; see [mutable channel c
 | `message_edit` | Human | Edits or deletes an earlier message. The original is never changed. |
 | `tool_call`, `tool_result` | Agent | Normalized tool activity |
 | `run_status` | System | Run lifecycle |
-| `routing_decision` | Router | Who receives a message, and why |
-| `ownership_changed` | System | User selection, accepted handoff, or router assignment, with the new channel ownership version |
+| `routing_decision` | System | Who receives a message, and why |
+| `ownership_changed` | System | User selection or accepted handoff, with the new channel ownership version |
 | `agent_transfer` | System | Requested, accepted, or rejected handoff/delegation |
 | `context_reset`, `context_checkpoint` | Human, summarizer | Context boundaries |
 | `cwd_changed`, `member_added`, `member_removed`, `channel_changed` | Human | Channel changes |

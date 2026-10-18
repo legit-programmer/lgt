@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-15
+updated: 2026-10-18
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,10 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-18
+
+- Remove the model router, random fallback, and generated starter suggestions. Require channel members and explicit primary selection before conversation; keep primary dispatch during overlapping tasks and preserve agent handoff/delegation. Separate checkpoint CLI settings from removed router settings.
 
 ## 2026-10-15
 

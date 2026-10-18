@@ -17,6 +17,7 @@ export function Onboarding() {
   const harnesses = useQuery({ queryKey: ["harnesses"], queryFn: api.harnesses });
   const templates = useQuery({ queryKey: ["templates", harnesses.dataUpdatedAt], queryFn: api.templates });
   const [selected, setSelected] = useState<string[] | null>(null);
+  const [primaryTemplateId, setPrimaryTemplateId] = useState("");
   const [cwd, setCwd] = useState("");
   const [scanning, setScanning] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -27,7 +28,11 @@ export function Onboarding() {
   }, [templates.data, selected]);
 
   const chosen = selected ?? [];
-  const toggle = (id: string) => setSelected(chosen.includes(id) ? chosen.filter((t) => t !== id) : [...chosen, id]);
+  const toggle = (id: string) => {
+    const next = chosen.includes(id) ? chosen.filter((templateId) => templateId !== id) : [...chosen, id];
+    setSelected(next);
+    if (primaryTemplateId && !next.includes(primaryTemplateId)) setPrimaryTemplateId("");
+  };
 
   const scan = async () => {
     setScanning(true);
@@ -47,10 +52,10 @@ export function Onboarding() {
   };
 
   const create = async () => {
-    if (!chosen.length || !cwd.trim()) return;
+    if (!chosen.length || !primaryTemplateId || !chosen.includes(primaryTemplateId) || !cwd.trim()) return;
     setCreating(true);
     try {
-      const result = await api.bootstrap(chosen, cwd.trim());
+      const result = await api.bootstrap(chosen, cwd.trim(), primaryTemplateId);
       for (const agent of result.agents) useWorkspace.getState().upsertAgent(agent);
       await useWorkspace.getState().refreshSummaries();
       openChannel(result.channel.channel_id);
@@ -88,7 +93,7 @@ export function Onboarding() {
           <li className="onboarding-step">
             <div className="step-head">
               <span className="step-number">2</span>
-              <h2 className="step-title">Choose starter agents</h2>
+              <h2 className="step-title">Choose your agents</h2>
               <span className="fv-meta">{chosen.length} selected</span>
             </div>
             {templates.data?.length === 0 ? (
@@ -105,6 +110,24 @@ export function Onboarding() {
           <li className="onboarding-step">
             <div className="step-head">
               <span className="step-number">3</span>
+              <h2 className="step-title">Choose the primary agent</h2>
+            </div>
+            <div className="fv-field">
+              <label htmlFor="onboarding-primary">Agent that leads the conversation</label>
+              <select id="onboarding-primary" className="fv-input" value={primaryTemplateId}
+                onChange={(e) => setPrimaryTemplateId(e.target.value)} disabled={!chosen.length} required>
+                <option value="">Choose a primary agent</option>
+                {(templates.data ?? []).filter((template) => chosen.includes(template.id)).map((template) => (
+                  <option key={template.id} value={template.id}>{template.id}</option>
+                ))}
+              </select>
+              <span className="fv-hint">The primary handles unmentioned messages and can hand work to other agents.</span>
+            </div>
+          </li>
+
+          <li className="onboarding-step">
+            <div className="step-head">
+              <span className="step-number">4</span>
               <h2 className="step-title">Where should they work?</h2>
             </div>
             <div className="path-row">
@@ -117,7 +140,8 @@ export function Onboarding() {
         </ol>
 
         <div className="onboarding-actions">
-          <button className="fv-btn fv-btn--primary" onClick={create} disabled={creating || !chosen.length || !cwd.trim()}>
+          <button className="fv-btn fv-btn--primary" onClick={create}
+            disabled={creating || !chosen.length || !primaryTemplateId || !cwd.trim()}>
             {creating ? "Creating…" : `Create ${chosen.length} ${chosen.length === 1 ? "agent" : "agents"}`}
           </button>
           <button className="fv-btn fv-btn--ghost" onClick={() => navigate({ kind: "agent-new", returnTo: { kind: "onboarding" } })}>

@@ -502,7 +502,7 @@ class Store:
         owners.intersection_update(members)
         primary = channel.primary_agent_id if channel.primary_agent_id in members else None
         return {"routing_mode": "dm" if channel.kind == "dm" else
-                "primary" if primary and len(owners) <= 1 else "router",
+                "primary" if primary else "unassigned",
                 "active_task_agent_ids": sorted(owners)}
 
     def transfer_task_owner(self, channel_id: str, chain_id: int, source: str, target: str) -> None:

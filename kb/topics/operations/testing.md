@@ -3,7 +3,7 @@ id: 20261008-testing
 title: Testing
 tags: [ops, testing]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-18
 related: [20261012-mobile-client, 20261008-repo-map, 20261008-running-locally, 20261008-known-issues]
 summary: How to run the backend and desktop test suites, which test file covers which module, the fakes they use, and how UI changes were verified visually.
 ---
@@ -28,7 +28,6 @@ cd desktop; pnpm test; pnpm typecheck # desktop: vitest unit tests + tsc
 | `test_channel_changes.py` | cwd changes, member removal, delivery cancellation, attachments (orchestrator level) |
 | `test_channel_routes.py`, `test_gateway.py` | HTTP and WebSocket routes, origin policy, replay and resync |
 | `test_context.py`, `test_checkpoints.py`, `test_summarizer.py` | Rendering, resume or cold, checkpoints |
-| `test_router.py` | Router prompts, parsing, fallbacks |
 | `test_codex_adapter.py`, `test_harnesses.py` | Adapters, discovery, validation |
 | `test_processes.py`, `test_oneshot.py`, `test_locking.py` | Process trees, one-shot CLI, lock |
 | `test_runtime.py`, `test_server.py`, `test_services.py` | Config loading, the real app boot, catalogs |
@@ -38,7 +37,6 @@ cd desktop; pnpm test; pnpm typecheck # desktop: vitest unit tests + tsc
 
 The fakes and helpers come from `tests/support.py` and the `tests/fake_*.py` files:
 - `ControlledFactory` / `ControlledRunner` script runner output step by step;
-- `FakeRouter` returns fixed picks;
 - `fake_codex_app_server.py` and `fake_codex_sdk_server.py` stand in for Codex through the real SDK;
 - `fake_streaming_cli.py` stands in for the Claude, Gemini and custom NDJSON CLIs.
 

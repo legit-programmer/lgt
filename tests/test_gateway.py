@@ -77,6 +77,7 @@ class FakeOrchestrator:
         kind: str = "channel",
         agent_ids: list[str] | None = None,
         cwd: str | None = None,
+        primary_agent_id: str | None = None,
     ) -> Channel:
         channel = Channel(
             channel_id=new_id(),
@@ -463,7 +464,7 @@ def test_search_does_not_return_channels_outside_human_membership(gateway_client
 
 def test_real_orchestrator_gateway_contracts(tmp_path):
     from lgt.orchestrator import Orchestrator
-    from tests.support import ControlledFactory, FakeRouter, settings
+    from tests.support import ControlledFactory, settings
 
     class Registry:
         prepared = []
@@ -487,7 +488,7 @@ def test_real_orchestrator_gateway_contracts(tmp_path):
             pass
 
     store = ThreadSafeStore(tmp_path / "real.sqlite3")
-    orch = Orchestrator(store, settings(tmp_path), FakeRouter([]), ControlledFactory(),
+    orch = Orchestrator(store, settings(tmp_path), ControlledFactory(),
                         lambda harness, sid, cwd: True, human_id="local",
                         harness_registry=Registry())
     with TestClient(_with_peer(create_app(orch)), base_url="http://127.0.0.1") as client:
@@ -519,7 +520,24 @@ def test_real_orchestrator_gateway_contracts(tmp_path):
         assert client.get("/me").json()["display_name"] == "Tester"
         assert client.get("/runs").json() == []
         assert client.get("/usage").json() == []
-        normal = client.post("/channels", json={"name": "temporary", "cwd": str(tmp_path)}).json()
+        for body in (
+            {"name": "empty"},
+            {"name": "missing primary", "agent_ids": [agent["agent_id"]]},
+            {"name": "invalid primary", "agent_ids": [agent["agent_id"]], "primary_agent_id": "missing"},
+            {"name": "null primary", "agent_ids": [agent["agent_id"]], "primary_agent_id": None},
+        ):
+            assert client.post("/channels", json=body).status_code == 400
+        assert client.patch(f"/channels/{channel_id}", json={"primary_agent_id": None}).status_code == 422
+        assert client.patch(f"/channels/{channel_id}", json={"primary_agent_id": "missing"}).status_code == 400
+        legacy = Channel(new_id(), "channel", "legacy", str(tmp_path), False)
+        store.create_channel(legacy, [("human", "local"), ("agent", agent["agent_id"])])
+        before = store.get_channel(legacy.channel_id).next_seq
+        assert client.post(f"/channels/{legacy.channel_id}/messages", json={"text": "start"}).status_code == 400
+        assert store.get_channel(legacy.channel_id).next_seq == before
+        selected = client.patch(f"/channels/{legacy.channel_id}", json={"primary_agent_id": agent["agent_id"]})
+        assert selected.status_code == 200 and selected.json()["primary_agent_id"] == agent["agent_id"]
+        assert client.get(f"/channels/{channel_id}/suggestions").status_code == 404
+        normal = client.post("/channels", json={"name": "temporary", "cwd": str(tmp_path), "agent_ids": [agent["agent_id"]], "primary_agent_id": agent["agent_id"]}).json()
         pending = store.append_event(normal["channel_id"], "message", "human", "local",
                                      {"text": "pending", "mentions": []})
         queued = store.enqueue(normal["channel_id"], pending.seq, state="awaiting_route")
@@ -529,7 +547,7 @@ def test_real_orchestrator_gateway_contracts(tmp_path):
         history = client.get(f"/channels/{normal['channel_id']}/events").json()
         assert history[-1]["kind"] == "channel_changed"
         assert client.post(f"/channels/{normal['channel_id']}/unarchive").json()["archived_at"] is None
-        boot = client.post("/bootstrap", json={"agent_templates": ["coder"], "cwd": str(tmp_path)})
+        boot = client.post("/bootstrap", json={"agent_templates": ["coder"], "primary_agent_template": "coder", "cwd": str(tmp_path)})
         assert boot.status_code == 201
         assert boot.json()["channel"]["name"] == "general"
         retired = client.post(f"/agents/{agent['agent_id']}/retire")

@@ -16,9 +16,22 @@ from lgt.orchestrator import Orchestrator
 from lgt.skills import ClaudeSkillDiscovery, CodexSkillDiscovery, _skill, ineligibility, metadata
 from lgt.store import Store
 from lgt.streaming_adapter import ClaudeRunner
-from tests.support import ControlledFactory, FakeRouter, eventually, settings
+from tests.support import ControlledFactory, eventually, settings
 from tests.test_codex_adapter import sample_turn
 from tests.test_gateway import ThreadSafeStore, _with_peer
+
+
+@pytest.fixture(autouse=True)
+def isolate_claude_discovery(tmp_path, monkeypatch):
+    # pytest's directory may live under a real user's .claude project tree.
+    # Keep installed skills outside this test's filesystem out of its catalog.
+    discover = ClaudeSkillDiscovery._discover
+
+    def within_test(self, cwd):
+        skills, errors = discover(self, cwd)
+        return [skill for skill in skills if Path(skill.path).is_relative_to(tmp_path)], errors
+
+    monkeypatch.setattr(ClaudeSkillDiscovery, "_discover", within_test)
 
 
 def install(root: Path, name="review", declaration="lgt:\n  required_tools: [Read]\n", **kwargs):
@@ -120,23 +133,22 @@ async def workspace(tmp_path):
     skill = install(tmp_path / "home" / "skills")
     store = Store(tmp_path / "workspace.db")
     factory = ControlledFactory()
-    router = FakeRouter(["coder"])
-    orch = Orchestrator(store, registry.settings, router, factory, lambda *args: True,
+    orch = Orchestrator(store, registry.settings, factory, lambda *args: True,
                         human_id="local", harness_registry=registry)
     orch.put_agent(Agent("coder", "coder", "Coder", "", "codex", "", ""))
     orch.put_agent(Agent("reviewer", "reviewer", "Reviewer", "", "claude", "", "", allowed_tools=["Read", "Skill"]))
     orch.put_agent(Agent("editor", "editor", "Editor", "", "claude", "", "", allowed_tools=["Read", "Write", "Skill"]))
-    channel = orch.create_channel("skills", agent_ids=["coder", "reviewer"], cwd=str(tmp_path))
+    channel = orch.create_channel("skills", agent_ids=["coder", "reviewer"], primary_agent_id="coder", cwd=str(tmp_path))
     store.set_primary_agent(channel.channel_id, "coder")
     await orch.start()
-    yield orch, store, factory, router, channel.channel_id, skill
+    yield orch, store, factory, channel.channel_id, skill
     await orch.close()
     store.close()
 
 
 @pytest.mark.asyncio
 async def test_channel_recommends_specialist_requires_selection_and_preserves_owner(workspace):
-    orch, store, factory, router, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     entry = (await orch.channel_skills(cid))["skills"][0]
     assert entry["status"] == "choose_agent" and entry["recommended_agent_id"] == "reviewer"
     assert entry["default_agent_id"] is None
@@ -148,14 +160,14 @@ async def test_channel_recommends_specialist_requires_selection_and_preserves_ow
     await eventually(lambda: len(factory.started) == 1)
     turn = factory.started[0].turn
     assert turn.agent.agent_id == "reviewer" and turn.skills[0].skill_id == skill.skill_id
-    assert skill.path in turn.prompt and "inspect this" in turn.prompt and "native Skill tool" in turn.prompt
-    assert store.get_channel(cid).primary_agent_id == "coder" and not router.calls
+    assert json.dumps(skill.path)[1:-1] in turn.prompt and "inspect this" in turn.prompt and "native Skill tool" in turn.prompt
+    assert store.get_channel(cid).primary_agent_id == "coder"
     assert next(event for event in store.events(cid) if event.kind == "routing_decision").payload["method"] == "skill"
 
 
 @pytest.mark.asyncio
 async def test_primary_defaults_even_when_multiple_agents_are_eligible(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     orch.add_member(cid, "editor")
     before = (await orch.channel_skills(cid))["skills"][0]
     assert before["default_agent_id"] is None and before["recommended_agent_id"] is None
@@ -198,7 +210,7 @@ def test_duplicate_claude_plugin_names_preserve_sources_but_disable_execution(tm
 
 @pytest.mark.asyncio
 async def test_successful_skills_and_ordinary_work_never_coalesce(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     await orch.send_message(cid, "initial work", ["reviewer"])
     await eventually(lambda: len(factory.started) == 1)
     first = await orch.invoke_skill(cid, skill.skill_id, "first invocation", "reviewer")
@@ -216,7 +228,7 @@ async def test_successful_skills_and_ordinary_work_never_coalesce(workspace):
 
 @pytest.mark.asyncio
 async def test_removed_queued_skill_fails_without_starting_a_harness(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     await orch.send_message(cid, "initial work", ["reviewer"])
     await eventually(lambda: len(factory.started) == 1)
     await orch.invoke_skill(cid, skill.skill_id, "later", "reviewer")
@@ -229,7 +241,7 @@ async def test_removed_queued_skill_fails_without_starting_a_harness(workspace):
 
 @pytest.mark.asyncio
 async def test_dm_lists_all_harnesses_but_only_its_agent_can_execute(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     dm = store.get_agent("coder").dm_channel_id
     entry = (await orch.channel_skills(dm))["skills"][0]
     assert entry["status"] == "unavailable" and entry["eligible_agent_ids"] == []
@@ -253,7 +265,7 @@ async def test_dm_lists_all_harnesses_but_only_its_agent_can_execute(workspace):
 
 @pytest.mark.asyncio
 async def test_permission_gate_outside_agents_raw_slashes_and_list(workspace, tmp_path):
-    orch, store, factory, _, cid, _ = workspace
+    orch, store, factory, cid, _ = workspace
     skill = install(tmp_path / "home" / "skills", "write", "lgt:\n  required_tools: [Write]\n")
     with pytest.raises(WorkspaceError, match="Write"):
         await orch.invoke_skill(cid, skill.skill_id, agent_id="reviewer")
@@ -275,7 +287,7 @@ async def test_permission_gate_outside_agents_raw_slashes_and_list(workspace, tm
 
 @pytest.mark.asyncio
 async def test_queue_revalidates_requirements_and_keeps_skills_separate(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     await orch.send_message(cid, "Ordinary work", ["reviewer"])
     await eventually(lambda: len(factory.started) == 1)
     await orch.invoke_skill(cid, skill.skill_id, "first", "reviewer")
@@ -291,7 +303,7 @@ async def test_queue_revalidates_requirements_and_keeps_skills_separate(workspac
 
 @pytest.mark.asyncio
 async def test_same_named_installations_need_explicit_source_and_partial_errors(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     codex = replace(skill, skill_id="codex-installation", harness="codex")
     orch.harness_registry.skill_adapters["codex"] = StaticDiscovery([codex])
     catalog = await orch.channel_skills(cid)
@@ -324,7 +336,7 @@ def test_native_codex_input_and_claude_runtime_denials(tmp_path):
 
 @pytest.mark.asyncio
 async def test_runtime_permission_failure_keeps_invocation_for_explicit_recovery(workspace):
-    orch, store, factory, _, cid, skill = workspace
+    orch, store, factory, cid, skill = workspace
     await orch.invoke_skill(cid, skill.skill_id, "my arguments", "reviewer")
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].emit("run_finished", ok=False, error={"code": "permission", "message": "Write was denied"})
@@ -339,7 +351,7 @@ def test_skill_http_contract_validates_sources_and_targets(tmp_path):
     registry = make_registry(tmp_path)
     skill = install(tmp_path / "home" / "skills")
     store = ThreadSafeStore(tmp_path / "http.db")
-    orch = Orchestrator(store, registry.settings, FakeRouter(), ControlledFactory(), lambda *args: True,
+    orch = Orchestrator(store, registry.settings, ControlledFactory(), lambda *args: True,
                         human_id="local", harness_registry=registry)
     orch.put_agent(Agent("a", "a", "A", "", "claude", "", "", allowed_tools=["Read", "Skill"]))
     cid = store.get_agent("a").dm_channel_id

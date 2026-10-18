@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this project is
 
-Lgt is a local, single-user workspace where one person talks to a team of AI coding agents. Each agent runs a coding CLI already installed on the machine (Codex, Claude Code, Gemini, or a custom stdio command). Agents work in DMs and in channels with shared primary ownership. Unmentioned messages use the primary; a router handles initial assignments and independent overlapping work.
+Lgt is a local, single-user workspace where one person talks to a team of AI coding agents. Each agent runs a coding CLI already installed on the machine (Codex, Claude Code, Gemini, or a custom stdio command). Agents work in DMs and in channels with shared primary ownership. New channels require members and an explicitly selected primary. Unmentioned messages always use the primary, including during overlapping work; agents hand off or delegate tasks themselves.
 
 The repo has two halves:
 
@@ -58,7 +58,7 @@ pnpm tauri dev                                    # needs the backend and allowe
 pnpm tauri build --no-bundle
 ```
 
-The desktop needs `settings.allowed_origins` to include `http://tauri.localhost`, `tauri://localhost` and `http://localhost:1420`. Sending messages, routing, suggestions and CLI checkpoints call real models, so use a scratch `data_dir` and cwd for experiments.
+The desktop needs `settings.allowed_origins` to include `http://tauri.localhost`, `tauri://localhost` and `http://localhost:1420`. Sending messages and CLI checkpoints call real models, so use a scratch `data_dir` and cwd for experiments.
 
 ## When you change something
 

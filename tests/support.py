@@ -4,15 +4,15 @@ import asyncio
 from pathlib import Path
 
 from lgt.config import Settings
-from lgt.models import NormalizedEvent, RoutingDecision
+from lgt.models import NormalizedEvent
 
 
 def settings(data_dir: Path, **overrides) -> Settings:
     values = dict(
         data_dir=data_dir, max_hops=3, tool_output_cap=65536, concurrent_runs=4,
-        replay_cap=5000, router_timeout_seconds=1, router_context_events=50,
-        route_after_active=False, session_ttl_seconds=None, router_model="haiku",
-        codex_router_model=None, router_attempts=2, ndjson_line_limit=1048576,
+        replay_cap=5000, startup_timeout_seconds=1, checkpoint_timeout_seconds=1,
+        session_ttl_seconds=None, checkpoint_claude_model="haiku",
+        checkpoint_codex_model=None, checkpoint_attempts=2, ndjson_line_limit=1048576,
         cancel_grace_seconds=0.1, checkpoint_threshold=100000,
         checkpoint_tail_chars=25000, checkpoint_summary_chars=10000,
         attachment_max_bytes=1048576,
@@ -58,16 +58,6 @@ class ControlledFactory:
 
     def __call__(self, harness):
         return ControlledRunner(self)
-
-
-class FakeRouter:
-    def __init__(self, picks=None):
-        self.picks = picks or []
-        self.calls = []
-
-    async def route(self, request):
-        self.calls.append(request)
-        return RoutingDecision(self.picks, "fixture")
 
 
 async def eventually(predicate, timeout=3):

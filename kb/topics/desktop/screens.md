@@ -3,7 +3,7 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-15
+updated: 2026-10-18
 related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
@@ -19,18 +19,18 @@ The composer lists skills across Codex and Claude installations through `/` and 
 | Design screen | Files | Backend |
 | --- | --- | --- |
 | Sidebar: DMs, channels, footer | `features/sidebar/Sidebar.tsx`, `ProfileDialog.tsx` | Channel summaries, agent statuses, `PATCH /me` |
-| 1. Channel view and detail panel | `features/channel/ChannelScreen.tsx` (headers, cwd menu, primary/router indicator and handoff toggle), `Timeline.tsx`, `blocks.tsx`, `Composer.tsx`, `DetailPanel.tsx` (Agents and Run tabs), `RenameDialog.tsx` | Events, messages, members, cwd, queue, cancel delivery, runs, run logs, limits, rename, archive, server-computed routing state and `allow_handoff` channel patch |
+| 1. Channel view and detail panel | `features/channel/ChannelScreen.tsx` (headers, cwd menu, primary indicator and handoff toggle), `Timeline.tsx`, `blocks.tsx`, `Composer.tsx`, `DetailPanel.tsx` (Agents and Run tabs), `RenameDialog.tsx` | Events, messages, members, cwd, queue, cancel delivery, runs, run logs, limits, rename, archive, server-computed routing state and `allow_handoff` channel patch |
 | 2. DM view | `ChannelScreen.tsx` (`DmHeader`) | `context` frames (messages in context, tokens), `/new` |
 | 3. New or edit agent | `features/agents/AgentForm.tsx` | `/harnesses`, `/harnesses/scan`, `/harnesses/custom/probe`, `POST /agents`, `PUT /agents/{id}`, `/agents/{id}/retire` |
-| 4. Empty channel | `features/channel/EmptyChannel.tsx` | `/channels/{id}/suggestions`, `/cwd` |
+| 4. Empty channel | `features/channel/EmptyChannel.tsx` | `/cwd` and channel membership/primary state |
 | 5. Onboarding | `features/onboarding/Onboarding.tsx` | `/harnesses`, `/templates`, `/bootstrap` |
-| New channel | `features/channel/NewChannelDialog.tsx` | `POST /channels` |
+| New channel | `features/channel/NewChannelDialog.tsx` | `POST /channels` with nonempty members and explicit `primary_agent_id` |
 | Ctrl/⌘ K palette | `features/palette/CommandPalette.tsx` | `/search`, `/unarchive` |
 
 ## Top bar
 
 `components/TopBar.tsx` holds the sidebar toggle, back/forward and the "new" menu. Each screen portals its header into it through `TopBarSlot`:
-- **Channel:** `#name`, working count and cwd menu as plain grey text, the primary/router pill; search, panel toggle, more, then a divider before the caption buttons.
+- **Channel:** `#name`, working count and cwd menu as plain grey text, the primary pill; search, panel toggle, more, then a divider before the caption buttons.
 - **DM:** avatar, handle, status, CLI and model, cwd, context stats; Fresh context, search, edit.
 - **Agent form:** "New agent" or "Edit …"; Retire.
 

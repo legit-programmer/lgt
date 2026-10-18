@@ -3,7 +3,7 @@ id: 20261008-context-and-sessions
 title: Context and sessions
 tags: [backend, context]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-18
 related: [20261008-run-lifecycle, 20261008-mutable-channel-cwd, 20261008-glossary, 20261008-live-state, 20261012-message-replies]
 summary: How a turn's prompt is rendered from the log, when a harness session is resumed versus rebuilt cold, how resets and edits invalidate sessions, and how checkpoints summarize old context.
 ---
@@ -54,7 +54,7 @@ Otherwise `cold_plan` starts from the newest valid checkpoint, or from the event
 
 - Every rendered append updates `channels.rendered_chars_since_checkpoint`.
 - After a completed run, when the counter passes `checkpoint_threshold`, `_maybe_checkpoint` keeps a tail of about `checkpoint_tail_chars` and asks the summarizer to compress the rest into at most `checkpoint_summary_chars`.
-- `CLISummarizer` (`lgt/summarizer.py`) uses Claude, then the Codex fallback, with the router model.
+- `CLISummarizer` (`lgt/summarizer.py`) uses Claude, then the Codex fallback, with the configured checkpoint model.
 - The result is appended as `context_checkpoint` with `covers_through_seq`, unless a reset or an edit inside the covered range happened while it was being generated.
 - Checkpoints only run when `checkpoint_mode` is `cli`.
 

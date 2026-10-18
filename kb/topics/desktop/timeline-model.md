@@ -3,7 +3,7 @@ id: 20261008-timeline-model
 title: Timeline model
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-15
+updated: 2026-10-18
 related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle, 20261012-message-replies]
 summary: The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
 ---
@@ -24,7 +24,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 | --- | --- | --- |
 | `human` | Human `message` | `message_edit` events are applied (edited text, `deleted`). A `queue` item marks it `queuedFor` (`awaiting_agent`) or `awaitingRoute`, which renders the dashed queued style with Cancel. Deleted messages are hidden. |
 | `run` | Agent `message`, `tool_call` and `tool_result` events with the same `run_id` | One block per **segment** of a run. A segment ends at a human message or a context reset, so later output appears after the interruption. A run with no output yet still gets a block at its `queued`/`running` status event. |
-| `routing` | `routing_decision` | "routed → chips · reason". For `none`, Add buttons for suggested agents that aren't members. |
+| `routing` | `routing_decision` | Recipient chips and reason. Historical router decisions remain readable; historical suggestions are text only. |
 | `run_end` | Terminal `run_status` that is `failed` or `cancelled` | Failure uses the server's `text`. Cancellation shows the duration. |
 | `divider` | `context_reset`, `context_checkpoint` | |
 | `notice` | `member_added`, `member_removed`, `cwd_changed`, `channel_changed`, `delivery_cancelled`, `ownership_changed`, `agent_transfer`, `system` | Ownership selections and transfer outcomes stay visible in history. |

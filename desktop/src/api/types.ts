@@ -168,7 +168,7 @@ export interface Channel {
 }
 
 export interface ChannelSummary extends Channel {
-  routing_mode: "router" | "primary" | "dm";
+  routing_mode: "primary" | "unassigned" | "dm";
   active_task_agent_ids: string[];
   members: Member[];
   last_activity_at: string;
@@ -394,9 +394,10 @@ export interface RunStatusPayload {
 export interface RoutingPayload {
   for_seqs: number[];
   agents: string[];
-  suggested_agents: string[];
+  /** Present only on historical router events. */
+  suggested_agents?: string[];
   method: "mention" | "router" | "primary" | "skill";
-  reason_code: "mention" | "router" | "primary" | "skill" | "router_failed_random" | "none";
+  reason_code: "mention" | "router" | "primary" | "skill" | "router_failed_random" | "none" | "unassigned";
   reason: string;
   error?: string;
 }

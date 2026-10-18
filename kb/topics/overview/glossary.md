@@ -3,7 +3,7 @@ id: 20261008-glossary
 title: Glossary
 tags: [overview]
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-18
 related: [20261008-system-overview, 20261008-event-store, 20261008-dispatch-and-queue, 20261008-context-and-sessions]
 summary: Definitions of the domain terms (agent, harness, channel, event, seq, chain, hop, run, session, delivery, checkpoint) as the code uses them.
 ---
@@ -26,7 +26,7 @@ summary: Definitions of the domain terms (agent, harness, channel, event, seq, c
 | Event | An immutable row in a channel's log. It has a per-channel `seq`, a global `id`, a `kind`, an author, and a payload. | `events` table |
 | seq / id | `seq` orders events within one channel; `id` orders them across all channels and is the WebSocket replay cursor (`last_id`). | `Store.append_event` |
 | Chain / hop | `chain_id` links a human message to every event it causes. `hop` counts agent-to-agent mention steps; `max_hops` stops loops. | `Orchestrator._output` |
-| Delivery / queue item | A pending hand-off of a message: `awaiting_route` (waiting for the router) or `awaiting_agent` (waiting for a busy agent). Later states are `dispatched`, `dropped` and `cancelled`. | `dispatch_queue` table |
+| Delivery / queue item | A pending hand-off of a message: `awaiting_agent` (waiting for an available agent); `awaiting_route` is a legacy storage state. Later states are `dispatched`, `dropped` and `cancelled`. | `dispatch_queue` table |
 | Run | One harness invocation for one agent in one channel. Statuses are `queued`, `starting`, `running`, `completed`, `failed` and `cancelled`. | `models.Run`, `runs` table |
 | Turn | What a runner receives: the run, the agent, the channel, the rendered prompt, the session, and attachments. | `models.Turn` |
 | Session | The harness's own conversation (`harness_session_id`) for an agent and channel pair. It is resumable only while it stays valid. | `agent_sessions` table |

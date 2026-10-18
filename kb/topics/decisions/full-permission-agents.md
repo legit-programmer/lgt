@@ -3,7 +3,7 @@ id: 20261008-full-permission-agents
 title: "Decision: agents run with full permissions"
 tags: [decision, security, harness]
 created: 2026-10-08
-updated: 2026-10-13
+updated: 2026-10-18
 related: [20261008-harness-adapters, 20261008-gateway-http, 20261008-open-gaps, 20261010-desktop-daemon, 20261012-device-pairing, 20261013-skill-invocation]
 summary: Why every specialist run bypasses interactive approvals, what each harness is passed, how tool allowlists still restrict Claude, and the security consequences for the local API.
 ---
@@ -24,7 +24,7 @@ Runs are headless; no one is there to approve a prompt. The cwd is a home base, 
 | Claude with an allowlist | `--tools`, `--allowedTools`, `--permission-mode dontAsk`, `--disallowedTools mcp__*` |
 | Claude without an allowlist | `--permission-mode bypassPermissions` |
 | Gemini | `--approval-mode yolo` |
-| Router and summarizer | Claude with `--tools ""` and `--dangerously-skip-permissions`; their Codex fallbacks get `--dangerously-bypass-approvals-and-sandbox` |
+| Summarizer | Claude with `--tools ""` and `--dangerously-skip-permissions`; its Codex fallback get `--dangerously-bypass-approvals-and-sandbox` |
 
 `permission_mode` must be `bypass`. Harnesses that can't enforce tool allowlists (Codex, Gemini) reject a nonempty `allowed_tools`, rather than ignoring it silently.
 

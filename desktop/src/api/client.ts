@@ -202,8 +202,8 @@ export const api = {
   harnessLimits: (harness: string) => get<HarnessLimits | null>(`/harnesses/${enc(harness)}/limits`),
 
   templates: () => get<Template[]>("/templates"),
-  bootstrap: (agent_templates: string[], cwd: string) =>
-    post<{ agents: Agent[]; channel: Channel }>("/bootstrap", { agent_templates, cwd }),
+  bootstrap: (agent_templates: string[], cwd: string, primary_agent_template: string) =>
+    post<{ agents: Agent[]; channel: Channel }>("/bootstrap", { agent_templates, cwd, primary_agent_template }),
   commands: () => get<Command[]>("/commands"),
   channelSkills: (channelId: string) => get<SkillCatalog>(`/channels/${enc(channelId)}/skills`),
   invokeSkill: (channelId: string, input: { skill_id: string; agent_id?: string; arguments?: string;
@@ -222,9 +222,11 @@ export const api = {
   retireAgent: (agentId: string) => post<Agent>(`/agents/${enc(agentId)}/retire`),
 
   channels: () => get<ChannelSummary[]>("/channels"),
-  createChannel: (body: { name: string; kind?: "channel" | "dm"; agent_ids?: string[]; cwd?: string | null }) =>
+  createChannel: (body: { name: string; kind?: "channel"; agent_ids: string[]; primary_agent_id: string; cwd?: string | null }) =>
     post<Channel>("/channels", body),
   renameChannel: (channelId: string, name: string) => patch<Channel>(`/channels/${enc(channelId)}`, { name }),
+  setPrimary: (channelId: string, primary_agent_id: string) =>
+    patch<Channel>(`/channels/${enc(channelId)}`, { primary_agent_id }),
   setHandoff: (channelId: string, allow_handoff: boolean) =>
     patch<Channel>(`/channels/${enc(channelId)}`, { allow_handoff }),
   archiveChannel: (channelId: string) => post<Channel>(`/channels/${enc(channelId)}/archive`),
@@ -232,7 +234,6 @@ export const api = {
   markRead: (channelId: string, seq: number) => post<ChannelSummary>(`/channels/${enc(channelId)}/read`, { seq }),
   context: (channelId: string, agentId?: string) =>
     get<ContextStats>(`/channels/${enc(channelId)}/context${query({ agent_id: agentId })}`),
-  suggestions: (channelId: string) => get<string[]>(`/channels/${enc(channelId)}/suggestions`),
   members: (channelId: string) => get<Member[]>(`/channels/${enc(channelId)}/members`),
   addMember: (channelId: string, agentId: string) =>
     post<Member[]>(`/channels/${enc(channelId)}/members`, { agent_id: agentId }),

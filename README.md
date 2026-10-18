@@ -1,6 +1,6 @@
 # Lgt
 
-Lgt is a local workspace where one person talks to a team of AI coding agents. Each agent is backed by a coding CLI on your machine. Agents work in direct messages and in channels with a shared primary agent for follow-ups. Agents can hand off ownership or delegate work, and a router assigns fresh conversations and handles independent overlapping tasks. Every channel keeps an append-only event log that survives restarts.
+Lgt is a local workspace where one person talks to a team of AI coding agents. Each agent is backed by a coding CLI on your machine. Agents work in direct messages and in channels with a shared primary agent for follow-ups. Choose channel members and a primary before starting a conversation. The primary handles unmentioned messages and can hand off ownership or delegate work. Every channel keeps an append-only event log that survives restarts.
 
 This repository holds the backend and the desktop app. The backend is a local FastAPI server with SQLite history, a WebSocket stream, and Codex, Claude Code, Gemini, and custom stdio agents. Codex uses the official `openai-codex` Python SDK. The desktop app in [`desktop/`](desktop/) is a Tauri shell with a React UI built from the design in [`design/`](design/).
 
@@ -31,7 +31,7 @@ uv run python -m lgt --config config.local.json
 
 The API documentation is then at <http://127.0.0.1:8000/docs>. `GET /harnesses` lists detected CLIs, models, and capabilities. Create an agent with one of those models; the server assigns its ID, avatar seed, hue, and DM. `GET /templates` and `POST /bootstrap` create starter agents and a general channel.
 
-The server binds to `127.0.0.1` by default. Requests use the same origin or an exact origin in `settings.allowed_origins`, such as `tauri://localhost` or `http://localhost:1420`. Remote listening requires device authentication; see [device pairing](docs/backend-reference.md#device-pairing-and-remote-access). It reuses your existing CLI sign-ins. The router calls the Claude CLI and falls back to the bundled Codex CLI.
+The server binds to `127.0.0.1` by default. Requests use the same origin or an exact origin in `settings.allowed_origins`, such as `tauri://localhost` or `http://localhost:1420`. Remote listening requires device authentication; see [device pairing](docs/backend-reference.md#device-pairing-and-remote-access). It reuses your existing CLI sign-ins.
 
 `config.local.json` must set the original runtime settings explicitly. Origin, upload quota, retention, and thumbnail settings have defaults for existing configurations. Set `checkpoint_mode` to `cli` to enable rolling context summaries, or `deferred` to turn them off.
 

@@ -400,7 +400,7 @@ class HarnessRegistry:
                       log_dir=self.settings.log_dir)
         if name == "codex":
             return CodexAppServerRunner(**kwargs, codex_bin=self.codex_bin,
-                startup_timeout_seconds=self.settings.router_timeout_seconds)
+                startup_timeout_seconds=self.settings.startup_timeout_seconds)
         if name == "claude":
             return ClaudeRunner(self.claude_command, **kwargs)
         if name == "gemini":

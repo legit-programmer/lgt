@@ -3,7 +3,7 @@ id: 20261008-repo-map
 title: Repo map
 tags: [overview]
 created: 2026-10-08
-updated: 2026-10-10
+updated: 2026-10-18
 related: [20261010-desktop-daemon, 20261008-system-overview, 20261008-desktop-architecture, 20261008-testing, 20261008-runtime-and-config, 20261008-glossary, 20261008-event-store, 20261008-dispatch-and-queue, 20261008-run-lifecycle, 20261008-context-and-sessions, 20261008-routing, 20261008-harness-adapters, 20261008-process-hosting, 20261008-attachments, 20261008-gateway-http, 20261008-websocket-protocol, 20261008-screens]
 summary: Every top-level folder and backend module with its responsibility, so you know which file to open for a given concern.
 ---
@@ -39,7 +39,6 @@ summary: Every top-level folder and backend module with its responsibility, so y
 | `schema.sql`, `store.py` | SQLite schema, migrations, triggers, FTS search, summaries, usage | [event store](../backend/event-store.md) |
 | `orchestrator.py` | Mailboxes, queue pump, routing, dispatch, run execution, state frames, checkpoints | [dispatch](../backend/dispatch-and-queue.md), [run lifecycle](../backend/run-lifecycle.md) |
 | `context.py` | Prompt rendering, session resume or cold plan | [context](../backend/context-and-sessions.md) |
-| `router.py` | `CLIRouter`: Claude, then Codex, routing and suggestions | [routing](../backend/routing.md) |
 | `summarizer.py` | `CLISummarizer` for checkpoint summaries | [context](../backend/context-and-sessions.md) |
 | `harnesses.py` | `HarnessRegistry`: discovery, catalogs, agent validation, runner factory | [harness adapters](../backend/harness-adapters.md) |
 | `codex_adapter.py` | Codex app-server runner (official SDK) | [harness adapters](../backend/harness-adapters.md) |

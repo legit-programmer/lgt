@@ -1,28 +1,26 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
 import pytest
 
-from lgt.models import Agent, RoutingDecision, WorkspaceError
+from lgt.models import Agent, WorkspaceError
 from lgt.orchestrator import Orchestrator
 from lgt.store import Store
 from lgt.transfers import parse_inline_transfers, parse_transfer
-from tests.support import ControlledFactory, FakeRouter, eventually, settings
+from tests.support import ControlledFactory, eventually, settings
 
 
 @pytest.fixture
 async def workspace(tmp_path):
     store = Store(tmp_path / "db.sqlite")
     factory = ControlledFactory()
-    router = FakeRouter(["coder"])
-    orch = Orchestrator(store, settings(tmp_path), router, factory, lambda *args: True, human_id="local")
+    orch = Orchestrator(store, settings(tmp_path), factory, lambda *args: True, human_id="local")
     for name in ["coder", "assistant", "reviewer"]:
         orch.put_agent(Agent(name, name, name, name + " specialist", "codex", "", "help"))
-    channel = orch.create_channel("test", agent_ids=["coder", "assistant", "reviewer"])
+    channel = orch.create_channel("test", agent_ids=["coder", "assistant", "reviewer"], primary_agent_id="coder")
     await orch.start()
-    yield orch, store, factory, router, channel.channel_id
+    yield orch, store, factory, channel.channel_id
     await orch.close()
     store.close()
 
@@ -39,10 +37,10 @@ def owner(store, cid):
 
 @pytest.mark.asyncio
 async def test_first_assignment_sticks_after_completion_and_is_shared_by_users(workspace):
-    orch, store, factory, router, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Create a web page")
     await eventually(lambda: len(factory.started) == 1)
-    assert len(router.calls) == 1 and owner(store, cid) == "coder"
+    assert owner(store, cid) == "coder"
     factory.started[0].finish("Created the page; tests passed")
     await eventually(lambda: not store.list_runs(cid, active_only=True))
     store.add_member(cid, "human", "another-user")
@@ -50,37 +48,33 @@ async def test_first_assignment_sticks_after_completion_and_is_shared_by_users(w
     await orch.send_message(cid, "Good work. Now make the button red")
     await eventually(lambda: len(factory.started) == 2)
     assert factory.started[1].turn.agent.agent_id == "coder"
-    assert len(router.calls) == 1
     assert store.channel_summary(cid, "local")["primary_agent_id"] == "coder"
     assert "assistant specialist" in factory.started[1].turn.prompt
     assert "allow_handoff" in factory.started[1].turn.prompt
 
 
 @pytest.mark.asyncio
-async def test_overlap_uses_router_and_restores_selected_owner_without_completion_stealing(workspace):
-    orch, store, factory, router, cid = workspace
+async def test_overlap_keeps_selected_primary_without_completion_stealing(workspace):
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Code", ["coder"])
     await orch.send_message(cid, "Schedule", ["assistant"])
     await eventually(lambda: len(factory.started) == 2)
-    assert owner(store, cid) == "assistant" and not router.calls
-    assert store.routing_state(cid)["routing_mode"] == "router"
-    router.picks = ["assistant"]
-    await orch.send_message(cid, "Move it to noon")
-    await eventually(lambda: len(router.calls) == 1 and bool(store.queue(cid, "awaiting_agent")))
-    assert all(r["busy"] for r in router.calls[0].roster if r["agent_id"] != "reviewer")
-    factory.started[0].finish("Code complete")
-    await eventually(lambda: store.routing_state(cid)["routing_mode"] == "primary")
     assert owner(store, cid) == "assistant"
+    assert store.routing_state(cid)["routing_mode"] == "primary"
+    message = await orch.send_message(cid, "Move it to noon")
+    assert [(q.event_seq, q.agent_id) for q in store.queue(cid, "awaiting_agent")] == [(message.seq, "assistant")]
+    assert not store.queue(cid, "awaiting_route")
+    factory.started[0].finish("Code complete")
     factory.started[1].finish("Meeting scheduled")
     await eventually(lambda: len(factory.started) == 3)
+    assert factory.started[2].turn.agent.agent_id == "assistant"
     factory.started[2].finish()
     await eventually(lambda: not store.list_runs(cid, active_only=True))
     assert owner(store, cid) == "assistant"
 
-
 @pytest.mark.asyncio
-async def test_delegation_preserves_owner_and_does_not_enable_router(workspace):
-    orch, store, factory, router, cid = workspace
+async def test_delegation_preserves_owner(workspace):
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Create a site", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].emit("message", text="@reviewer review these changes")
@@ -88,7 +82,6 @@ async def test_delegation_preserves_owner_and_does_not_enable_router(workspace):
     assert owner(store, cid) == "coder"
     assert store.routing_state(cid) == {"routing_mode": "primary", "active_task_agent_ids": ["coder"]}
     await orch.send_message(cid, "Also make the button red")
-    assert not router.calls
     assert store.queue(cid, "awaiting_agent")[-1].agent_id == "coder"
     factory.started[1].finish("Review passed")
     factory.started[0].finish("Done")
@@ -98,12 +91,12 @@ async def test_delegation_preserves_owner_and_does_not_enable_router(workspace):
 
 @pytest.mark.asyncio
 async def test_accepted_handoff_transfers_ownership_and_allows_return_handoff(workspace):
-    orch, store, factory, router, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Schedule a meeting", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     transfer(factory.started[0], "handoff", "assistant")
     await eventually(lambda: owner(store, cid) == "assistant")
-    assert len(factory.started) == 2 and not router.calls
+    assert len(factory.started) == 2
     assert store.routing_state(cid) == {"routing_mode": "primary", "active_task_agent_ids": ["assistant"]}
     factory.started[0].finish("The assistant has the task")
     await eventually(lambda: store.get_run(factory.started[0].turn.run.run_id).status == "completed")
@@ -117,7 +110,7 @@ async def test_accepted_handoff_transfers_ownership_and_allows_return_handoff(wo
 
 @pytest.mark.asyncio
 async def test_disabled_handoff_can_still_delegate(workspace):
-    orch, store, factory, router, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.patch_channel(cid, allow_handoff=False)
     await orch.send_message(cid, "Work", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
@@ -127,13 +120,13 @@ async def test_disabled_handoff_can_still_delegate(workspace):
     assert len(factory.started) == 1 and owner(store, cid) == "coder"
     transfer(factory.started[0], "delegation", "assistant")
     await eventually(lambda: len(factory.started) == 2)
-    assert owner(store, cid) == "coder" and not router.calls
+    assert owner(store, cid) == "coder"
     assert store.routing_state(cid)["routing_mode"] == "primary"
 
 
 @pytest.mark.asyncio
 async def test_delayed_handoff_cannot_override_newer_user_selection(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "A new task", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     transfer(factory.started[0], "delegation", "assistant", "An existing delegated calendar task")
@@ -150,21 +143,19 @@ async def test_delayed_handoff_cannot_override_newer_user_selection(workspace):
 
 
 @pytest.mark.asyncio
-async def test_router_mode_prevents_specialist_handoff(workspace):
-    orch, store, factory, _, cid = workspace
+async def test_overlap_allows_current_primary_handoff(workspace):
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Calendar", ["assistant"])
     await orch.send_message(cid, "Code", ["coder"])
     await eventually(lambda: len(factory.started) == 2)
-    assert owner(store, cid) == "coder" and store.routing_state(cid)["routing_mode"] == "router"
+    assert owner(store, cid) == "coder" and store.routing_state(cid)["routing_mode"] == "primary"
     transfer(factory.started[1], "handoff", "reviewer")
-    await eventually(lambda: any(e.kind == "agent_transfer" and e.payload["status"] == "rejected"
-                                 for e in store.events(cid)))
-    assert owner(store, cid) == "coder" and len(factory.started) == 2
-
+    await eventually(lambda: owner(store, cid) == "reviewer")
+    assert len(factory.started) == 3
 
 @pytest.mark.asyncio
 async def test_handoff_is_not_coalesced_with_surrounding_delegation(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Work", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     transfer(factory.started[0], "delegation", "reviewer", "Initial review")
@@ -187,7 +178,7 @@ async def test_handoff_is_not_coalesced_with_surrounding_delegation(workspace):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("invalidate", ["disable", "remove_source"])
 async def test_pending_handoff_rechecks_policy_and_source_membership(workspace, invalidate):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Task", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     transfer(factory.started[0], "delegation", "assistant", "Initial delegated work")
@@ -207,7 +198,7 @@ async def test_pending_handoff_rechecks_policy_and_source_membership(workspace, 
 
 @pytest.mark.asyncio
 async def test_cancel_before_receiver_starts_does_not_transfer_ownership(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Task", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     for _ in range(3):
@@ -222,54 +213,47 @@ async def test_cancel_before_receiver_starts_does_not_transfer_ownership(workspa
 
 
 @pytest.mark.asyncio
-async def test_stale_router_result_cannot_override_explicit_selection(workspace):
-    orch, store, factory, router, cid = workspace
-    entered, release = asyncio.Event(), asyncio.Event()
-    async def delayed_route(request):
-        entered.set()
-        await release.wait()
-        return RoutingDecision(["coder"], "Initial assignment")
-    router.route = delayed_route
-    await orch.send_message(cid, "Create a site")
-    await entered.wait()
-    await orch.send_message(cid, "Schedule a meeting", ["assistant"])
-    release.set()
-    await eventually(lambda: len(factory.started) == 2)
+async def test_explicit_primary_selection_controls_next_unmentioned_message(workspace):
+    orch, store, factory, cid = workspace
+    await orch.patch_channel(cid, primary_agent_id="assistant")
+    await orch.send_message(cid, "Schedule a meeting")
+    await eventually(lambda: len(factory.started) == 1)
+    assert factory.started[0].turn.agent.agent_id == "assistant"
     assert owner(store, cid) == "assistant"
-    assert [e.payload["reason"] for e in store.events(cid) if e.kind == "ownership_changed"] == ["user_selection"]
-
 
 @pytest.mark.asyncio
-async def test_independent_delivery_to_delegate_enables_router_and_stays_separate(workspace):
-    orch, store, factory, _, cid = workspace
+async def test_independent_delivery_to_delegate_keeps_primary_and_stays_separate(workspace):
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Code", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     transfer(factory.started[0], "delegation", "reviewer", "Review this code")
     await eventually(lambda: len(factory.started) == 2)
     await orch.send_message(cid, "Review an unrelated project", ["reviewer"])
-    assert store.routing_state(cid)["routing_mode"] == "router"
+    assert store.routing_state(cid)["routing_mode"] == "primary"
     factory.started[1].finish()
     await eventually(lambda: len(factory.started) == 3)
     run = store.get_run(factory.started[2].turn.run.run_id)
     assert run.task_owner_id == "reviewer"
-    assert store.routing_state(cid)["routing_mode"] == "router"
+    assert store.routing_state(cid)["routing_mode"] == "primary"
 
 
 @pytest.mark.asyncio
-async def test_removing_primary_falls_back_to_router(workspace):
-    orch, store, factory, router, cid = workspace
-    await orch.send_message(cid, "Code", ["coder"])
-    await eventually(lambda: len(factory.started) == 1)
+async def test_removing_primary_requires_explicit_replacement(workspace):
+    orch, store, factory, cid = workspace
     await orch.remove_member(cid, "coder")
-    router.picks = ["assistant"]
+    assert store.routing_state(cid)["routing_mode"] == "unassigned"
+    before = len(store.events(cid))
+    with pytest.raises(WorkspaceError):
+        await orch.send_message(cid, "Schedule")
+    assert len(store.events(cid)) == before
+    await orch.patch_channel(cid, primary_agent_id="assistant")
     await orch.send_message(cid, "Schedule")
-    await eventually(lambda: owner(store, cid) == "assistant")
-    assert len(router.calls) == 1
-
+    await eventually(lambda: len(factory.started) == 1)
+    assert factory.started[0].turn.agent.agent_id == "assistant"
 
 @pytest.mark.asyncio
 async def test_ownership_and_handoff_setting_survive_restart(workspace, tmp_path):
-    orch, store, factory, router, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.patch_channel(cid, allow_handoff=False)
     await orch.send_message(cid, "Code", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
@@ -277,14 +261,13 @@ async def test_ownership_and_handoff_setting_survive_restart(workspace, tmp_path
     await eventually(lambda: not store.list_runs(cid, active_only=True))
     await orch.close()
     reopened = Store(tmp_path / "db.sqlite")
-    second = Orchestrator(reopened, orch.settings, router, factory, lambda *args: True, human_id="local")
+    second = Orchestrator(reopened, orch.settings, factory, lambda *args: True, human_id="local")
     try:
         await second.start()
         assert not reopened.get_channel(cid).allow_handoff
         assert owner(reopened, cid) == "coder"
         await second.send_message(cid, "Make it red")
         await eventually(lambda: len(factory.started) == 2)
-        assert not router.calls
     finally:
         await second.close()
         reopened.close()
@@ -305,7 +288,7 @@ def test_transfer_controls_require_a_complete_valid_message():
 
 @pytest.mark.asyncio
 async def test_nonprimary_cannot_transfer_ownership(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Code", ["coder"])
     await orch.send_message(cid, "Calendar", ["assistant"])
     await eventually(lambda: len(factory.started) == 2)
@@ -316,23 +299,21 @@ async def test_nonprimary_cannot_transfer_ownership(workspace):
 
 
 @pytest.mark.asyncio
-async def test_multiple_mentions_and_router_assignments_have_deterministic_owners(workspace):
-    orch, store, factory, router, cid = workspace
+async def test_multiple_mentions_select_last_recipient_for_followups(workspace):
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Both work", ["coder", "assistant"])
     await eventually(lambda: len(factory.started) == 2)
     assert owner(store, cid) == "assistant"
-    router.picks = ["reviewer", "coder"]
     await orch.send_message(cid, "Review the work")
-    await eventually(lambda: owner(store, cid) == "reviewer")
-    assert store.routing_state(cid)["routing_mode"] == "router"
+    assert store.queue(cid, "awaiting_agent")[0].agent_id == "assistant"
+    assert store.routing_state(cid)["routing_mode"] == "primary"
     for runner in factory.started[:2]:
         runner.finish()
-    await eventually(lambda: len(factory.started) == 4)
+    await eventually(lambda: len(factory.started) == 3)
+    assert factory.started[2].turn.agent.agent_id == "assistant"
     factory.started[2].finish()
-    factory.started[3].finish()
     await eventually(lambda: not store.list_runs(cid, active_only=True))
-    assert owner(store, cid) == "reviewer" and store.routing_state(cid)["routing_mode"] == "primary"
-
+    assert owner(store, cid) == "assistant"
 
 @pytest.mark.parametrize("text", [
     "`<@reviewer:delegation>`",
@@ -361,7 +342,7 @@ def test_inline_transfers_allow_prose_and_reject_multiple_handoffs():
 
 @pytest.mark.asyncio
 async def test_inline_transfers_dispatch_only_complete_message_with_full_context(workspace):
-    orch, store, factory, router, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Implement", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     text = "I read the requirements. <@assistant:delegation> Check scheduling. <@reviewer:delegation> Review code."
@@ -381,12 +362,12 @@ async def test_inline_transfers_dispatch_only_complete_message_with_full_context
         assigned = json.loads(routing[routing.index("{\"primary_agent_id\""):])["assigned_messages"]
         assert assigned[0]["text"] == text
         assert assigned[0]["transfers"] == message.payload["transfers"]
-    assert owner(store, cid) == "coder" and not router.calls
+    assert owner(store, cid) == "coder"
 
 
 @pytest.mark.asyncio
 async def test_mixed_inline_handoff_and_delegation_accept_only_handoff_recipient(workspace, monkeypatch):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Implement", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     frames = []
@@ -405,7 +386,7 @@ async def test_mixed_inline_handoff_and_delegation_accept_only_handoff_recipient
 
 @pytest.mark.asyncio
 async def test_rejected_inline_handoff_still_dispatches_delegation(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.patch_channel(cid, allow_handoff=False)
     await orch.send_message(cid, "Implement", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
@@ -419,7 +400,7 @@ async def test_rejected_inline_handoff_still_dispatches_delegation(workspace):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("text", ["<@outside:delegation> Check", "<@coder:delegation> Check", "<@assistant:handoff> <@reviewer:handoff>"])
 async def test_invalid_inline_transfers_fail_without_partial_dispatch(workspace, text):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Implement", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].emit("message", text=text)
@@ -431,7 +412,7 @@ async def test_invalid_inline_transfers_fail_without_partial_dispatch(workspace,
 
 @pytest.mark.asyncio
 async def test_code_examples_and_cancelled_stream_do_not_dispatch(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "Implement", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     factory.started[0].emit("message", text="Example: `<@reviewer:delegation>` and `@assistant`\n```\n<@assistant:handoff>\n```")
@@ -445,7 +426,7 @@ async def test_code_examples_and_cancelled_stream_do_not_dispatch(workspace):
 
 @pytest.mark.asyncio
 async def test_human_typed_transfer_is_not_an_ownership_request(workspace):
-    orch, store, factory, _, cid = workspace
+    orch, store, factory, cid = workspace
     await orch.send_message(cid, "<@assistant:handoff> Example", ["coder"])
     await eventually(lambda: len(factory.started) == 1)
     assert factory.started[0].turn.agent.agent_id == "coder"
