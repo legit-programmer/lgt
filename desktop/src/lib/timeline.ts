@@ -7,6 +7,10 @@ import type {
  * Turns a channel's event log into the timeline blocks of the design:
  * human messages, agent run segments with their tool groups, routing
  * notices, run failures, and dividers. Pure, so it is unit tested.
+ *
+ * Routine delivery to the channel primary has no notice: the reply that follows
+ * already shows who answered. Only mentions, skills, historic router picks and
+ * deliveries that reached nobody keep their line.
  */
 
 export interface ToolEntry {
@@ -179,6 +183,7 @@ export function buildTimeline(
       case "run_status": {
         const payload = event.payload as unknown as RunStatusPayload;
         if (payload.status === "failed" || payload.status === "cancelled") {
+          if (payload.status === "failed" && event.run_id) dropEchoedFailure(lastSegment.get(event.run_id), payload);
           blocks.push({ type: "run_end", key: `end:${event.seq}`, event: as<RunStatusPayload>(event) });
         } else if (event.run_id && !lastSegment.has(event.run_id) && ACTIVE.has(payload.status)) {
           // A run with no output yet still shows its working header here.
@@ -186,9 +191,12 @@ export function buildTimeline(
         }
         break;
       }
-      case "routing_decision":
+      case "routing_decision": {
+        const payload = event.payload as unknown as RoutingPayload;
+        if (payload.reason_code === "primary" && payload.agents.length) break;
         blocks.push({ type: "routing", key: `route:${event.seq}`, event: as<RoutingPayload>(event) });
         break;
+      }
       case "context_reset":
         closeSegments();
         blocks.push({ type: "divider", key: `div:${event.seq}`, variant: "reset", event });
@@ -197,7 +205,13 @@ export function buildTimeline(
         blocks.push({ type: "divider", key: `div:${event.seq}`, variant: "checkpoint", event });
         break;
       default:
-        if (NOTICE_KINDS.has(event.kind)) blocks.push({ type: "notice", key: `note:${event.seq}`, event });
+        if (!NOTICE_KINDS.has(event.kind)) break;
+        // Back-to-back handoff toggles collapse into the setting that stuck.
+        if (isHandoffToggle(event)) {
+          const previous = blocks.at(-1);
+          if (previous?.type === "notice" && isHandoffToggle(previous.event)) blocks.pop();
+        }
+        blocks.push({ type: "notice", key: `note:${event.seq}`, event });
     }
   }
 
@@ -219,6 +233,18 @@ export function buildTimeline(
         && previous.runId === block.runId) block.cont = true;
   }
   return visible;
+}
+
+function isHandoffToggle(event: WorkspaceEvent): boolean {
+  return event.kind === "channel_changed" && (event.payload as { allow_handoff?: boolean }).allow_handoff !== undefined;
+}
+
+/** A CLI that prints its error as a message and then fails says it twice; the failure line keeps it. */
+function dropEchoedFailure(segment: RunBlock | undefined, payload: RunStatusPayload) {
+  const failure = payload.text ?? payload.error?.message;
+  const last = segment?.messages.at(-1);
+  const text = last?.payload.text.trim();
+  if (failure && text && failure.includes(text)) segment!.messages.pop();
 }
 
 function syntheticCall(event: WorkspaceEvent): WorkspaceEvent<ToolCallPayload> {

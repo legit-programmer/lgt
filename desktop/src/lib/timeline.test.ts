@@ -81,6 +81,36 @@ describe("buildTimeline", () => {
     expect(blocks.map((b) => b.type)).toEqual(["run_end", "divider", "notice", "routing"]);
   });
 
+  it("hides routine delivery to the primary and keeps mention routing", () => {
+    const route = (seq: number, code: string, agents: string[]) =>
+      ev(seq, "routing_decision", { for_seqs: [seq - 1], agents, method: code, reason_code: code, reason: code });
+    const blocks = buildTimeline([
+      human(1, "hi"), route(2, "primary", ["a1"]),
+      human(3, "@a2 ping"), route(4, "mention", ["a2"]),
+      human(5, "anyone?"), route(6, "primary", []),
+    ], {});
+    expect(blocks.map((b) => b.type)).toEqual(["human", "human", "routing", "human", "routing"]);
+  });
+
+  it("collapses back-to-back handoff toggles into the last one", () => {
+    const blocks = buildTimeline([
+      ev(1, "channel_changed", { allow_handoff: false }),
+      ev(2, "channel_changed", { allow_handoff: true }),
+      ev(3, "channel_changed", { name: "renamed" }),
+    ], {});
+    expect(blocks.map((b) => (b.type === "notice" ? b.event.seq : null))).toEqual([2, 3]);
+  });
+
+  it("drops an agent message that only repeats its run's failure", () => {
+    const blocks = buildTimeline([
+      human(1, "ping"),
+      agentMsg(2, "r1", "Failed to authenticate"),
+      ev(3, "run_status", { run_id: "r1", agent_id: "a1", status: "failed",
+        text: "claude exited 1 (Failed to authenticate) after 4s" }, { run_id: "r1" }),
+    ], { r1: { status: "failed", agent_id: "a1" } });
+    expect(blocks.map((b) => b.type)).toEqual(["human", "run_end"]);
+  });
+
   it("keeps ownership and transfer notices in the conversation", () => {
     const blocks = buildTimeline([
       human(1, "Schedule a meeting"),

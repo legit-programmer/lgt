@@ -13,7 +13,7 @@ vi.mock("../../components/ProviderLogo", () => ({ ProviderLogo: () => <span /> }
 vi.mock("../../components/AgentInference", () => ({ AgentInference: ({ children }: { children: ReactNode }) => <>{children}</> }));
 
 const agent = { agent_id: "a1", handle: "builder", harness: "codex", model: "m", reasoning_effort: null, retired_at: null } as Agent;
-const channel = { channel_id: "c1", name: "work", kind: "channel", active_runs: [] } as unknown as ChannelSummary;
+const channel = { channel_id: "c1", name: "work", kind: "channel", cwd: "/home/sam/work", cwd_managed: false, allow_handoff: true, primary_agent_id: "a1", active_runs: [] } as unknown as ChannelSummary;
 const run = { run_id: "r1", agent_id: "a1", channel_id: "c1", status: "failed", started_at: new Date().toISOString(), tokens_total: 2400 } as Run;
 
 beforeEach(() => {
@@ -39,10 +39,12 @@ function mount() {
 
 it("shows the server's last run, context and usage on the agent card", async () => {
   mount();
-  const last = await screen.findByRole("button", { name: /failed · now · 2.4k tok/ });
+  const last = await screen.findByRole("button", { name: /Failed · now · 2.4k tokens/ });
   expect(mocks.runs).toHaveBeenCalledWith({ channel_id: "c1", agent_id: "a1", limit: 1 });
-  expect(screen.getByText("12 msgs · 41k / 200k")).toBeTruthy();
-  expect(screen.getByText("9k tok · 3 runs")).toBeTruthy();
+  expect(screen.getByText("41k of 200k")).toBeTruthy();
+  expect(screen.getByRole("meter", { name: "Context window used" }).getAttribute("aria-valuenow")).toBe("21");
+  expect(screen.getByText("12 messages")).toBeTruthy();
+  expect(screen.getByText("9k tokens · 3 runs")).toBeTruthy();
   fireEvent.click(last);
   expect(useUi.getState()).toMatchObject({ detailTab: "run", runFilterAgentId: "a1", selectedRunId: "r1" });
 });

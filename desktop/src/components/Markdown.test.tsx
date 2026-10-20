@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Markdown } from "./Markdown";
 
 const agents = {
-  agentone: { handle: "builder" },
+  agentone: { handle: "builder", hue: 3 },
   agenttwo: { handle: "reviewer" },
 };
 const handles = new Set(["builder", "reviewer"]);
@@ -40,6 +40,7 @@ describe("Markdown agent mentions", () => {
 
     expect(container.textContent).toBe("Ask @builder and @unknown.");
     expect(container.querySelectorAll(".fv-mention")).toHaveLength(1);
+    expect(container.querySelector(".fv-mention")?.classList.contains("fv-hue-green")).toBe(true);
   });
 
   it("renders the streaming caret inline with the final paragraph", () => {

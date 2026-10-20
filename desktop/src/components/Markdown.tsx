@@ -1,6 +1,7 @@
 import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { hueName } from "../lib/agents";
 
 interface MdNode {
   type: string;
@@ -11,8 +12,11 @@ interface MdNode {
 
 const INLINE_TRANSFER_OR_MENTION = /<@([\w.:-]+):(handoff|delegation)>|(?<![\w@])@([\w.:-]+)/g;
 
-/** Wraps known @handles and transfer targets in mention spans; code and links are left alone. */
-function remarkMentions(handles: ReadonlySet<string>, agents: Readonly<Record<string, { handle: string }>>, caret: boolean) {
+type MentionAgents = Readonly<Record<string, { handle: string; hue?: number | null }>>;
+
+/** Wraps known @handles and transfer targets in mention spans, in the agent's hue; code and links are left alone. */
+function remarkMentions(handles: ReadonlySet<string>, agents: MentionAgents, caret: boolean) {
+  const byHandle = new Map(Object.values(agents).map((agent) => [agent.handle, agent]));
   return () => (tree: MdNode) => {
     const walk = (node: MdNode) => {
       if (!node.children || node.type === "link" || node.type === "inlineCode" || node.type === "code") return;
@@ -35,7 +39,7 @@ function remarkMentions(handles: ReadonlySet<string>, agents: Readonly<Record<st
           if (start > last) next.push({ type: "text", value: value.slice(last, start) });
           next.push({
             type: "mention",
-            data: { hName: "span", hProperties: { className: ["fv-mention"] } },
+            data: { hName: "span", hProperties: { className: ["fv-mention", ...hueClass(byHandle.get(handle))] } },
             children: [{ type: "text", value: `@${handle}` }],
           });
           last = start + match[0].length;
@@ -66,6 +70,10 @@ function remarkMentions(handles: ReadonlySet<string>, agents: Readonly<Record<st
   };
 }
 
+function hueClass(agent: { hue?: number | null } | undefined): string[] {
+  return agent && agent.hue !== undefined ? [`fv-hue-${hueName(agent.hue)}`] : [];
+}
+
 const components: Components = {
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>
@@ -75,7 +83,7 @@ const components: Components = {
 interface MarkdownProps {
   text: string;
   handles: ReadonlySet<string>;
-  agents: Readonly<Record<string, { handle: string }>>;
+  agents: MentionAgents;
   caret?: boolean;
 }
 

@@ -480,7 +480,7 @@ button.topbar-quiet:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-200);
-  max-width: 1100px;
+  max-width: var(--size-conversation);
   margin: 0 auto;
   /* Room for the floating composer, so the newest message rests above it. */
   padding-bottom: var(--composer-h, 0px);
@@ -577,7 +577,7 @@ button.topbar-quiet:hover {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-400);
-  max-width: 1100px;
+  max-width: var(--size-conversation);
   margin: 0 auto;
   padding: var(--space-300) var(--space-400);
   border: 1px solid var(--stroke-1);
@@ -608,7 +608,7 @@ button.topbar-quiet:hover {
 
 .composer {
   position: relative;
-  max-width: 1100px;
+  max-width: var(--size-conversation);
   margin: 0 auto;
   border-radius: var(--radius-xl);
   border: 1px solid var(--glass-line);
@@ -733,7 +733,45 @@ button.topbar-quiet:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-200) 0;
+  padding: var(--space-100) 0;
+}
+
+.detail-title {
+  margin: 0;
+  font: var(--type-title);
+  font-size: 15px;
+  color: var(--text-1);
+}
+
+/* Channel facts close the Agents tab, a tone step apart from the cards. */
+.detail-section {
+  display: grid;
+  gap: var(--space-250);
+  margin-top: var(--space-300);
+  padding-top: var(--space-400);
+  border-top: 1px solid var(--stroke-1);
+}
+
+.channel-facts dd {
+  font: var(--type-meta);
+  font-size: 13px;
+}
+
+.channel-facts-path {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-050);
+  min-width: 0;
+}
+
+.channel-facts-path .fv-mono {
+  font: var(--type-meta-mono);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.channel-facts-note {
+  color: var(--text-3);
 }
 
 .detail-empty {
@@ -754,12 +792,32 @@ button.topbar-quiet:hover {
 
 .agent-card-text {
   display: grid;
+  gap: var(--space-050);
   flex: 1;
   min-width: 0;
 }
 
+.agent-card-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-200);
+  min-width: 0;
+}
+
+.agent-card-primary {
+  padding: 1px var(--space-150);
+  border-radius: var(--radius-xs);
+  background: var(--surface-4);
+  color: var(--text-2);
+  font: var(--type-meta);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .agent-card-facts {
-  padding: var(--space-250) 0 0;
+  display: grid;
+  gap: var(--space-300);
+  padding: var(--space-300) 0 0;
   border-top: 1px solid var(--stroke-1);
 }
 
@@ -771,7 +829,64 @@ button.topbar-quiet:hover {
 }
 
 .agent-card-now {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-2);
+  font-size: 13px;
+}
+
+/* Context: the figure, a thin meter in ink, and the share. Near the window's end the
+   meter, figure and words turn to the failed colour, since the next turn may not fit. */
+.context-meter {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: var(--space-100) var(--space-400);
+  font-size: 13px;
+}
+
+.context-meter-label {
+  color: var(--text-3);
+}
+
+.context-meter-value {
+  justify-self: end;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-meter-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  margin: var(--space-100) 0;
+  border-radius: var(--radius-full);
+  background: var(--well);
+  overflow: hidden;
+}
+
+.context-meter-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-2);
+}
+
+.context-meter-percent {
+  justify-self: end;
+  color: var(--text-3);
+  font: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-meter.is-full .context-meter-value,
+.context-meter.is-full .context-meter-percent {
+  color: var(--failed-text);
+}
+
+.context-meter.is-full .context-meter-bar span {
+  background: var(--failed);
 }
 
 .agent-card-link {
@@ -788,15 +903,12 @@ button.topbar-quiet:hover {
   text-decoration: underline;
 }
 
-.agent-card-link.is-failed {
-  color: var(--failed-text);
-}
-
 .agent-card-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-150);
+  gap: var(--space-100);
+  margin: 0 calc(-1 * var(--space-200)) calc(-1 * var(--space-150));
 }
 
 .run-filters {
@@ -888,8 +1000,8 @@ button.topbar-quiet:hover {
 .run-facts dd {
   margin: 0;
   text-align: right;
-  font: var(--type-meta-mono);
   color: var(--text-1);
+  font-variant-numeric: tabular-nums;
 }
 
 .run-subhead {
@@ -1419,8 +1531,6 @@ button.topbar-quiet:hover {
 .palette-group [cmdk-group-heading] {
   padding: var(--space-200) var(--space-250) var(--space-100);
   font: var(--type-label);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
   color: var(--text-3);
 }
 

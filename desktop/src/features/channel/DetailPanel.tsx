@@ -4,14 +4,14 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bot, ListFilter, MoreHorizontal, Pencil, PlusCircle, RefreshCw, Square, UserMinus, X } from "lucide-react";
+import { ArrowLeft, Bot, History, MoreHorizontal, Pencil, PlusCircle, RefreshCw, Square, UserMinus, X } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/client";
-import type { Agent, ChannelSummary, HarnessLimits, LimitWindow, Run } from "../../api/types";
+import type { Agent, ChannelSummary, ContextStats, HarnessLimits, LimitWindow, Run } from "../../api/types";
 import { AgentAvatar } from "../../components/Avatar";
 import { StatusBadge } from "../../components/Status";
-import { activeAgents, cliLine, hueStyle } from "../../lib/agents";
-import { clockTime, duration, plural, relativeTime, tokens } from "../../lib/format";
+import { activeAgents, cliTitle, hueStyle } from "../../lib/agents";
+import { clockTime, duration, plural, relativeTime, shortPath, tokens } from "../../lib/format";
 import { useUi } from "../../store/ui";
 import { contextKey, reportError, useWorkspace } from "../../store/workspace";
 
@@ -24,7 +24,7 @@ export function DetailPanel({ channel, members }: { channel: ChannelSummary; mem
       <div className="detail-head">
         <div className="fv-tabs" role="tablist">
           <button role="tab" aria-selected={tab === "agents"} onClick={() => setTab("agents")}>Agents</button>
-          <button role="tab" aria-selected={tab === "run"} onClick={() => setTab("run")}>Run</button>
+          <button role="tab" aria-selected={tab === "run"} onClick={() => setTab("run")}>Runs</button>
         </div>
         <button className="fv-icon-btn" aria-label="Close panel" onClick={() => setOpen(false)}><X /></button>
       </div>
@@ -39,11 +39,33 @@ function AgentsTab({ channel, members }: { channel: ChannelSummary; members: Age
   return (
     <div className="detail-body">
       <div className="detail-section-head">
-        <span className="fv-label">In this channel · {members.length}</span>
+        <h2 className="detail-title">{members.length ? plural(members.length, "agent") : "No agents yet"}</h2>
         <AddAgentButton channel={channel} members={members} />
       </div>
       {members.map((agent) => <AgentCard key={agent.agent_id} agent={agent} channel={channel} />)}
+      <ChannelFacts channel={channel} members={members} />
     </div>
+  );
+}
+
+/** How this channel routes and where its agents work: the server's channel state. */
+function ChannelFacts({ channel, members }: { channel: ChannelSummary; members: Agent[] }) {
+  const primary = members.find((agent) => agent.agent_id === channel.primary_agent_id);
+  return (
+    <section className="detail-section" aria-label="Channel settings">
+      <h2 className="detail-title">Channel</h2>
+      <dl className="run-facts channel-facts">
+        <dt>Primary</dt>
+        <dd>{primary ? <span className="fv-name" style={hueStyle(primary)}>{primary.handle}</span> : "Not chosen"}</dd>
+        <dt>Handoffs</dt>
+        <dd>{channel.allow_handoff ? "Allowed" : "Off"}</dd>
+        <dt>Folder</dt>
+        <dd className="channel-facts-path" title={channel.cwd}>
+          {channel.cwd_managed ? <span className="channel-facts-note">Managed by Lgt</span> : null}
+          <span className="fv-mono">{shortPath(channel.cwd)}</span>
+        </dd>
+      </dl>
+    </section>
   );
 }
 
@@ -111,24 +133,29 @@ function AgentCard({ agent, channel }: { agent: Agent; channel: ChannelSummary }
     }
   };
 
+  const primary = channel.primary_agent_id === agent.agent_id;
+
   return (
     <div className="fv-card agent-card">
       <div className="agent-card-top">
         {/* The badge carries the status here; a ring on the avatar would repeat it. */}
         <AgentAvatar agent={agent} />
         <div className="agent-card-text">
-          <span className="fv-name" style={hueStyle(agent)}><AgentInference agent={agent}>{agent.handle}</AgentInference></span>
-          <span className="fv-meta fv-mono fv-provider-label"><ProviderLogo harness={agent.harness} />{cliLine(agent, harnesses.data)}</span>
+          <span className="agent-card-name">
+            <span className="fv-name" style={hueStyle(agent)}><AgentInference agent={agent}>{agent.handle}</AgentInference></span>
+            {primary ? <span className="agent-card-primary">Primary</span> : null}
+          </span>
+          <span className="fv-meta fv-provider-label"><ProviderLogo harness={agent.harness} />{cliTitle(agent, harnesses.data)}</span>
         </div>
         <StatusBadge state={state} since={state === "working" ? here?.started_at : undefined} />
       </div>
       <AgentFacts agent={agent} channel={channel} working={state === "working"} />
       <div className="agent-card-actions">
-        <button className="fv-btn fv-btn--sm" onClick={() => showRuns(agent.agent_id)}>
-          <ListFilter /> Runs{running ? ` · ${running} running` : ""}
+        <button className="fv-btn fv-btn--ghost fv-btn--sm" onClick={() => showRuns(agent.agent_id)}>
+          <History /> Runs{running ? ` · ${running} running` : ""}
         </button>
         <button className="fv-btn fv-btn--ghost fv-btn--sm" onClick={() => navigate({ kind: "agent-edit", agentId: agent.agent_id, returnTo: view })}>
-          <Pencil /> Edit config
+          <Pencil /> Edit
         </button>
         <span className="conversation-head-spacer" />
         <DropdownMenu.Root>
@@ -182,25 +209,55 @@ function AgentFacts({ agent, channel, working }: { agent: Agent; channel: Channe
   // The activity is per agent, so it only names this channel's work when that is the agent's one run.
   const activity = working && status?.active_runs.length === 1 ? status.activity : null;
   return (
-    <dl className="run-facts agent-card-facts">
-      {activity ? <><dt>Now</dt><dd className="agent-card-now" title={activity.summary}>{activity.summary}</dd></> : null}
-      <dt>Last run</dt>
-      <dd>
-        {run ? (
-          <button className={`agent-card-link${run.status === "failed" ? " is-failed" : ""}`}
-            onClick={() => showRuns(agent.agent_id, run.run_id)}>
-            {run.status} · {run.started_at ? relativeTime(run.started_at) : "queued"} · {tokens(run.tokens_total)} tok
-          </button>
-        ) : last.isSuccess ? "none here" : "–"}
-      </dd>
-      <dt>Context</dt>
-      <dd>
-        {stats ? `${plural(stats.messages_in_context, "msg")}${stats.context_tokens !== null ? ` · ${tokens(stats.context_tokens)}` : ""}${
-          stats.model_context_window ? ` / ${tokens(stats.model_context_window)}` : ""}` : "–"}
-      </dd>
-      <dt>All channels</dt>
-      <dd>{usage ? `${tokens(usage.tokens_total)} tok · ${plural(usage.run_count, "run")}` : "no runs"}</dd>
-    </dl>
+    <div className="agent-card-facts">
+      {activity ? <p className="agent-card-now" title={activity.summary}>{activity.summary}</p> : null}
+      <ContextMeter stats={stats} />
+      <dl className="run-facts">
+        <dt>Last run</dt>
+        <dd>
+          {run ? (
+            <button className="agent-card-link" onClick={() => showRuns(agent.agent_id, run.run_id)}>
+              {capitalize(run.status)} · {run.started_at ? relativeTime(run.started_at) : "queued"} · {tokens(run.tokens_total)} tokens
+            </button>
+          ) : last.isSuccess ? "None here" : "–"}
+        </dd>
+        <dt title="Token use across every channel">All channels</dt>
+        <dd>{usage ? `${tokens(usage.tokens_total)} tokens · ${plural(usage.run_count, "run")}` : "No runs"}</dd>
+      </dl>
+    </div>
+  );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Context in this channel, with a meter when the model's window is known. */
+function ContextMeter({ stats }: { stats: ContextStats | undefined }) {
+  const used = stats?.context_tokens ?? null;
+  const window = stats?.model_context_window ?? null;
+  const messages = stats ? plural(stats.messages_in_context, "message") : null;
+  if (!stats || used === null || !window) {
+    return (
+      <div className="context-meter">
+        <span className="context-meter-label">Context</span>
+        <span className="context-meter-value">{!stats ? "–" : used === null ? messages : `${tokens(used)} tokens · ${messages}`}</span>
+      </div>
+    );
+  }
+  const percent = Math.min(100, Math.round((used / window) * 100));
+  const full = percent >= 90;
+  return (
+    <div className={`context-meter${full ? " is-full" : ""}`}>
+      <span className="context-meter-label">Context</span>
+      <span className="context-meter-value">{tokens(used)} of {tokens(window)}</span>
+      <span className="context-meter-bar" role="meter" aria-label="Context window used"
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span style={{ width: `${percent}%` }} />
+      </span>
+      <span className="fv-meta">{messages}</span>
+      <span className="context-meter-percent">{full ? `${percent}% · nearly full` : `${percent}%`}</span>
+    </div>
   );
 }
 
@@ -227,7 +284,7 @@ function RunTab({ channel, members }: { channel: ChannelSummary; members: Agent[
   return (
     <div className="detail-body">
       <div className="detail-section-head">
-        <span className="fv-label">Runs in #{channel.name}</span>
+        <h2 className="detail-title">Runs in #{channel.name}</h2>
       </div>
       <div className="run-filters">
         <button className="fv-chip" aria-pressed={filter === null} data-active={filter === null} onClick={() => showRuns(null)}>All agents</button>
@@ -364,7 +421,7 @@ function Limits({ harness, limits }: { harness: string; limits: HarnessLimits | 
   if (!visible.length) return null;
   return (
     <>
-      <div className="fv-label run-subhead">{harness} plan usage</div>
+      <div className="fv-label run-subhead">{capitalize(harness)} plan usage</div>
       {visible.map(([label, value]) => (
         <div key={label} className="limit-row">
           <div className="limit-row-top">

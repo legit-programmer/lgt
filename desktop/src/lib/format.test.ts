@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { splitArgs } from "../features/agents/AgentForm";
-import { bytes, clock, duration, middleTruncate, shortPath, tokens } from "./format";
+import { bytes, clock, duration, middleTruncate, relativePaths, relativeTime, shortPath, tokens } from "./format";
 
 describe("format", () => {
   it("formats durations, clocks, tokens and sizes like the design", () => {
@@ -16,6 +16,21 @@ describe("format", () => {
   it("shortens home paths and keeps both ends of long ones", () => {
     expect(shortPath(String.raw`C:\Users\sam\code\lgt`)).toBe("~/code/lgt");
     expect(middleTruncate("abcdefghijklmnopqrstuvwxyz", 11)).toBe("abcd…uvwxyz");
+  });
+
+  it("writes tool paths relative to the working directory", () => {
+    const cwd = String.raw`C:\Users\sam\code\lgt`;
+    expect(relativePaths(String.raw`C:\Users\sam\code\lgt\lgt\processes.py`, cwd)).toBe(String.raw`lgt\processes.py`);
+    expect(relativePaths("c:/users/sam/code/lgt/README.md:14", cwd)).toBe("README.md:14");
+    expect(relativePaths(String.raw`grep in C:\Users\sam\code\lgt`, cwd)).toBe("grep in .");
+    expect(relativePaths(String.raw`C:\Users\sam\code\lgt-other\x`, cwd)).toBe(String.raw`~\code\lgt-other\x`);
+    expect(relativePaths(String.raw`C:\Users\sam\AppData\x.json`, null)).toBe(String.raw`~\AppData\x.json`);
+  });
+
+  it("capitalizes weekdays in recency", () => {
+    const now = new Date(2026, 9, 20, 12).getTime();
+    const label = relativeTime(new Date(2026, 9, 17, 12).toISOString(), now);
+    expect(label.charAt(0)).toBe(label.charAt(0).toUpperCase());
   });
 
   it("splits command lines into argv", () => {

@@ -96,7 +96,7 @@ export function Sidebar() {
           <PersonAvatar name={displayName} size="lg" />
           <span className="sidebar-foot-text">
             <span className="sidebar-foot-name">{displayName}</span>
-            <span className="fv-label">
+            <span className="fv-meta">
               {agents.length} {agents.length === 1 ? "agent" : "agents"} · {working} working
             </span>
           </span>

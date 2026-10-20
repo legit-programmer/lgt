@@ -22,7 +22,7 @@ const message: WorkspaceEvent<MessagePayload> = {
   payload: { text: "Choose **option B** today.", mentions: [] },
 };
 const ctx: BlockContext = {
-  channelId: "channel", agents: {}, memberIds: new Set(), handles: new Set(),
+  channelId: "channel", isDm: false, cwd: "", agents: {}, memberIds: new Set(), handles: new Set(),
   displayName: "You", runs: {}, onReply: vi.fn(),
 };
 const draft: ReplyDraft = {

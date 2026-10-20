@@ -407,7 +407,6 @@ export function AgentForm({ agentId }: { agentId: string | null }) {
               <div>
                 <div className="fv-msg-head">
                   <span className="fv-name" style={hueStyle(previewAgent)}>{form.handle || "new-agent"}</span>
-                  <span className="fv-cli"><span className="via">via</span><ProviderLogo harness={form.harness} />{harnessLabel(form.harness || "cli")}</span>
                   <span className="fv-meta">now</span>
                 </div>
                 <p className="preview-text">

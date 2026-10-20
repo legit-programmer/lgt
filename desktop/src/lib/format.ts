@@ -4,7 +4,7 @@ function toDate(value: string | number | Date): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-/** Sidebar-style recency: now, 3m, 2h, tue, 12 Sep. */
+/** Sidebar-style recency: now, 3m, 2h, Tue, 12 Sep. */
 export function relativeTime(value: string | null | undefined, now = Date.now()): string {
   if (!value) return "";
   const date = toDate(value);
@@ -13,7 +13,7 @@ export function relativeTime(value: string | null | undefined, now = Date.now())
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
   const today = new Date(now);
   if (diff < DAY_MS && today.getDate() === date.getDate()) return `${Math.floor(diff / 3_600_000)}h`;
-  if (diff < 6 * DAY_MS) return date.toLocaleDateString(undefined, { weekday: "short" }).toLowerCase();
+  if (diff < 6 * DAY_MS) return date.toLocaleDateString(undefined, { weekday: "short" });
   return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
@@ -95,4 +95,24 @@ export function middleTruncate(text: string, max = 48): string {
 
 export function displayPath(path: string, max = 48): string {
   return middleTruncate(shortPath(path), max);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Tool rows name files relative to the channel's working directory:
+ * C:\Users\me\code\lgt\lgt\app.py -> lgt\app.py, and other paths under home start with ~.
+ */
+export function relativePaths(text: string, cwd: string | null | undefined): string {
+  let out = text;
+  const root = cwd?.replace(/[\\/]+$/, "");
+  if (root) {
+    // Either slash style, any case: Windows paths are case-insensitive.
+    const pattern = root.split(/[\\/]+/).map(escapeRegExp).join("[\\\\/]");
+    out = out.replace(new RegExp(`${pattern}[\\\\/]`, "gi"), "")
+      .replace(new RegExp(`${pattern}(?![\\w.-])`, "gi"), ".");
+  }
+  return out.replace(/\b[A-Za-z]:[\\/]Users[\\/][^\\/\s"']+/gi, "~");
 }

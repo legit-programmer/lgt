@@ -89,13 +89,15 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
 
   const ctx = useMemo<BlockContext>(() => ({
     channelId,
+    isDm: channel?.kind === "dm",
+    cwd: channel?.cwd ?? "",
     agents: agentsById,
     memberIds: new Set(members.map((a) => a.agent_id)),
     handles: new Set(Object.values(agentsById).map((a) => a.handle)),
     displayName: me?.display_name ?? "You",
     runs,
     onReply,
-  }), [channelId, agentsById, members, me?.display_name, runs, onReply]);
+  }), [channelId, channel?.kind, channel?.cwd, agentsById, members, me?.display_name, runs, onReply]);
 
   if (!channel) return null;
   const isDm = channel.kind === "dm";
@@ -155,7 +157,8 @@ function CwdButton({ channel }: { channel: ChannelSummary }) {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <button className="topbar-quiet topbar-quiet--mono header-chip" title={channel.cwd}>
-          <Folder /> <span className="chip-text">{displayPath(channel.cwd)}</span>
+          {/* A managed folder's path is an internal id; the full path stays in the tooltip and the panel. */}
+          <Folder /> <span className="chip-text">{channel.cwd_managed ? "Managed folder" : displayPath(channel.cwd)}</span>
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>

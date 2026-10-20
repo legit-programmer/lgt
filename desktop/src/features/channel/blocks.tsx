@@ -1,9 +1,8 @@
 import { AgentInference } from "../../components/AgentInference";
-import { ProviderLogo } from "../../components/ProviderLogo";
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowRight, Ban, Bookmark, ChevronDown, ChevronRight, Clock, CornerDownLeft, FileText, Folder,
-  Hash, Reply, RotateCcw, Square, UserMinus, UserPlus, X,
+  ArrowLeftRight, ArrowRight, Ban, Bookmark, ChevronDown, ChevronRight, Clock, CornerDownLeft, FileText, Folder,
+  Hash, History, Pencil, Reply, RotateCcw, Square, UserMinus, UserPlus, X,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
@@ -13,10 +12,11 @@ import type {
 import { AgentAvatar, PersonAvatar } from "../../components/Avatar";
 import { Markdown } from "../../components/Markdown";
 import { Elapsed, StatusBadge, WorkingDots } from "../../components/Status";
-import { harnessLabel, hueStyle } from "../../lib/agents";
-import { bytes, clockTime, dayTime, displayPath, duration } from "../../lib/format";
+import { hueStyle } from "../../lib/agents";
+import { bytes, clockTime, dayTime, displayPath, duration, relativePaths } from "../../lib/format";
 import { toolGroupSummary, toolName, type HumanBlock, type RunBlock, type ToolEntry } from "../../lib/timeline";
 import { downloadAttachment, useBlobUrl } from "../../lib/media";
+import { useUi } from "../../store/ui";
 import { reportError, useWorkspace, type RunInfo } from "../../store/workspace";
 import { replySelection } from "../../lib/reply-selection";
 import { ReplyQuoteView } from "./ReplyQuote";
@@ -24,6 +24,10 @@ import { SkillRecovery } from "./SkillRecovery";
 
 export interface BlockContext {
   channelId: string;
+  /** DMs have no detail panel, so run links are channel-only. */
+  isDm: boolean;
+  /** The channel's working directory; tool rows show paths relative to it. */
+  cwd: string;
   agents: Record<string, Agent>;
   memberIds: ReadonlySet<string>;
   handles: ReadonlySet<string>;
@@ -50,7 +54,7 @@ function MessageContent({ message, text, ctx }: { message: WorkspaceEvent<Messag
         {selection ? (
           <button className="fv-btn fv-btn--ghost fv-btn--sm" aria-label={`Reply to selected text in message #${message.seq}`}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => ctx.onReply(message.seq, selection)}><Reply /> Reply to selection</button>
+            onClick={() => ctx.onReply(message.seq, selection)}><Reply /> Quote</button>
         ) : null}
       </div>
     </div>
@@ -184,7 +188,6 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
         {!block.cont ? (
           <div className="fv-msg-head">
             <span className="fv-name" style={hueStyle(agent)}>{agent ? <AgentInference agent={agent}>{agent.handle}</AgentInference> : "agent"}</span>
-            {agent ? <span className="fv-cli"><span className="via">via</span><ProviderLogo harness={agent.harness} />{harnessLabel(agent.harness)}</span> : null}
             {live ? (
               <StatusBadge state={queuedRun ? "queued" : "working"} since={queuedRun ? undefined : run?.started_at ?? block.ts}
                 label={queuedRun ? "waiting for a run slot" : undefined} />
@@ -206,7 +209,7 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
             <p className="partial-text fv-meta">Starting…</p>
           ) : null}
         </div>
-        {block.tools.length ? <ToolList tools={block.tools} live={live} /> : null}
+        {block.tools.length ? <ToolList tools={block.tools} live={live} cwd={ctx.cwd} /> : null}
       </div>
       {live && block.runId && !block.cont ? (
         <div className="fv-msg-actions">
@@ -219,7 +222,7 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
   );
 }
 
-function ToolList({ tools, live }: { tools: ToolEntry[]; live: boolean }) {
+function ToolList({ tools, live, cwd }: { tools: ToolEntry[]; live: boolean; cwd: string }) {
   const [open, setOpen] = useState(false);
   // A live run shows its rows; finished groups of two or more collapse.
   if (live || tools.length === 1) {
@@ -232,7 +235,7 @@ function ToolList({ tools, live }: { tools: ToolEntry[]; live: boolean }) {
             <span className="fv-tool-summary">{tools.length - visible.length} earlier tools</span>
           </div>
         ) : null}
-        {visible.map((entry) => <ToolRow key={entry.call.seq} entry={entry} />)}
+        {visible.map((entry) => <ToolRow key={entry.call.seq} entry={entry} cwd={cwd} />)}
       </div>
     );
   }
@@ -252,12 +255,13 @@ function ToolList({ tools, live }: { tools: ToolEntry[]; live: boolean }) {
           {summary.durationMs ? duration(summary.durationMs) : null}
         </span>
       </button>
-      {open ? tools.map((entry) => <ToolRow key={entry.call.seq} entry={entry} child />) : null}
+      {/* A long group scrolls inside its well instead of pushing the reply away. */}
+      {open ? <div className="fv-tool-group-rows">{tools.map((entry) => <ToolRow key={entry.call.seq} entry={entry} cwd={cwd} child />)}</div> : null}
     </div>
   );
 }
 
-function ToolRow({ entry, child }: { entry: ToolEntry; child?: boolean }) {
+function ToolRow({ entry, cwd, child }: { entry: ToolEntry; cwd: string; child?: boolean }) {
   const [open, setOpen] = useState(false);
   const call: ToolCallPayload = entry.call.payload;
   const result: ToolResultPayload | undefined = entry.result?.payload;
@@ -271,14 +275,14 @@ function ToolRow({ entry, child }: { entry: ToolEntry; child?: boolean }) {
         onClick={() => setOpen(!open)} aria-expanded={open} disabled={pending && !call.input}>
         {pending ? <span className="tool-glyph"><WorkingDots /></span> : open ? <ChevronDown /> : <ChevronRight />}
         <span className="fv-tool-name">{toolName(call)}</span>
-        <span className="fv-tool-summary">{call.summary ?? ""}</span>
+        <span className="fv-tool-summary" title={call.summary ?? undefined}>{relativePaths(call.summary ?? "", cwd)}</span>
         <span className="fv-tool-meta">
           {pending ? <Elapsed since={entry.call.ts} /> : duration(result?.duration_ms)}
         </span>
       </button>
       {!pending && firstLine && !open ? (
         <div className="fv-tool-result">
-          <span className="tool-result-line"><CornerDownLeft size={11} /> {firstLine}</span>
+          <span className="tool-result-line"><CornerDownLeft size={11} /> {relativePaths(firstLine, cwd)}</span>
           <span>{result?.lines !== undefined ? `${result.lines} lines · ` : ""}{bytes(result?.bytes)}</span>
         </div>
       ) : null}
@@ -321,14 +325,28 @@ export function RoutingNotice({ event, ctx }: { event: WorkspaceEvent<RoutingPay
 export function RunEnd({ event, ctx }: { event: WorkspaceEvent<RunStatusPayload>; ctx: BlockContext }) {
   const payload = event.payload;
   const agent = ctx.agents[payload.agent_id];
+  const showRuns = useUi((s) => s.showRuns);
+  const navigate = useUi((s) => s.navigate);
   if (payload.status === "failed") {
+    const skillFailure = ["permission", "skill_unavailable"].includes(payload.error?.code ?? "");
     return (
       <div className="fv-run fv-run--failed" role="alert">
-        <Square fill="currentColor" />
-        <AgentChip agent={agent} />
-        <span>run failed · {payload.text ?? payload.error?.message ?? "the harness reported an error"}</span>
-        {["permission", "skill_unavailable"].includes(payload.error?.code ?? "")
-          ? <SkillRecovery channelId={ctx.channelId} payload={payload} /> : null}
+        <div className="fv-run-head">
+          <span className="fv-run-state"><Square fill="currentColor" /> Run failed</span>
+          <AgentChip agent={agent} />
+        </div>
+        <p className="fv-run-detail">{payload.text ?? payload.error?.message ?? "The harness reported an error."}</p>
+        <div className="fv-run-actions">
+          {skillFailure ? <SkillRecovery channelId={ctx.channelId} payload={payload} /> : agent ? (
+            <button className="fv-btn fv-btn--sm" onClick={() => navigate({ kind: "agent-edit", agentId: agent.agent_id,
+              returnTo: { kind: "channel", channelId: ctx.channelId } })}><Pencil /> Edit {agent.handle}</button>
+          ) : null}
+          {!ctx.isDm ? (
+            <button className="fv-btn fv-btn--ghost fv-btn--sm" onClick={() => showRuns(payload.agent_id, payload.run_id)}>
+              <History /> View run
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -382,7 +400,7 @@ export function Notice({ event, ctx }: { event: WorkspaceEvent; ctx: BlockContex
     case "channel_changed":
       return (
         <div className="fv-notice">
-          <Hash />
+          {payload.allow_handoff !== undefined ? <ArrowLeftRight /> : <Hash />}
           <span>{payload.archived_at ? "channel archived" : payload.allow_handoff !== undefined ?
             `agent handoffs ${payload.allow_handoff ? "enabled" : "disabled"}` : `channel is now #${String(payload.name)}`}</span>
         </div>

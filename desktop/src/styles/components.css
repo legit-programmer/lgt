@@ -44,10 +44,9 @@ select {
   background: var(--accent-soft-strong);
 }
 
+/* Sentence case at a readable size; uppercase tracked labels read as template chrome. */
 .fv-label {
   font: var(--type-label);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
   color: var(--text-3);
 }
 
@@ -377,7 +376,7 @@ select {
   border-color: color-mix(in srgb, var(--h) 28%, transparent);
   background: color-mix(in srgb, var(--h) 12%, transparent);
   color: var(--h);
-  font: 600 12px/1 var(--font-mono);
+  font: 600 12px/1 var(--font-sans);
 }
 
 .fv-chip svg {
@@ -422,13 +421,23 @@ select {
   font: var(--type-meta-mono);
 }
 
+/* Mentions take the agent's hue, like every other agent reference; amber stays "act here". */
 .fv-mention {
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-xs);
-  background: var(--accent-soft-strong);
-  color: var(--accent-text);
-  font: 500 0.92em/1.4 var(--font-mono);
+  background: color-mix(in srgb, var(--h, var(--text-2)) 16%, transparent);
+  color: var(--h, var(--text-1));
+  font-weight: 600;
 }
+
+.fv-hue-violet { --h: var(--agent-violet); }
+.fv-hue-sky { --h: var(--agent-sky); }
+.fv-hue-pink { --h: var(--agent-pink); }
+.fv-hue-green { --h: var(--agent-green); }
+.fv-hue-lime { --h: var(--agent-lime); }
+.fv-hue-plum { --h: var(--agent-plum); }
+.fv-hue-indigo { --h: var(--agent-indigo); }
+.fv-hue-sand { --h: var(--agent-sand); }
 
 /* Avatars and names ------------------------------------------------------- */
 
@@ -731,19 +740,27 @@ select {
   align-items: center;
 }
 
-/* Reply floats over the message's top-right corner and shows on hover or focus,
-   so a long conversation isn't striped with identical buttons. */
+/* Message text keeps a reading measure, and Reply floats in the gutter just past
+   its right edge on hover or focus, so it never covers words and a long
+   conversation isn't striped with identical buttons. */
 .fv-reply-message {
   position: relative;
 }
 
+.fv-message-text,
+.fv-reply-message > .fv-reply-quote,
+.partial-text {
+  max-width: min(var(--measure), 100% - var(--reply-gutter));
+}
+
 .fv-reply-actions {
   position: absolute;
-  /* Small enough to stay inside the row's paint containment (.timeline-inner > *). */
-  top: calc(-1 * var(--space-300));
-  right: 0;
+  top: 0;
+  left: calc(min(var(--measure), 100% - var(--reply-gutter)) + var(--space-200));
   z-index: 3;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-050);
   padding: var(--space-050);
   border-radius: var(--radius-md);
@@ -752,12 +769,6 @@ select {
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms var(--ease);
-}
-
-/* Stop and Cancel own the row's top-right corner. */
-.fv-msg--live .fv-reply-actions,
-.fv-msg--queued .fv-reply-actions {
-  top: 0;
 }
 
 .fv-reply-message:hover > .fv-reply-actions,
@@ -769,8 +780,15 @@ select {
 
 /* Touch screens have no hover, so the action stays in the flow there. */
 @media (hover: none) {
+  .fv-message-text,
+  .fv-reply-message > .fv-reply-quote,
+  .partial-text {
+    max-width: var(--measure);
+  }
+
   .fv-reply-actions {
     position: static;
+    flex-direction: row;
     margin: var(--space-100) 0 var(--space-200);
     padding: 0;
     background: none;
@@ -796,10 +814,17 @@ select {
   font: var(--type-body);
 }
 
-/* The person's messages: a faint fill, no outline, so they stand apart without
-   being the strongest edge on the paneless timeline (owner override of accent-soft). */
-.fv-msg--human {
+/* The person's messages: a faint fill fitted to the text, no outline, so a short
+   "hi" is a small bubble rather than a full-width card. */
+.fv-msg--human:not(.fv-msg--queued) .fv-message-text {
+  width: fit-content;
+  padding: var(--space-150) var(--space-300);
+  border-radius: var(--radius-lg);
   background: var(--glass-pane-raised);
+}
+
+.fv-msg--human:not(.fv-msg--queued) .fv-msg-body > :first-child {
+  margin-top: var(--space-150);
 }
 
 .fv-msg--cont {
@@ -888,6 +913,7 @@ select {
 
 .fv-tools {
   grid-column: 2;
+  max-width: min(var(--measure), 100%);
   margin-top: var(--space-250);
   border-radius: var(--radius-lg);
   border: 1px solid var(--stroke-1);
@@ -952,6 +978,12 @@ button.fv-tool:hover {
 
 .fv-tool--child {
   padding-left: var(--space-600);
+}
+
+.fv-tool-group-rows {
+  max-height: 420px;
+  overflow-y: auto;
+  border-top: 1px solid var(--stroke-1);
 }
 
 .fv-tool--error {
@@ -1028,10 +1060,46 @@ button.fv-tool:hover {
   flex: none;
 }
 
+/* A failure: the glyph and the word carry the status colour; the reason reads in
+   ordinary ink, and the card offers what to do next. */
 .fv-run--failed {
+  display: grid;
+  gap: var(--space-200);
+  max-width: var(--measure);
   border-color: color-mix(in srgb, var(--failed) 30%, transparent);
   background: var(--failed-soft);
+  color: var(--text-1);
+}
+
+.fv-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-250);
+}
+
+.fv-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-150);
   color: var(--failed-text);
+  font-weight: 600;
+}
+
+.fv-run-detail {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.fv-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-200);
+}
+
+.fv-run-actions:empty {
+  display: none;
 }
 
 .fv-divider {
