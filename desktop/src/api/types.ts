@@ -340,6 +340,7 @@ export interface ReplyRequest {
 }
 
 export interface MessagePayload {
+  artefact?: Artefact & { cwd: string };
   text: string;
   mentions: string[];
   author_handle?: string;
@@ -426,7 +427,16 @@ export interface ConnectionInfo {
   local_admin: boolean;
 }
 
+export interface Artefact {
+  name: string;
+  path: string;
+  kind: "markdown" | "html" | "pdf";
+  size_bytes: number;
+  revision: string;
+}
+
 export type ServerFrame =
+  | { type: "artefact_open"; channel_id: string; artefact: Artefact & { cwd: string } }
   | { type: "event"; event: WorkspaceEvent }
   | { type: "delta"; run_id: string; channel_id: string; text: string }
   | { type: "partial_snapshot"; run_id: string; channel_id: string; text: string }

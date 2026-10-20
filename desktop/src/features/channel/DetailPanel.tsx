@@ -1,3 +1,4 @@
+import { ArtefactsTab } from "./ArtefactsTab";
 import { AgentInference } from "../../components/AgentInference";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -20,15 +21,16 @@ export function DetailPanel({ channel, members }: { channel: ChannelSummary; mem
   const setTab = useUi((s) => s.setDetailTab);
   const setOpen = useUi((s) => s.setDetailOpen);
   return (
-    <aside className="detail" aria-label="Channel details">
+    <aside className={`detail${tab === "artefacts" ? " detail--artefacts" : ""}`} aria-label="Channel details">
       <div className="detail-head">
         <div className="fv-tabs" role="tablist">
           <button role="tab" aria-selected={tab === "agents"} onClick={() => setTab("agents")}>Agents</button>
+          <button role="tab" aria-selected={tab === "artefacts"} onClick={() => setTab("artefacts")}>Artefacts</button>
           <button role="tab" aria-selected={tab === "run"} onClick={() => setTab("run")}>Runs</button>
         </div>
         <button className="fv-icon-btn" aria-label="Close panel" onClick={() => setOpen(false)}><X /></button>
       </div>
-      {tab === "agents" ? <AgentsTab channel={channel} members={members} /> : <RunTab channel={channel} members={members} />}
+      {tab === "artefacts" ? <ArtefactsTab key={`${channel.channel_id}:${channel.cwd}`} channel={channel} /> : tab === "agents" ? <AgentsTab channel={channel} members={members} /> : <RunTab channel={channel} members={members} />}
     </aside>
   );
 }

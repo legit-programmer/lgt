@@ -1,3 +1,4 @@
+import { useUi } from "./ui";
 import { create } from "zustand";
 import { api, ApiError } from "../api/client";
 import type {
@@ -52,6 +53,7 @@ interface WorkspaceState {
   contexts: Record<string, ContextStats>;
   usage: UsageRow[];
   limits: Record<string, HarnessLimits | null>;
+  artefactRevision: number;
   toasts: Toast[];
 
   boot(): Promise<void>;
@@ -140,10 +142,35 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  artefactRevision: 0,
+
   applyFrame(frame) {
     switch (frame.type) {
+      case "artefact_open": {
+        set((state) => ({ artefactRevision: state.artefactRevision + 1 }));
+        const ui = useUi.getState();
+        if (ui.view.kind === "channel" && ui.view.channelId === frame.channel_id
+            && get().channels[frame.channel_id]?.cwd === frame.artefact.cwd) {
+          ui.openArtefact(frame.channel_id, frame.artefact.cwd, frame.artefact.path);
+        } else {
+          get().toast(`Artefact ready: ${frame.artefact.name}`, "info");
+        }
+        return;
+      }
       case "event": {
         const event = frame.event;
+        if (event.kind === "artefact_changed" && event.id > get().lastEventId) {
+          set((state) => ({ artefactRevision: state.artefactRevision + 1 }));
+          const ui = useUi.getState();
+          const selected = ui.selectedArtefact;
+          if (selected?.channelId === event.channel_id && selected.cwd === event.payload.cwd
+              && selected.path === event.payload.path) {
+            if (typeof event.payload.new_path === "string") {
+              // Preserve visibility; a rename notification does not steal focus.
+              useUi.setState({ selectedArtefact: { ...selected, path: event.payload.new_path } });
+            } else ui.clearArtefact();
+          }
+        }
         set((state) => {
           const next: Partial<WorkspaceState> = { lastEventId: Math.max(state.lastEventId, event.id) };
           const timeline = state.timelines[event.channel_id];

@@ -49,6 +49,18 @@ On the host desktop, open **Settings → Devices**, name the connection, and gen
 
 The daemon accepts inbound connections; routing through a VPN or a public HTTPS endpoint is configured separately. Use an encrypted network or HTTPS for bearer credentials. Pairing does not establish network reachability.
 
+## Channel artefacts
+
+Ask any agent for a plan, handoff document, PDF or HTML visualisation. Lgt prepares
+`<working-directory>/.lgt/artefacts/<channel-id>/` and tells the agent how to save
+and announce it. The **Artefacts** tab beside Agents and Runs lists that folder.
+Open files beside chat, rename or delete them; creation and update announcements
+reopen the active channel's viewer. Markdown, self-contained HTML/CSS/JavaScript,
+and PDFs are supported. HTML runs isolated and may load external HTTPS assets.
+
+Files moved out of the folder disappear from the list; manually renamed files are
+rediscovered. Changing a channel's working directory shows only the new folder.
+
 ## Tests
 
 ```powershell

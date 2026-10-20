@@ -30,3 +30,24 @@ not. See [API reference](../../../docs/backend-reference.md#channel-artefacts).
 
 Related: [context](context-and-sessions.md), [gateway](gateway-http.md),
 [screens](../desktop/screens.md).
+
+## Desktop viewer
+
+`ArtefactsTab.tsx` lists the channel folder, rechecking every three seconds while
+visible and on backend notifications. Selection is scoped to channel and cwd.
+Missing files show a recoverable message; the list always reflects current disk
+contents. Rename/delete use dialogs and follow backend events, not optimistic
+state. Historical artefact messages have an Open button.
+
+`DetailPanel` adds Artefacts alongside Agents and Runs. Opening it hides the left
+sidebar and divides the desktop equally between chat and viewer. Phone layouts
+show the viewer full-width with a close action. Live creation and update frames
+open/reopen the active channel's file; other channels get a toast without navigation.
+Replayed durable messages do not steal focus.
+
+Markdown reuses React Markdown/GFM. HTML uses a sandboxed iframe pointing at a
+single-use server preview capability, never srcdoc or the app's own origin.
+`PdfArtefact.tsx` lazy-loads PDF.js with page and zoom controls; the worker, CMaps,
+fonts and wasm decoders are bundled locally by the Vite `pdfjs-assets` plugin.
+The desktop CSP permits preview frames and the bundled PDF worker; it does not
+permit arbitrary inline scripts in the main app.

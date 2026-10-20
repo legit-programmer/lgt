@@ -362,3 +362,9 @@ forms, popups, nested frames, connect/fetch, or native bridge access. HTTPS scri
 styles, fonts and images are permitted. Preview tokens grant one file view only,
 are bounded to 128 pending tickets, and are invalid after cwd changes. Credentials
 are never placed in the preview or URL; responses are no-store/no-referrer.
+
+The desktop Artefacts tab refreshes filesystem listings every three seconds while
+visible. Live open frames reopen both new and updated files in the active channel;
+other channels notify without navigation. Historical message replay does not
+open files. Desktop uses a 50/50 chat/viewer split, phones use a full-width viewer.
+PDF.js is loaded lazily with its worker and decoding assets bundled for offline use.

@@ -26,9 +26,12 @@
       "csp": {
         "default-src": "'self'",
         "connect-src": "'self' ipc: http: https: ws: wss:",
-        "img-src": "'self' data: blob: http://127.0.0.1:* http://localhost:*",
+        "img-src": "'self' data: blob: https: http://127.0.0.1:* http://localhost:*",
         "style-src": "'self' 'unsafe-inline'",
-        "font-src": "'self' data:"
+        "font-src": "'self' data:",
+        "frame-src": "http: https:",
+        "worker-src": "'self' blob:",
+        "script-src": "'self' 'wasm-unsafe-eval'"
       }
     }
   },

@@ -1,5 +1,5 @@
 import type {
-  Agent, AgentInput, AgentStatus, Attachment, ChannelSummary, Channel, Command, ContextStats,
+  Artefact, Agent, AgentInput, AgentStatus, Attachment, ChannelSummary, Channel, Command, ContextStats,
   ConnectionInfo, Device, DevicePairing, Harness, HarnessModel, HarnessLimits, Member, Profile, QueueItem, Run, RunLog, SearchResults, Template,
   UsageRow, WorkspaceEvent, ReplyQuote, ReplyRequest, SkillCatalog,
 } from "./types";
@@ -188,6 +188,18 @@ function query(params: Record<string, string | number | undefined | null>): stri
 const enc = encodeURIComponent;
 
 export const api = {
+  artefacts: (channelId: string) => request<Artefact[]>("GET", `/channels/${channelId}/artefacts`),
+  renameArtefact: (channelId: string, path: string, name: string) => request<void>("PATCH", `/channels/${channelId}/artefacts?path=${encodeURIComponent(path)}`, { name }),
+  deleteArtefact: (channelId: string, path: string) => request<void>("DELETE", `/channels/${channelId}/artefacts?path=${encodeURIComponent(path)}`),
+  artefactPreview: (channelId: string, path: string) => request<{ url: string }>("POST", `/channels/${channelId}/artefacts/preview?path=${encodeURIComponent(path)}`),
+  artefactContent: async (channelId: string, path: string, signal?: AbortSignal) => {
+    const response = await fetchBackendResource(assetUrl(`/channels/${channelId}/artefacts/content?path=${encodeURIComponent(path)}`), { signal });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error?.message ?? "This artefact could not be loaded. It may have been moved or deleted.");
+    }
+    return response;
+  },
   health: () => get<{ status: string; application: string; api_version: number; pid: number }>("/health"),
   connectionInfo: () => get<ConnectionInfo>("/connection"),
   devices: () => get<Device[]>("/devices"),

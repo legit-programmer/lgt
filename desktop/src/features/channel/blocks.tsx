@@ -48,6 +48,11 @@ function MessageContent({ message, text, ctx }: { message: WorkspaceEvent<Messag
     <div className="fv-reply-message" data-seq={message.seq}>
       {message.payload.reply ? <ReplyQuoteView quote={message.payload.reply} displayName={ctx.displayName} /> : null}
       <div ref={body} className="fv-message-text"><Markdown text={text} handles={ctx.handles} agents={ctx.agents} /></div>
+      {message.payload.artefact ? <button className="fv-btn fv-btn--sm" disabled={message.payload.artefact.cwd !== ctx.cwd}
+        title={message.payload.artefact.cwd !== ctx.cwd ? "This artefact belongs to a previous working directory" : undefined}
+        onClick={() => useUi.getState().openArtefact(ctx.channelId, ctx.cwd, message.payload.artefact!.path)}>
+        <FileText /> Open {message.payload.artefact.name}
+      </button> : null}
       <div className={`fv-reply-actions${selection ? " has-selection" : ""}`}>
         <button className="fv-btn fv-btn--ghost fv-btn--sm" aria-label={`Reply to message #${message.seq}`}
           onClick={() => ctx.onReply(message.seq)}><Reply /> Reply</button>

@@ -8,13 +8,16 @@ export type View =
   | { kind: "agent-edit"; agentId: string; returnTo?: View; harness?: string }
   | { kind: "onboarding" };
 
-export type DetailTab = "agents" | "run";
+export type DetailTab = "agents" | "run" | "artefacts";
 export type Theme = "dark" | "light";
 
 interface UiState {
   view: View;
   detailOpen: boolean;
   detailTab: DetailTab;
+  selectedArtefact: { channelId: string; cwd: string; path: string; generation: number } | null;
+  openArtefact(channelId: string, cwd: string, path: string): void;
+  clearArtefact(): void;
   runFilterAgentId: string | null;
   selectedRunId: string | null;
   paletteOpen: boolean;
@@ -123,6 +126,12 @@ export const useUi = create<UiState>((set, get) => ({
   view: initialView,
   detailOpen: true,
   detailTab: "agents",
+  selectedArtefact: null,
+  openArtefact(channelId, cwd, path) {
+    set({ detailOpen: true, detailTab: "artefacts", sidebarOpen: false,
+      selectedArtefact: { channelId, cwd, path, generation: (get().selectedArtefact?.generation ?? 0) + 1 } });
+  },
+  clearArtefact() { set({ selectedArtefact: null }); },
   runFilterAgentId: null,
   selectedRunId: null,
   paletteOpen: false,
@@ -172,7 +181,7 @@ export const useUi = create<UiState>((set, get) => ({
     set({ detailOpen: true, detailTab: "run", runFilterAgentId: agentId, selectedRunId: runId });
   },
   setDetailTab(detailTab) {
-    set({ detailTab });
+    set({ detailTab, ...(detailTab === "artefacts" ? { sidebarOpen: false } : {}) });
   },
   selectRun(selectedRunId) {
     set({ selectedRunId });

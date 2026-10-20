@@ -3,8 +3,8 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-18
-related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation]
+updated: 2026-10-21
+related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation, 20261021-artefacts]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
 
@@ -64,3 +64,7 @@ Each card in `DetailPanel.tsx` shows the agent's avatar without a status ring (t
 - [Live state](../backend/live-state.md) — the data each screen shows.
 - [Design system](design-system.md) — the visual language.
 - [Open gaps](../status/open-gaps.md) — why some elements are missing.
+
+## Artefacts
+
+`ArtefactsTab.tsx` and `PdfArtefact.tsx` add filesystem listings, rename/delete, Markdown, isolated HTML and PDF.js previews in the right panel. Opening the tab hides the left sidebar and uses half the desktop width; live announcements reopen the active file. See [channel artefacts](../backend/artefacts.md) (`20261021-artefacts`).

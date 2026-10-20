@@ -1907,3 +1907,35 @@ html.is-scanning body > :not(.scan-overlay) {
     background: var(--glass-overlay);
   }
 }
+
+/* Artefacts expand the detail panel to half the workspace. */
+.channel-screen--artefacts > .conversation { flex: 1 1 50%; width: 50%; }
+.detail.detail--artefacts { flex: 1 1 50%; width: 50%; min-width: 0; }
+.artefacts, .artefact-pdf { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.artefacts-toolbar { display: flex; align-items: center; gap: var(--space-200); padding: var(--space-200) var(--space-300); border-bottom: 1px solid var(--stroke-1); }
+.artefacts-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.artefacts-spacer { flex: 1; }
+.artefact-list { overflow: auto; padding: var(--space-300); }
+.artefact-row { display: flex; align-items: center; gap: var(--space-300); width: 100%; text-align: left; padding: var(--space-300); border-radius: var(--radius-sm); }
+.artefact-row:hover { background: var(--surface-3); }
+.artefact-row > svg { flex: none; width: 20px; height: 20px; }
+.artefact-row > span { display: grid; gap: var(--space-100); min-width: 0; overflow-wrap: anywhere; }
+.artefact-row strong { font-weight: 500; }
+.artefact-empty { padding: var(--space-600); text-align: center; color: var(--text-2); }
+.artefact-empty > svg { width: 32px; height: 32px; }
+.artefact-empty h2 { font-size: 1rem; margin: var(--space-300) 0; }
+.artefact-empty p { line-height: 1.6; }
+.artefact-notice { margin: 0; padding: var(--space-400); color: var(--text-2); overflow-wrap: anywhere; }
+.artefact-html { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--surface-1); }
+.artefact-markdown { flex: 1; overflow: auto; padding: var(--space-600); line-height: 1.7; overflow-wrap: anywhere; }
+.artefact-markdown img { max-width: 100%; }
+.artefact-markdown pre { overflow-x: auto; padding: var(--space-300); background: var(--surface-1); }
+.artefact-markdown table { display: block; overflow-x: auto; border-collapse: collapse; }
+.artefact-markdown th, .artefact-markdown td { padding: var(--space-200); border: 1px solid var(--stroke-1); }
+.artefact-pdf-pages { flex: 1; min-height: 0; overflow: auto; padding: var(--space-300); }
+.artefact-pdf-pages canvas { display: block; margin: 0 auto; }
+@media (max-width: 760px) {
+  .channel-screen--artefacts > .conversation { display: none; }
+  .detail.detail--artefacts { position: static; width: 100%; flex-basis: 100%; }
+  .artefact-markdown { padding: var(--space-400); }
+}

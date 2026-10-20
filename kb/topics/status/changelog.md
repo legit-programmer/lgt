@@ -16,6 +16,8 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-21
 
+- Add the Artefacts tab with a 50/50 desktop view, Markdown rendering, sandboxed HTML, lazy PDF.js previews, rename/delete, live reopening on updates, historical Open buttons, and filesystem refresh. Bundle PDF assets for offline use.
+
 - Add channel-scoped artefact folders, automatic setup and agent instructions, completed-message announcements, filesystem list/rename/delete/content APIs, and isolated HTML preview capabilities.
 
 ## 2026-10-18

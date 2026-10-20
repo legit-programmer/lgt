@@ -10,3 +10,5 @@ The Tauri v2 and React app in `desktop/`.
 - [Origins, CSP and media loading](origins-and-media.md) — allowed origins, CSP, blob media.
 - [Mobile client](mobile-client.md) — Android and iOS builds as paired-only clients: QR scanning, phone layout, back button, file saving.
 - [Device pairing](../backend/device-pairing.md) — Devices settings, QR codes, and remote client connections.
+
+- [Channel artefacts](../backend/artefacts.md) — file list and Markdown/HTML/PDF previews.

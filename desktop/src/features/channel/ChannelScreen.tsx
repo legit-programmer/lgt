@@ -3,7 +3,7 @@ import { ProviderLogo } from "../../components/ProviderLogo";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Archive, Check, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search, UserPlus, UserRound,
+  Archive, Check, FileText, Folder, FolderCog, Hash, MoreHorizontal, PanelRight, Pencil, RotateCcw, Search, UserPlus, UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
@@ -34,6 +34,7 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
   const runs = useWorkspace((s) => s.runs);
   const me = useWorkspace((s) => s.me);
   const detailOpen = useUi((s) => s.detailOpen);
+  const detailTab = useUi((s) => s.detailTab);
   const pane = useRef<HTMLElement>(null);
   const composerArea = useRef<HTMLDivElement>(null);
   const [reply, setReply] = useState<ReplyDraft | null>(() => replyDrafts.get(channelId) ?? null);
@@ -104,7 +105,7 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
   const agent = isDm ? members[0] : undefined;
 
   return (
-    <div className="channel-screen">
+    <div className={`channel-screen${detailOpen && detailTab === "artefacts" ? " channel-screen--artefacts" : ""}`}>
       <section ref={pane} className="fv-pane-glass conversation" aria-label={isDm ? `Direct messages with ${agent?.handle}` : `#${channel.name}`}>
         {isDm && agent ? <DmHeader channel={channel} agent={agent} /> : <ChannelHeader channel={channel} members={members} />}
         <Timeline
@@ -131,7 +132,7 @@ export function ChannelScreen({ channelId, anchorSeq }: { channelId: string; anc
           )}
         </div>
       </section>
-      {!isDm && detailOpen ? <DetailPanel channel={channel} members={members} /> : null}
+      {detailOpen && (!isDm || detailTab === "artefacts") ? <DetailPanel channel={channel} members={members} /> : null}
     </div>
   );
 }
@@ -228,6 +229,7 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
       <PrimaryAgentControl channel={channel} members={members} />
     </TopBarSlot>
     <TopBarSlot target="actions">
+      <ArtefactsButton />
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
       {/* On touch phones the panel opens by swiping left (lib/gestures.ts). */}
       {touchPanels ? null : (
@@ -375,6 +377,7 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
       ) : null}
     </TopBarSlot>
     <TopBarSlot target="actions">
+      <ArtefactsButton />
       <button className="fv-btn fv-btn--sm" aria-label="Fresh context" onClick={fresh}>
         <RotateCcw /> <span className="topbar-label">Fresh context</span>
       </button>
@@ -386,4 +389,12 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
     </TopBarSlot>
     </>
   );
+}
+
+function ArtefactsButton() {
+  const open = useUi((s) => s.detailOpen && s.detailTab === "artefacts");
+  return <button className="fv-icon-btn" aria-label="Artefacts" aria-pressed={open} onClick={() => {
+    useUi.getState().setDetailTab("artefacts");
+    useUi.getState().setDetailOpen(!open);
+  }}><FileText /></button>;
 }
