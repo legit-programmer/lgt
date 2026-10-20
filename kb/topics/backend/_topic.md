@@ -19,3 +19,5 @@ The Python package in `lgt/`: storage, orchestration, harness adapters, and the 
 - [Live state frames](live-state.md) — summaries, statuses, context, usage, limits.
 
 - [Desktop daemon lifecycle](desktop-daemon.md) - discovery, detached launch, authentication, shutdown.
+
+- [Channel artefacts](artefacts.md) — filesystem-backed files and isolated previews.

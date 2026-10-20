@@ -320,3 +320,45 @@ The [official SDK getting-started guide](https://github.com/openai/codex/blob/ma
 Tests use controlled runners, recorded notification shapes, and a local app-server fixture through the actual official SDK. The suite does not make model calls. POSIX process group tests require a POSIX host.
 
 The [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) documents print mode, streaming, resume, and tool settings. The [Claude streaming input guide](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode) documents native image content blocks. The [Gemini headless reference](https://geminicli.com/docs/cli/headless/) documents NDJSON events and terminal exit codes.
+
+## Channel artefacts
+
+The filesystem is authoritative: `<cwd>/.lgt/artefacts/<channel_id>/`. The backend
+creates this directory before every agent turn and injects instructions and its
+absolute path into the turn prompt (including resumed sessions). Supported files
+are Markdown (`.md`, `.markdown`), HTML (`.html`, `.htm`) and PDF (`.pdf`), including
+nested folders. Symlinks and paths outside the channel directory are rejected.
+Changing cwd selects only the new folder; nothing is migrated. Listing never
+recreates a missing folder. File preview is bounded to 32 MiB.
+
+After finishing each creation or update, the agent emits a complete message:
+
+````text
+```lgt-artefact
+{"name":"plan.md","path":"plan.md"}
+```
+````
+
+`path` is relative to the artefact folder, or absolute inside it. `name` must match
+the filename. No surrounding prose is accepted. Streaming deltas do not activate
+the viewer. Validation failure becomes a readable message without moving files
+or failing the whole run. A valid message persists `payload.artefact` (metadata
+plus `cwd`) and emits a live-only `artefact_open` frame with `channel_id` and
+`artefact`. Replaying history does not reopen files.
+
+| Route | Behavior |
+| --- | --- |
+| `GET /channels/{id}/artefacts` | Current recursive list: `name`, relative `path`, `kind`, `size_bytes`, `revision` |
+| `GET /channels/{id}/artefacts/content?path=…` | Authenticated bytes; HTML served as non-executable plain text |
+| `PATCH /channels/{id}/artefacts?path=…` | Body `{ "name": "new.md" }`; rename within the same folder, preserving extension; never overwrite |
+| `DELETE /channels/{id}/artefacts?path=…` | Delete that file |
+| `POST /channels/{id}/artefacts/preview?path=…` | Authenticated HTML preview creation; returns `{ "url": "…" }` |
+| `GET /artefact-preview/{ticket}` | Single-use HTML capability, expires after 60 seconds; no workspace credentials required |
+
+Rename/delete run through the channel mailbox and publish durable
+`artefact_changed` events (`path`, `new_path` or null, `cwd`). No catalogue is stored.
+HTML previews use an opaque-origin sandbox with scripts but no same-origin,
+forms, popups, nested frames, connect/fetch, or native bridge access. HTTPS scripts,
+styles, fonts and images are permitted. Preview tokens grant one file view only,
+are bounded to 128 pending tickets, and are invalid after cwd changes. Credentials
+are never placed in the preview or URL; responses are no-store/no-referrer.

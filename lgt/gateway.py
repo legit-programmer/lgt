@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import sqlite3
+import time
 from io import BytesIO
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
@@ -22,6 +23,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from lgt import artefacts
 from lgt.attachments import VIEWABLE_IMAGE_TYPES, AttachmentTooLarge
 from lgt.device_auth import DeviceAuth
 from lgt.models import Agent, Attachment, Event, WorkspaceError, new_id, utc_now
@@ -77,6 +79,10 @@ class AgentInference(_StrictModel):
         if "model" in self.model_fields_set and self.model is None:
             raise ValueError("model cannot be null")
         return self
+
+
+class ArtefactRename(_StrictModel):
+    name: str = Field(min_length=1, max_length=255)
 
 
 class ReadBody(_StrictModel):
@@ -450,6 +456,9 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     if remote and daemon is None:
         raise ValueError("Remote access requires authenticated daemon mode.")
     device_auth = DeviceAuth()
+    # Single-use, short-lived capabilities for isolated HTML documents only.
+    # Never put the workspace bearer credential in an iframe URL.
+    previews: dict[str, tuple[float, str, str, str]] = {}
 
     def authenticate(scope: Mapping[str, Any], token: Any) -> tuple[bool, str | None]:
         if (daemon is not None and _scope_is_loopback(scope) and isinstance(token, str)
@@ -473,6 +482,8 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
 
     @app.middleware("http")
     async def require_origin_and_credentials(request: Request, call_next):
+        if request.method == "GET" and request.url.path.startswith("/artefact-preview/"):
+            return await call_next(request)  # Exact capability validated by the route below.
         allowed = getattr(orch.settings, "allowed_origins", ())
         if not _scope_has_approved_origin(request.scope, allowed, remote=remote):
             return _http_error(403, "forbidden_origin" if remote else "local_only", "This workspace accepts approved origins only.")
@@ -754,6 +765,64 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     async def list_queue(channel_id: str):
         _require_channel(orch, channel_id)
         return orch.queue_items(channel_id)
+
+    @app.get("/channels/{channel_id}/artefacts")
+    async def list_artefacts(channel_id: str):
+        return await anyio.to_thread.run_sync(artefacts.listing, orch.store.get_channel(channel_id))
+
+    @app.get("/channels/{channel_id}/artefacts/content")
+    async def artefact_content(channel_id: str, path: str):
+        metadata, data = await anyio.to_thread.run_sync(artefacts.read, orch.store.get_channel(channel_id), path)
+        # HTML is never executable at this authenticated origin.
+        media = "application/pdf" if metadata["kind"] == "pdf" else "text/plain"
+        return Response(data, media_type=media, headers={"Cache-Control": "no-store",
+                        "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'"})
+
+    @app.patch("/channels/{channel_id}/artefacts", status_code=204)
+    async def rename_artefact(channel_id: str, path: str, body: ArtefactRename):
+        await orch.mutate_artefact(channel_id, path, body.name)
+        return Response(status_code=204)
+
+    @app.delete("/channels/{channel_id}/artefacts", status_code=204)
+    async def delete_artefact(channel_id: str, path: str):
+        await orch.mutate_artefact(channel_id, path, None)
+        return Response(status_code=204)
+
+    @app.post("/channels/{channel_id}/artefacts/preview")
+    async def create_artefact_preview(channel_id: str, path: str):
+        channel = orch.store.get_channel(channel_id)
+        metadata = artefacts.describe(channel, path)
+        if metadata["kind"] != "html":
+            raise WorkspaceError("HTML previews require an HTML artefact")
+        now = time.monotonic()
+        for key, value in list(previews.items()):
+            if value[0] <= now:
+                del previews[key]
+        if len(previews) >= 128:
+            raise WorkspaceError("Too many pending previews; try again shortly")
+        ticket = secrets.token_urlsafe(32)
+        previews[ticket] = (now + 60, channel_id, channel.cwd, path)
+        return {"url": f"/artefact-preview/{ticket}"}
+
+    @app.get("/artefact-preview/{ticket}")
+    async def artefact_preview(ticket: str):
+        entry = previews.pop(ticket, None)
+        if entry is None or entry[0] <= time.monotonic():
+            raise HTTPException(404, "Preview expired; reopen the artefact")
+        _, channel_id, cwd, path = entry
+        channel = orch.store.get_channel(channel_id)
+        if channel.cwd != cwd:
+            raise HTTPException(404, "Working directory changed")
+        _, data = await anyio.to_thread.run_sync(artefacts.read, channel, path)
+        return Response(data, media_type="text/html", headers={
+            "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox allow-scripts; default-src 'none'; "
+                "script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; "
+                "img-src https: data: blob:; font-src https: data:; media-src https: data: blob:; "
+                "connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()",
+        })
 
     @app.post("/channels/{channel_id}/attachments", status_code=201)
     async def upload_attachment(

@@ -17,6 +17,7 @@ from typing import Any, Protocol, TypeVar
 from .attachments import AttachmentTooLarge, normalize_media_type, remove_files, safe_filename, write_stream
 from .broadcast import EventBus
 from .config import Settings
+from . import artefacts
 from .context import cold_plan, render_delta, render_turn, rendered_size, resolve_session
 from .models import (
     PENDING_QUEUE_STATES, Agent, Attachment, Channel, Event, NormalizedEvent, QueueItem,
@@ -1061,6 +1062,8 @@ class Orchestrator:
                 await self._call(turn.channel.channel_id, lambda: self._status(turn, "starting"))
                 if turn.channel.cwd_managed:
                     Path(turn.channel.cwd).mkdir(parents=True, exist_ok=True)
+                turn = replace(turn, prompt=turn.prompt + artefacts.instructions(turn.channel))
+                self._turns[run_id] = turn
                 invocation = self.store.get_event(turn.channel.channel_id, turn.run.trigger_seq).payload.get("skill")
                 if invocation:
                     async def authorize_skill() -> Turn:
@@ -1160,6 +1163,15 @@ class Orchestrator:
             payload = dict(data)
             payload["author_handle"] = turn.agent.handle
             if output.kind == "message":
+                try:
+                    declared = artefacts.announcement(payload["text"])
+                    if declared:
+                        metadata = artefacts.announced_file(turn.channel, declared)
+                        payload["artefact"] = {**metadata, "cwd": turn.channel.cwd}
+                        payload["text"] = f"Created or updated artefact: {metadata['name']}"
+                except (WorkspaceError, KeyError, OSError) as error:
+                    payload["text"] = f"Artefact could not be opened: {error}"
+                    payload["artefact_error"] = True
                 transfer = parse_transfer(payload["text"], payload.get("transfer"))
                 transfers = [transfer] if transfer else parse_inline_transfers(payload["text"])
                 if transfer:
@@ -1216,6 +1228,9 @@ class Orchestrator:
                                    if not permitted else {}),
                             }, chain_id=event.chain_id, hop=hop))
             self._publish(event)
+            if payload.get("artefact"):
+                self.bus.publish({"type": "artefact_open", "channel_id": run.channel_id,
+                                  "artefact": payload["artefact"]})
             for notice in notices:
                 self._publish(notice)
             self._pump(run.channel_id)
@@ -1350,6 +1365,28 @@ class Orchestrator:
         self._run_tasks.pop(run_id, None)
         self._turns.pop(run_id, None)
         self._cancelled.discard(run_id)
+
+    async def mutate_artefact(self, channel_id: str, path: str, name: str | None) -> None:
+        def mutate() -> None:
+            channel = self.store.get_channel(channel_id)
+            source = artefacts.path_for(channel, path)
+            if name is None:
+                source.unlink()
+                new_path = None
+            else:
+                if Path(name).name != name or name in {".", ".."}:
+                    raise WorkspaceError("Provide a filename, not a directory")
+                new_path = (Path(path).parent / name).as_posix()
+                target = artefacts.path_for(channel, new_path, existing=False)
+                if source.suffix.lower() != target.suffix.lower():
+                    raise WorkspaceError("Keep the artefact's file extension")
+                if target.exists():
+                    raise WorkspaceError("An artefact with that name already exists")
+                source.rename(target)
+            event = self._append(channel_id, "artefact_changed", "human", self.human_id,
+                                 {"path": path, "new_path": new_path, "cwd": channel.cwd})
+            self._publish(event)
+        await self._call(channel_id, mutate)
 
     async def create_attachment(
         self, channel_id: str, filename: str, media_type: str | None,

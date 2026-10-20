@@ -224,3 +224,7 @@ Needed:
 | Proactive agent posts (#infra-alerts "Disk usage on build-02 at 91%") | Agents run today only in response to messages. Scheduled or event-triggered runs need a product decision before a contract. |
 
 Voice input and the theme toggle belong to the frontend and need no backend work.
+
+## Channel artefacts (2026-10-21)
+
+Implemented filesystem-backed artefact list, content, rename/delete, HTML preview and live open notification contracts. See `docs/backend-reference.md#channel-artefacts`.
