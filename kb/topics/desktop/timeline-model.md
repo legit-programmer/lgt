@@ -3,8 +3,8 @@ id: 20261008-timeline-model
 title: Timeline model
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-18
-related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle, 20261012-message-replies]
+updated: 2026-10-25
+related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle, 20261012-message-replies, 20261025-focus-mode]
 summary: The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
 ---
 
@@ -23,7 +23,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 | Block | From | Notes |
 | --- | --- | --- |
 | `human` | Human `message` | `message_edit` events are applied (edited text, `deleted`). A `queue` item marks it `queuedFor` (`awaiting_agent`) or `awaitingRoute`, which renders the dashed queued style with Cancel. Deleted messages are hidden. |
-| `run` | Agent `message`, `tool_call` and `tool_result` events with the same `run_id` | One block per **segment** of a run. A segment ends at a human message or a context reset, so later output appears after the interruption. A run with no output yet still gets a block at its `queued`/`running` status event. |
+| `run` | Agent `message`, `tool_call`, `tool_result` and `tool_summary` events with the same `run_id` | One block per **segment** of a run. A segment ends at a human message or a context reset, so later output appears after the interruption. A run with no output yet still gets a block at its `queued`/`running` status event. |
 | `routing` | `routing_decision` | Recipient chips and reason. Historical router decisions remain readable; historical suggestions are text only. |
 | `run_end` | Terminal `run_status` that is `failed` or `cancelled` | Failure uses the server's `text`. Cancellation shows the duration. |
 | `divider` | `context_reset`, `context_checkpoint` | |
@@ -31,6 +31,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 
 - **Live segment:** the last segment of a run whose status is `queued`, `starting` or `running` is live. It shows the working badge with an elapsed clock, the partial text with a caret, the last three tool rows, and Stop.
 - **Tool groups:** finished segments with two or more tools collapse into "ran N tools · read · bash ×2 · pass/err · duration". Each child row expands to its output.
+- **Quiet summaries:** `tool_summary` supplies `RunBlock.toolSummary` and renders names/counts without expandable raw tools. A summary-only finished run remains visible. The backend owns suppression; see [Focus mode](../backend/focus-mode.md).
 - **Continuations:** consecutive blocks from the same speaker drop the header (`cont`).
 - **Hidden blocks:** empty, finished segments are dropped.
 - **Replies:** committed human/agent messages offer whole-message replies and text-selection replies. Each source is a message event, rather than an entire run/tool group. Sent quotes render above the new message; nested quotes and tools are outside the selectable source body.

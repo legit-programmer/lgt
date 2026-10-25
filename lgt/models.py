@@ -97,6 +97,7 @@ class Channel:
     primary_agent_id: str | None = None
     ownership_version: int = 0
     allow_handoff: bool = True
+    focus_mode: bool = False
 
 
 @dataclass(frozen=True)

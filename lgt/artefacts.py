@@ -111,6 +111,12 @@ def announced_file(channel: Channel, value: dict[str, str]) -> dict[str, Any]:
 
 def instructions(channel: Channel) -> str:
     directory = root(channel, setup=True)
+    announce = (
+        "After EVERY creation or update, send a separate complete message in this exact format (no surrounding prose):\n"
+        if channel.focus_mode else
+        "When your completed result is an artefact, use this exact format as your final reply (no surrounding prose). "
+        "Finish all work before this reply; omit intermediate announcements:\n"
+    )
     return ("\n<lgt_artefacts>\n"
             f"The backend has prepared your artefact directory: {json.dumps(str(directory))}.\n"
             "Use artefacts for substantial plans, handoffs, documents and visualisations; keep normal replies in chat. "
@@ -119,7 +125,9 @@ def instructions(channel: Channel) -> str:
             "access Lgt/Tauri APIs, or attempt to access or modify the filesystem from a visualisation. "
             "HTML runs isolated: no parent access, storage, fetch/WebSockets, forms, popups or nested frames. "
             "Use script tags for external libraries and embed data. Finish writing before announcing. "
-            "After EVERY creation or update, send a separate complete message in this exact format (no surrounding prose):\n"
+            + announce +
             '```lgt-artefact\n{"name":"plan.md","path":"plan.md"}\n```\n'
             "Use the actual filename and a path relative to the artefact directory (or its absolute path). "
-            "Announce each file separately. Do not move files from other channels.\n</lgt_artefacts>\n")
+            + ("Announce each file separately. " if channel.focus_mode else
+               "Announce the main completed file; other files remain available in the Artefacts panel. ")
+            + "Do not move files from other channels.\n</lgt_artefacts>\n")

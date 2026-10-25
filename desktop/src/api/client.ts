@@ -241,6 +241,8 @@ export const api = {
     patch<Channel>(`/channels/${enc(channelId)}`, { primary_agent_id }),
   setHandoff: (channelId: string, allow_handoff: boolean) =>
     patch<Channel>(`/channels/${enc(channelId)}`, { allow_handoff }),
+  setFocusMode: (channelId: string, focus_mode: boolean) =>
+    patch<Channel>(`/channels/${enc(channelId)}`, { focus_mode }),
   archiveChannel: (channelId: string) => post<Channel>(`/channels/${enc(channelId)}/archive`),
   unarchiveChannel: (channelId: string) => post<Channel>(`/channels/${enc(channelId)}/unarchive`),
   markRead: (channelId: string, seq: number) => post<ChannelSummary>(`/channels/${enc(channelId)}/read`, { seq }),

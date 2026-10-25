@@ -280,6 +280,7 @@ async def test_raw_tool_result_does_not_increase_rendered_checkpoint_counter(tmp
     )
     orch.put_agent(Agent("alpha", "alpha", "Alpha", "specialist", "codex", "", "help"))
     channel = orch.create_channel("tool output", agent_ids=["alpha"], primary_agent_id="alpha")
+    channel = store.patch_channel(channel.channel_id, focus_mode=True)
     await orch.start()
     try:
         await orch.send_message(channel.channel_id, "small request", ["alpha"])

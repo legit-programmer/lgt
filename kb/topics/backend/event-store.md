@@ -3,8 +3,8 @@ id: 20261008-event-store
 title: Event store
 tags: [backend, storage]
 created: 2026-10-08
-updated: 2026-10-18
-related: [20261008-glossary, 20261008-dispatch-and-queue, 20261008-live-state, 20261008-attachments, 20261008-mutable-channel-cwd]
+updated: 2026-10-25
+related: [20261008-glossary, 20261008-dispatch-and-queue, 20261008-live-state, 20261008-attachments, 20261008-mutable-channel-cwd, 20261025-focus-mode]
 summary: The SQLite schema, the append-only event log and its event kinds, triggers that enforce invariants, migrations, FTS search, and the summary and usage queries.
 ---
 
@@ -22,7 +22,7 @@ summary: The SQLite schema, the append-only event log and its event kinds, trigg
 | Table | Purpose |
 | --- | --- |
 | `agents` | Agent config. Later columns are `avatar`, `hue`, `extra_args`, `command`, `retired_at` and `dm_channel_id`. |
-| `channels` | Name, kind, cwd, `cwd_managed`, `next_seq`, checkpoint counter, `archived_at`, shared `primary_agent_id`, `ownership_version`, and `allow_handoff`. |
+| `channels` | Name, kind, cwd, `cwd_managed`, `next_seq`, checkpoint counter, `archived_at`, shared `primary_agent_id`, `ownership_version`, `allow_handoff`, and `focus_mode` (default false). |
 | `channel_members` | Human and agent memberships. A trigger requires agents to exist. |
 | `events` | The immutable log, unique on `(channel_id, seq)`. `id` is the global cursor. |
 | `runs` | Run rows, token counters, `duration_ms`, structured `error`, context usage, `task_owner_id`, and the turn's ownership version. |
@@ -54,6 +54,7 @@ The original `channels_cwd_immutable` trigger is dropped; see [mutable channel c
 | `message` | Human or agent | Text, mentions and attachments |
 | `message_edit` | Human | Edits or deletes an earlier message. The original is never changed. |
 | `tool_call`, `tool_result` | Agent | Normalized tool activity |
+| `tool_summary` | Agent | Names/counts retained when a Focus-off run terminates |
 | `run_status` | System | Run lifecycle |
 | `routing_decision` | System | Who receives a message, and why |
 | `ownership_changed` | System | User selection or accepted handoff, with the new channel ownership version |
@@ -68,6 +69,8 @@ The original `channels_cwd_immutable` trigger is dropped; see [mutable channel c
 `Store._migrate` adds missing columns with `ALTER TABLE`, normalizes old run errors and durations, assigns hues and avatars to agents that lack them, and builds `search_fts` once. There is no migration version table: every migration step checks whether its change already exists before applying it.
 
 Ownership columns migrate additively. Existing channels start without an assigned primary and allow handoffs; their first eligible selection/assignment establishes ownership without editing old events. Legacy runs and deliveries with null task attribution fall back to their recipient as owner. New writes update the projection and append the ownership event in the same mailbox transaction.
+
+The additive `focus_mode` migration preserves the append-only log and defaults existing channels/DMs to off. Quiet runs store `tool_summary` events (`author_handle`, `tools`, `total`) instead of raw calls/results. See [Focus mode](focus-mode.md).
 
 ## Query helpers
 

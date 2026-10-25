@@ -3,8 +3,8 @@ id: 20261021-artefacts
 title: Channel artefacts
 tags: [backend, desktop, api, security]
 created: 2026-10-21
-updated: 2026-10-21
-related: [20261008-context-and-sessions, 20261008-gateway-http, 20261008-screens]
+updated: 2026-10-25
+related: [20261008-context-and-sessions, 20261008-gateway-http, 20261008-screens, 20261025-focus-mode]
 summary: Filesystem artefacts, agent announcements, isolated previews and channel viewer.
 ---
 
@@ -51,3 +51,7 @@ single-use server preview capability, never srcdoc or the app's own origin.
 fonts and wasm decoders are bundled locally by the Vite `pdfjs-assets` plugin.
 The desktop CSP permits preview frames and the bundled PDF worker; it does not
 permit arbitrary inline scripts in the main app.
+
+## Focus mode
+
+Quiet turns ask agents to announce the main completed artefact as their final reply, with other files available in the Artefacts panel. Intermediate announcements are discarded with other progress text; the committed final announcement still opens the viewer. Focus-on turns retain per-update announcements. See [Focus mode](focus-mode.md).

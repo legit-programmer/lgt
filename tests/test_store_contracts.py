@@ -68,7 +68,7 @@ def test_ownership_columns_migrate_existing_database_without_changing_log(tmp_pa
     message = db.append_event("c", "message", "human", "h", {"text": "Keep this history"})
     db.enqueue("c", message.seq, "a")
     db.create_run(Run("r", "c", "a", message.seq, 1, message.seq, "cold", "codex", str(tmp_path)))
-    for table, columns in {"channels": ["primary_agent_id", "ownership_version", "allow_handoff"],
+    for table, columns in {"channels": ["primary_agent_id", "ownership_version", "allow_handoff", "focus_mode"],
                            "runs": ["task_owner_id", "ownership_version"],
                            "dispatch_queue": ["task_owner_id"]}.items():
         for column in columns:
@@ -79,6 +79,7 @@ def test_ownership_columns_migrate_existing_database_without_changing_log(tmp_pa
         assert reopened.get_event("c", message.seq) == message
         assert reopened.get_channel("c").primary_agent_id is None
         assert reopened.get_channel("c").allow_handoff is True
+        assert reopened.get_channel("c").focus_mode is False
         assert reopened.get_run("r").task_owner_id is None
         assert reopened.queue("c")[0].task_owner_id is None
         assert reopened.routing_state("c") == {"routing_mode": "unassigned", "active_task_agent_ids": ["a"]}

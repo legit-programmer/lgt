@@ -92,14 +92,15 @@ class ReadBody(_StrictModel):
 class ChannelPatch(_StrictModel):
     name: str | None = Field(default=None, min_length=1)
     allow_handoff: bool | None = None
+    focus_mode: bool | None = None
     primary_agent_id: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def require_change(self) -> ChannelPatch:
         if "primary_agent_id" in self.model_fields_set and self.primary_agent_id is None:
             raise ValueError("primary_agent_id cannot be null")
-        if self.name is None and self.allow_handoff is None and self.primary_agent_id is None:
-            raise ValueError("provide name, allow_handoff or primary_agent_id")
+        if self.name is None and self.allow_handoff is None and self.primary_agent_id is None and self.focus_mode is None:
+            raise ValueError("provide name, allow_handoff, primary_agent_id or focus_mode")
         return self
 
 
@@ -721,7 +722,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
     async def patch_channel(channel_id: str, body: ChannelPatch):
         _require_channel(orch, channel_id)
         return _plain(await orch.patch_channel(channel_id, name=body.name, allow_handoff=body.allow_handoff,
-                                               primary_agent_id=body.primary_agent_id))
+                                               primary_agent_id=body.primary_agent_id, focus_mode=body.focus_mode))
 
     @app.post("/channels/{channel_id}/unarchive")
     async def unarchive_channel(channel_id: str):

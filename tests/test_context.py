@@ -31,7 +31,7 @@ class ContextTests(unittest.TestCase):
         self.store.put_agent(self.other_agent)
         self.channel = Channel(
             channel_id="channel-a", kind="channel", name="Test", cwd="C:/workspace",
-            cwd_managed=False, created_at="2026-01-01T00:00:00+00:00",
+            cwd_managed=False, focus_mode=True, created_at="2026-01-01T00:00:00+00:00",
         )
         self.store.create_channel(self.channel, [("human", "human-a"), ("agent", "agent-a"), ("agent", "agent-b")])
         self.chain_id: int | None = None

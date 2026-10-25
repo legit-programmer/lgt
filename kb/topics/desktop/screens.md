@@ -3,8 +3,8 @@ id: 20261008-screens
 title: Screens and features
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-21
-related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation, 20261021-artefacts]
+updated: 2026-10-25
+related: [20261008-timeline-model, 20261008-live-state, 20261008-design-system, 20261008-open-gaps, 20261013-skill-invocation, 20261021-artefacts, 20261025-focus-mode]
 summary: Which desktop/src/features file implements each screen of Lgt Screens.pdf, which backend routes each uses, and which design elements are deliberately omitted.
 ---
 
@@ -33,6 +33,8 @@ The composer lists skills across Codex and Claude installations through `/` and 
 - **Channel:** `#name`, working count and cwd menu as plain grey text, the primary pill; search, panel toggle, more, then a divider before the caption buttons.
 - **DM:** avatar, handle, status, CLI and model, cwd, context stats; Fresh context, search, edit.
 - **Agent form:** "New agent" or "Edit …"; Retire.
+
+Both channel and DM headers include `FocusModeToggle.tsx`. It patches `focus_mode` and waits for saved server state; the mode defaults off and affects the next turn. Quiet replies include names/counts tool summaries. See [Focus mode](../backend/focus-mode.md).
 
 ## Agent hover controls
 

@@ -101,6 +101,18 @@ describe("buildTimeline", () => {
     expect(blocks.map((b) => (b.type === "notice" ? b.event.seq : null))).toEqual([2, 3]);
   });
 
+  it("keeps quiet tool summaries with the final reply without inventing expandable tools", () => {
+    const blocks = buildTimeline([
+      status(1, "r1", "running"),
+      ev(2, "tool_summary", { tools: { read: 2, bash: 1 }, total: 3 }, { run_id: "r1", author_id: "a1" }),
+      agentMsg(3, "r1", "Done"),
+      status(4, "r1", "completed"),
+    ], { r1: { status: "completed", agent_id: "a1" } });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "run", live: false, tools: [],
+      toolSummary: { tools: { read: 2, bash: 1 }, total: 3 }, messages: [{ payload: { text: "Done" } }] });
+  });
+
   it("drops an agent message that only repeats its run's failure", () => {
     const blocks = buildTimeline([
       human(1, "ping"),

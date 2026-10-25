@@ -23,6 +23,7 @@ import { Composer } from "./Composer";
 import { DetailPanel } from "./DetailPanel";
 import { EmptyChannel } from "./EmptyChannel";
 import { RenameDialog } from "./RenameDialog";
+import { FocusModeToggle } from "./FocusModeToggle";
 import { Timeline } from "./Timeline";
 import type { ReplyDraft } from "./ReplyQuote";
 
@@ -229,6 +230,7 @@ function ChannelHeader({ channel, members }: { channel: ChannelSummary; members:
       <PrimaryAgentControl channel={channel} members={members} />
     </TopBarSlot>
     <TopBarSlot target="actions">
+      <FocusModeToggle channel={channel} />
       <ArtefactsButton />
       <button className="fv-icon-btn" aria-label="Search" onClick={() => setPaletteOpen(true)}><Search /></button>
       {/* On touch phones the panel opens by swiping left (lib/gestures.ts). */}
@@ -377,6 +379,7 @@ function DmHeader({ channel, agent }: { channel: ChannelSummary; agent: Agent })
       ) : null}
     </TopBarSlot>
     <TopBarSlot target="actions">
+      <FocusModeToggle channel={channel} />
       <ArtefactsButton />
       <button className="fv-btn fv-btn--sm" aria-label="Fresh context" onClick={fresh}>
         <RotateCcw /> <span className="topbar-label">Fresh context</span>

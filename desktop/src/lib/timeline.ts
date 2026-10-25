@@ -1,6 +1,6 @@
 import type {
   AttachmentSummary, MessagePayload, QueueItem, RoutingPayload, RunStatus, RunStatusPayload,
-  ToolCallPayload, ToolResultPayload, WorkspaceEvent,
+  ToolCallPayload, ToolResultPayload, ToolSummaryPayload, WorkspaceEvent,
 } from "../api/types";
 
 /**
@@ -40,6 +40,7 @@ export interface RunBlock {
   ts: string;
   messages: WorkspaceEvent<MessagePayload>[];
   tools: ToolEntry[];
+  toolSummary: ToolSummaryPayload | null;
   /** True on the run's last segment while the run is active. */
   live: boolean;
   status: RunStatus | null;
@@ -131,6 +132,7 @@ export function buildTimeline(
         ts: event.ts,
         messages: [],
         tools: [],
+        toolSummary: null,
         live: false,
         status: null,
         cont: false,
@@ -164,6 +166,10 @@ export function buildTimeline(
         } else {
           segmentFor(event, event.author_id).messages.push(as<MessagePayload>(event));
         }
+        break;
+      }
+      case "tool_summary": {
+        segmentFor(event, event.author_id).toolSummary = event.payload as unknown as ToolSummaryPayload;
         break;
       }
       case "tool_call": {
@@ -222,7 +228,7 @@ export function buildTimeline(
     block.live = run ? ACTIVE.has(run.status) : false;
   }
   const visible = blocks.filter((block) =>
-    block.type !== "run" || block.live || block.messages.length > 0 || block.tools.length > 0);
+    block.type !== "run" || block.live || block.messages.length > 0 || block.tools.length > 0 || block.toolSummary !== null);
 
   // Consecutive blocks from the same speaker drop the header.
   for (let index = 1; index < visible.length; index++) {

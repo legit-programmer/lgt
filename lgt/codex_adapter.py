@@ -313,7 +313,10 @@ class CodexAppServerRunner:
                         item = _item_dict(_field(payload, "item"))
                         kind = item.get("type")
                         if kind == "agentMessage":
-                            yield NormalizedEvent("message", {"text": item.get("text", "")})
+                            data = {"text": item.get("text", "")}
+                            if item.get("phase") is not None:
+                                data["phase"] = _value(item["phase"])
+                            yield NormalizedEvent("message", data)
                         elif kind in _TOOL_TYPES:
                             call_id = item.get("id")
                             if call_id not in seen_calls:

@@ -145,7 +145,7 @@ Absent requirements remain unknown; an empty array explicitly declares none. Cla
 | PATCH | `/agents/{agent_id}/inference` | Update model and/or reasoning level while preserving the provider. |
 | POST, DELETE | `/agents/{agent_id}/retire`, `/agents/{agent_id}` | Soft retirement. The POST uses the `/retire` path; DELETE uses the agent path. |
 | GET, POST | `/channels` | List or create channels and DMs. |
-| PATCH | `/channels/{channel_id}` | Update `name`, `allow_handoff`, or `primary_agent_id`; at least one field is required. |
+| PATCH | `/channels/{channel_id}` | Update `name`, `allow_handoff`, `primary_agent_id`, or `focus_mode`; at least one field is required. |
 | POST | `/channels/{channel_id}/unarchive` | Restore an archived channel. A retired agent's DM stays archived. |
 | POST | `/channels/{channel_id}/read` | Advance the server read cursor with `{"seq": 12}`. |
 | GET | `/channels/{channel_id}/context?agent_id=` | Session mode, message count, reported context tokens, window size, and checkpoint. |
@@ -203,7 +203,11 @@ Channels also persist `primary_agent_id` (nullable), `ownership_version` (monoto
 
 `GET /agents/status` returns `idle`, `working`, `queued`, or `failed`. An activity has `kind`, `summary`, and `since`. A terminal `run_status` includes `agent_id`, `started_at`, `ended_at`, and `duration_ms`. Failure errors contain `code`, `message`, `exit_code`, and `signal`. The server supplies the human-readable failure `text`.
 
+Activity kinds are `tool`, `writing`, and `working`. Focus-off runs report generic `working` activity without tool details.
+
 Tool calls contain `tool_call_id`, normalized `tool`, `label`, `summary`, and `input`. Results contain `tool_call_id`, `is_error`, `exit_code`, `duration_ms`, `bytes`, `lines`, `truncated`, and `output`. Byte and line counts describe the full output before truncation.
+
+Focus-off runs append one `tool_summary` at termination when tools were used: `{"author_handle":"coder","tools":{"bash":1,"read":2},"total":3}`. It has the run ID and agent author. It contains names/counts only, with no arguments, outputs, or expandable tool records. Context rendering uses the same condensed tool line as Focus-on history.
 
 Mention routing writes `method: "mention"`, `reason_code: "mention"`, and `reason: "explicit mentions"`. Direct primary delivery uses `method: "primary"` and `reason_code: "primary"`. Explicit skill invocation uses `method` and `reason_code: "skill"`, preserving primary ownership. New decisions use only `mention`, `primary`, or `skill`. Historical router decisions remain in the append-only log.
 
@@ -255,6 +259,12 @@ After replay, the server sends current `channel_summary`, `agent_status`, `conte
 A deletion uses `deleted: true` in `edit_message`. Commands produce durable event frames. Errors produce an error frame. Text deltas are live only. A subscriber whose live buffer overflows receives `resync` and closes with code `1013`.
 
 ## Channel changes
+
+**Focus mode.** Channels and DMs persist `focus_mode: boolean`, defaulting to `false` for new and migrated records. `PATCH /channels/{id}` with `{"focus_mode": true}` enables full streaming. The saved value is returned on channels and `channel_summary` frames; a `channel_changed` event includes the requested `focus_mode`. The desktop toggle applies to new turns; running turns retain the mode captured at dispatch.
+
+With Focus on, agent text deltas, messages, tool calls and tool results retain their existing streaming and storage behavior. With Focus off, deltas and raw tools are discarded before logging or publishing. Intermediate completed text is held only as a possible final reply in memory and replaced as work continues. Only the final reply is committed after successful run termination, along with tool counts. Questions use ordinary final chat replies. Failure/cancellation status stays visible; incomplete replies are discarded. Transfers dispatch from the committed final reply. Usage, run status, queue and channel state continue to update.
+
+Codex message phases distinguish `commentary` from `final_answer`. Claude uses the terminal result text when supplied. Gemini retains the final text after its last tool activity. For adapters without a terminal reply or phase metadata, the last completed message after the last tool activity is the final-reply fallback. Explicit commentary never becomes the final reply. Focus-off turns always rebuild from the retained channel log/checkpoint, and their native sessions are not reused. This prevents intermediate text and raw tools in CLI sessions from leaking into later turn context. A mode change also invalidates native session reuse. Existing Focus-on history remains intact; switching on cannot recover activity discarded while Focus was off.
 
 **Creation and primary selection.** `POST /channels` requires nonempty `agent_ids` and a `primary_agent_id` that identifies one of those active members for a regular channel. DMs keep their single-agent behavior. `PATCH /channels/{id}` accepts `primary_agent_id` to select an active member, including for an existing channel with an unavailable primary. Message and skill sends require an eligible primary before any conversation event is appended.
 

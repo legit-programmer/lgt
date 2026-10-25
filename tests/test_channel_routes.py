@@ -43,6 +43,29 @@ def test_channel_handoff_setting_and_authoritative_routing_state(routes):
     assert summary["allow_handoff"] is False
 
 
+def test_focus_mode_is_saved_per_channel_and_dm_and_broadcast_to_clients(routes):
+    client, orch, _, cid = routes
+    dm = orch.store.get_agent("alpha").dm_channel_id
+    assert orch.store.get_channel(cid).focus_mode is False
+    assert orch.store.get_channel(dm).focus_mode is False
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"last_id": 0})
+        response = client.patch(f"/channels/{dm}", json={"focus_mode": True})
+        assert response.status_code == 200 and response.json()["focus_mode"] is True
+        frame = socket.receive_json()
+        while not (frame["type"] == "event" and frame["event"]["kind"] == "channel_changed"
+                   and frame["event"]["channel_id"] == dm):
+            frame = socket.receive_json()
+        assert frame["event"]["payload"]["focus_mode"] is True
+        while not (frame["type"] == "channel_summary" and frame["channel_id"] == dm and frame["focus_mode"]):
+            frame = socket.receive_json()
+        assert frame["focus_mode"] is True
+    summaries = {c["channel_id"]: c for c in client.get("/channels").json()}
+    assert summaries[cid]["focus_mode"] is False and summaries[dm]["focus_mode"] is True
+    assert client.patch(f"/channels/{dm}", json={"focus_mode": False}).json()["focus_mode"] is False
+    assert client.patch(f"/channels/{cid}", json={"focus_mode": None}).status_code == 422
+
+
 def test_attachment_upload_download_send_and_delete(routes):
     client, _, _, cid = routes
     uploaded = client.post(f"/channels/{cid}/attachments", params={"filename": "page.html"},

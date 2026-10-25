@@ -3,8 +3,8 @@ id: 20261008-harness-adapters
 title: Harness adapters
 tags: [backend, harness]
 created: 2026-10-08
-updated: 2026-10-15
-related: [20261008-run-lifecycle, 20261008-process-hosting, 20261008-full-permission-agents, 20261008-open-gaps, 20261013-skill-invocation]
+updated: 2026-10-25
+related: [20261008-run-lifecycle, 20261008-process-hosting, 20261008-full-permission-agents, 20261008-open-gaps, 20261013-skill-invocation, 20261025-focus-mode]
 summary: The harness registry (discovery, catalogs, capability-based validation, runner factory) and the Codex, Claude, Gemini, and custom adapters that turn CLI output into normalized events.
 ---
 
@@ -67,6 +67,10 @@ Each adapter yields `NormalizedEvent(kind, data)` with these kinds:
 - `run_finished`
 
 `bytes` and `lines` describe the full output before truncation to `tool_output_cap`.
+
+## Final replies
+
+[Focus mode](focus-mode.md) uses Codex `message.phase`, Claude terminal `result` text, and Gemini text after the last tool activity. Claude/Gemini attach authoritative text as `run_finished.final_message`; streaming runners wait for process exit before publishing that terminal event. Custom messages may carry `phase: commentary | final_answer`; without it, the last completed message after tool activity is the fallback. Approval-bypass flags remain in force in both modes.
 
 ## Known adapter gaps
 

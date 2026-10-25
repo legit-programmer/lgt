@@ -15,6 +15,14 @@ if TYPE_CHECKING:
     from .store import Store
 
 
+def render_tool_summary(counts: dict[str, int]) -> str:
+    names = ", ".join(
+        f"{name} x{count}" if count > 1 else name
+        for name, count in sorted(counts.items())
+    )
+    return f"(ran {sum(counts.values())} tools: {names})"
+
+
 def render_delta(
     store: Store, agent_id: str, channel_id: str,
     from_seq: int, to_seq: int, mode: SessionMode,
@@ -58,11 +66,10 @@ def render_delta(
                 continue
             emitted_tools.add(key)
             counts = tools[key]
-            names = ", ".join(
-                f"{name} x{count}" if count > 1 else name
-                for name, count in sorted(counts.items())
-            )
-            lines.append(f"[{label}] (ran {sum(counts.values())} tools: {names})")
+            lines.append(f"[{label}] {render_tool_summary(counts)}")
+        elif event.kind == "tool_summary":
+            if mode != "resume" or event.author_id != agent_id:
+                lines.append(f"[{label}] {render_tool_summary(event.payload['tools'])}")
         elif event.kind == "system":
             lines.append(f"[system] {event.payload.get('text', '')}")
         elif event.kind == "cwd_changed":
@@ -98,6 +105,8 @@ def rendered_contribution(event: Event) -> int:
         return len(f"[{event.author_id}] {event.payload.get('text', '')}\n")
     if event.kind == "tool_call":
         return len(f"[{event.author_id}] (tool: {event.payload.get('tool', event.payload.get('name', 'tool'))})\n")
+    if event.kind == "tool_summary":
+        return len(f"[{event.author_id}] {render_tool_summary(event.payload['tools'])}\n")
     if event.kind == "system":
         return len(f"[system] {event.payload.get('text', '')}\n")
     return 0
@@ -121,6 +130,10 @@ def resolve_session(
 ) -> SessionPlan:
     session = store.get_session(agent.agent_id, channel.channel_id)
     events = store.events(channel.channel_id, to_seq=end_seq)
+    # Native CLI sessions retain intermediate text and raw tools. A quiet turn
+    # must rebuild from the user-visible log rather than inherit that history.
+    if not channel.focus_mode:
+        return cold_plan(events)
     if session is not None:
         valid = (
             session.last_run_status == "clean"
@@ -140,6 +153,7 @@ def resolve_session(
                 event.seq > session.last_seen_seq
                 and (
                     event.kind == "context_reset"
+                    or (event.kind == "channel_changed" and "focus_mode" in event.payload)
                     or (event.kind == "message_edit"
                         and event.payload["target_seq"] <= session.last_seen_seq)
                 )
@@ -189,6 +203,14 @@ def render_turn(
     )
     if plan.summary:
         delta = f"<context_checkpoint>\n{plan.summary}\n</context_checkpoint>\n{delta}"
+    if not channel.focus_mode:
+        delta = (
+            "<response_mode>\n"
+            "Work autonomously until the assigned task is complete or you need the user's input. "
+            "Return the completed result, or ask the necessary question as your final reply. "
+            "Omit progress narration. Include any delegation or handoff in your final reply.\n"
+            "</response_mode>\n" + delta
+        )
     if channel.kind == "dm":
         return delta
     members = {m["member_id"] for m in store.members(channel.channel_id) if m["member_kind"] == "agent"}

@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import signal
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import asdict, replace
@@ -92,6 +92,10 @@ class Orchestrator:
         self._runners: dict[str, Runner] = {}
         self._checkpoint_tasks: dict[str, asyncio.Task] = {}
         self._partials: dict[str, str] = {}
+        # Quiet runs keep only the latest possible final reply and tool counts
+        # in memory. Raw tools and intermediate text never reach the event log.
+        self._pending_messages: dict[str, dict[str, Any]] = {}
+        self._tool_counts: dict[str, Counter[str]] = defaultdict(Counter)
         self._cancelled: set[str] = set()
         self._published_queues: dict[str, list[dict[str, Any]]] = {}
         self._published_summaries: dict[str, dict[str, Any]] = {}
@@ -365,7 +369,7 @@ class Orchestrator:
         if kind == "context_reset":
             self.store.set_checkpoint_counter(channel_id, 0)
         elif kind in {
-            "message", "message_edit", "tool_call", "system", "context_checkpoint",
+            "message", "message_edit", "tool_call", "tool_summary", "system", "context_checkpoint",
             "cwd_changed", "member_added", "member_removed",
             "ownership_changed", "agent_transfer",
         }:
@@ -464,7 +468,7 @@ class Orchestrator:
             from .harnesses import canonical_harness
             capabilities = next((item["capabilities"] for item in self.harness_registry.list()
                                  if item["harness"] == canonical_harness(agent.harness)), {})
-        if not capabilities.get("resume", False):
+        if not channel.focus_mode or not capabilities.get("resume", False):
             return cold_plan(self.store.events(channel.channel_id, to_seq=end_seq))
         return resolve_session(self.store, agent, channel, end_seq,
                                lambda sid, cwd: self.artifact_exists(agent.harness, sid, cwd),
@@ -536,7 +540,7 @@ class Orchestrator:
 
     async def patch_channel(self, channel_id: str, name: str | None = None,
                             archived: bool | None = None, allow_handoff: bool | None = None,
-                            primary_agent_id: str | None = None) -> Channel:
+                            primary_agent_id: str | None = None, focus_mode: bool | None = None) -> Channel:
         def patch() -> Channel:
             channel = self.store.get_channel(channel_id)
             if not any(member["member_kind"] == "human" and member["member_id"] == self.human_id
@@ -552,7 +556,8 @@ class Orchestrator:
                         or self.store.get_agent(primary_agent_id).retired_at):
                     raise WorkspaceError("the primary agent must be an available channel member")
             with self.store.transaction():
-                self.store.patch_channel(channel_id, name=name, archived=archived, allow_handoff=allow_handoff)
+                self.store.patch_channel(channel_id, name=name, archived=archived, allow_handoff=allow_handoff,
+                                         focus_mode=focus_mode)
                 if archived:
                     for queued in self.store.queue(channel_id):
                         if queued.state in PENDING_QUEUE_STATES:
@@ -560,9 +565,12 @@ class Orchestrator:
                 event = self._append(channel_id, "channel_changed", "human", self.human_id,
                                      {"name": self.store.get_channel(channel_id).name,
                                       "archived_at": self.store.get_channel(channel_id).archived_at,
-                                      **({"allow_handoff": allow_handoff} if allow_handoff is not None else {})})
+                                      **({"allow_handoff": allow_handoff} if allow_handoff is not None else {}),
+                                      **({"focus_mode": focus_mode} if focus_mode is not None else {})})
                 ownership = self._set_owner(event, primary_agent_id, "user_selection") if primary_agent_id is not None else None
             self._publish(event)
+            if focus_mode is not None:
+                self._publish_context(channel_id)
             if ownership:
                 self._publish(ownership)
             self._pump(channel_id)
@@ -1139,13 +1147,28 @@ class Orchestrator:
         if run.status in TERMINAL_STATUSES:
             return
         data = output.data
-        trigger = self.store.get_event(run.channel_id, run.trigger_seq)
-        hop = trigger.hop + (1 if trigger.author_kind == "agent" else 0)
         if output.kind == "process_started":
             self.store.update_run(run.run_id, pgid=data.get("pgid"))
             return
         if output.kind != "run_finished":
             self._status(turn, "running")
+        if not turn.channel.focus_mode:
+            self._set_activity(run.run_id, "working", "Working")
+            if output.kind == "text_delta":
+                return
+            if output.kind == "tool_call":
+                self._tool_counts[run.run_id][str(data.get("tool", data.get("name", "tool")))] += 1
+                self._pending_messages.pop(run.run_id, None)
+                return
+            if output.kind == "tool_result":
+                self._pending_messages.pop(run.run_id, None)
+                return
+            if output.kind == "message":
+                if data.get("phase") != "commentary":
+                    self._pending_messages[run.run_id] = dict(data)
+                else:
+                    self._pending_messages.pop(run.run_id, None)
+                return
         if output.kind == "run_started":
             if data.get("harness_session_id"):
                 self.store.update_run(run.run_id, harness_session_id=data["harness_session_id"])
@@ -1156,84 +1179,7 @@ class Orchestrator:
             self.bus.publish({"type": "delta", "run_id": run.run_id,
                               "channel_id": run.channel_id, "text": data["text"]})
         elif output.kind in {"message", "tool_call", "tool_result"}:
-            if output.kind == "tool_call":
-                self._set_activity(run.run_id, "tool", data.get("summary") or data.get("label") or data.get("tool") or data.get("name", "Using a tool"))
-            else:
-                self._set_activity(run.run_id, "writing", "Writing response")
-            payload = dict(data)
-            payload["author_handle"] = turn.agent.handle
-            if output.kind == "message":
-                try:
-                    declared = artefacts.announcement(payload["text"])
-                    if declared:
-                        metadata = artefacts.announced_file(turn.channel, declared)
-                        payload["artefact"] = {**metadata, "cwd": turn.channel.cwd}
-                        payload["text"] = f"Created or updated artefact: {metadata['name']}"
-                except (WorkspaceError, KeyError, OSError) as error:
-                    payload["text"] = f"Artefact could not be opened: {error}"
-                    payload["artefact_error"] = True
-                transfer = parse_transfer(payload["text"], payload.get("transfer"))
-                transfers = [transfer] if transfer else parse_inline_transfers(payload["text"])
-                if transfer:
-                    payload["text"] = transfer["text"]
-                payload.pop("transfers", None)
-                payload.pop("transfer", None)
-                resolved = []
-                for item in transfers:
-                    target, = self._mentions(run.channel_id, "", [item["target"]])
-                    if target == run.agent_id:
-                        raise WorkspaceError("an agent cannot transfer a task to itself")
-                    if any(previous["target"] == target for previous in resolved):
-                        raise WorkspaceError("an agent message can transfer to each target only once")
-                    resolved.append({**item, "target": target, "source": run.agent_id,
-                                     "ownership_version": self.store.get_channel(run.channel_id).ownership_version})
-                if resolved:
-                    payload["transfers"] = resolved
-                    if len(resolved) == 1:
-                        payload["transfer"] = resolved[0]
-                # Code examples and typed mention syntax must not fall through to
-                # ordinary handle matching. Explicit transfers take precedence.
-                prose = re.sub(r"<@[^>]*>", " ", without_code(payload["text"]))
-                ordinary = [] if transfer else self._mentions(run.channel_id, prose, None)
-                payload["mentions"] = list(dict.fromkeys([item["target"] for item in resolved] + ordinary))
-                self._partials.pop(run.run_id, None)
-            with self.store.transaction():
-                event = self._append(run.channel_id, output.kind, "agent", run.agent_id, payload,
-                                     run_id=run.run_id, chain_id=trigger.chain_id, hop=hop)
-                notices: list[Event] = []
-                if output.kind == "message" and payload["mentions"]:
-                    if hop >= self.settings.max_hops:
-                        notices.append(self._append(
-                            run.channel_id, "system", "system", "system",
-                            {"code": "max_hops", "text": "Agent chain stopped at the hop limit."},
-                            chain_id=trigger.chain_id, hop=hop,
-                        ))
-                    else:
-                        modes = {item["target"]: item["mode"] for item in message_transfers(payload)}
-                        can_handoff = self._can_handoff(run.channel_id, run.agent_id, run.ownership_version)
-                        recipients = [agent_id for agent_id in payload["mentions"]
-                                      if modes.get(agent_id) != "handoff" or can_handoff]
-                        if recipients:
-                            notices.append(self._mention_decision(event, recipients))
-                        for agent_id in payload["mentions"]:
-                            mode = modes.get(agent_id, "delegation")
-                            permitted = agent_id in recipients
-                            if permitted:
-                                self.store.enqueue(run.channel_id, event.seq, agent_id,
-                                                   task_owner_id=run.task_owner_id or run.agent_id)
-                            notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
-                                "mode": mode, "status": "requested" if permitted else "rejected",
-                                "source": run.agent_id, "targets": [agent_id], "message_seq": event.seq,
-                                **({"text": "Handoff rejected: disabled or ownership changed. Use delegation instead."}
-                                   if not permitted else {}),
-                            }, chain_id=event.chain_id, hop=hop))
-            self._publish(event)
-            if payload.get("artefact"):
-                self.bus.publish({"type": "artefact_open", "channel_id": run.channel_id,
-                                  "artefact": payload["artefact"]})
-            for notice in notices:
-                self._publish(notice)
-            self._pump(run.channel_id)
+            self._append_output(turn, output)
         elif output.kind == "usage":
             fields = ("tokens_in", "tokens_out", "tokens_cached_in", "tokens_cache_creation", "tokens_reasoning", "tokens_total")
             values = {}
@@ -1265,7 +1211,92 @@ class Orchestrator:
         elif output.kind == "run_finished":
             cancelled = data.get("cancelled") or run.run_id in self._cancelled
             status = "cancelled" if cancelled else "completed" if data.get("ok") else "failed"
-            self._finish(turn, status, data.get("error"), data.get("exit_code"))
+            self._finish(turn, status, data.get("error"), data.get("exit_code"), data.get("final_message"))
+
+    def _append_output(self, turn: Turn, output: NormalizedEvent) -> None:
+        """Commit an admitted message/tool, including completion-only routing."""
+        run = self.store.get_run(turn.run.run_id)
+        data = output.data
+        trigger = self.store.get_event(run.channel_id, run.trigger_seq)
+        hop = trigger.hop + (1 if trigger.author_kind == "agent" else 0)
+        if turn.channel.focus_mode and output.kind == "tool_call":
+            self._set_activity(run.run_id, "tool", data.get("summary") or data.get("label") or data.get("tool") or data.get("name", "Using a tool"))
+        elif turn.channel.focus_mode:
+            self._set_activity(run.run_id, "writing", "Writing response")
+        payload = dict(data)
+        payload["author_handle"] = turn.agent.handle
+        if output.kind == "message":
+            try:
+                declared = artefacts.announcement(payload["text"])
+                if declared:
+                    metadata = artefacts.announced_file(turn.channel, declared)
+                    payload["artefact"] = {**metadata, "cwd": turn.channel.cwd}
+                    payload["text"] = f"Created or updated artefact: {metadata['name']}"
+            except (WorkspaceError, KeyError, OSError) as error:
+                payload["text"] = f"Artefact could not be opened: {error}"
+                payload["artefact_error"] = True
+            transfer = parse_transfer(payload["text"], payload.get("transfer"))
+            transfers = [transfer] if transfer else parse_inline_transfers(payload["text"])
+            if transfer:
+                payload["text"] = transfer["text"]
+            payload.pop("transfers", None)
+            payload.pop("transfer", None)
+            resolved = []
+            for item in transfers:
+                target, = self._mentions(run.channel_id, "", [item["target"]])
+                if target == run.agent_id:
+                    raise WorkspaceError("an agent cannot transfer a task to itself")
+                if any(previous["target"] == target for previous in resolved):
+                    raise WorkspaceError("an agent message can transfer to each target only once")
+                resolved.append({**item, "target": target, "source": run.agent_id,
+                                 "ownership_version": self.store.get_channel(run.channel_id).ownership_version})
+            if resolved:
+                payload["transfers"] = resolved
+                if len(resolved) == 1:
+                    payload["transfer"] = resolved[0]
+            # Code examples and typed mention syntax must not fall through to
+            # ordinary handle matching. Explicit transfers take precedence.
+            prose = re.sub(r"<@[^>]*>", " ", without_code(payload["text"]))
+            ordinary = [] if transfer else self._mentions(run.channel_id, prose, None)
+            payload["mentions"] = list(dict.fromkeys([item["target"] for item in resolved] + ordinary))
+            self._partials.pop(run.run_id, None)
+        with self.store.transaction():
+            event = self._append(run.channel_id, output.kind, "agent", run.agent_id, payload,
+                                 run_id=run.run_id, chain_id=trigger.chain_id, hop=hop)
+            notices: list[Event] = []
+            if output.kind == "message" and payload["mentions"]:
+                if hop >= self.settings.max_hops:
+                    notices.append(self._append(
+                        run.channel_id, "system", "system", "system",
+                        {"code": "max_hops", "text": "Agent chain stopped at the hop limit."},
+                        chain_id=trigger.chain_id, hop=hop,
+                    ))
+                else:
+                    modes = {item["target"]: item["mode"] for item in message_transfers(payload)}
+                    can_handoff = self._can_handoff(run.channel_id, run.agent_id, run.ownership_version)
+                    recipients = [agent_id for agent_id in payload["mentions"]
+                                  if modes.get(agent_id) != "handoff" or can_handoff]
+                    if recipients:
+                        notices.append(self._mention_decision(event, recipients))
+                    for agent_id in payload["mentions"]:
+                        mode = modes.get(agent_id, "delegation")
+                        permitted = agent_id in recipients
+                        if permitted:
+                            self.store.enqueue(run.channel_id, event.seq, agent_id,
+                                               task_owner_id=run.task_owner_id or run.agent_id)
+                        notices.append(self._append(run.channel_id, "agent_transfer", "system", "system", {
+                            "mode": mode, "status": "requested" if permitted else "rejected",
+                            "source": run.agent_id, "targets": [agent_id], "message_seq": event.seq,
+                            **({"text": "Handoff rejected: disabled or ownership changed. Use delegation instead."}
+                               if not permitted else {}),
+                        }, chain_id=event.chain_id, hop=hop))
+        self._publish(event)
+        if payload.get("artefact"):
+            self.bus.publish({"type": "artefact_open", "channel_id": run.channel_id,
+                              "artefact": payload["artefact"]})
+        for notice in notices:
+            self._publish(notice)
+        self._pump(run.channel_id)
 
     def _accept_handoffs(self, turn: Turn) -> None:
         for seq in turn.delivery_seqs:
@@ -1310,11 +1341,25 @@ class Orchestrator:
             self._activities[run_id] = {"kind": kind, "summary": summary, "since": utc_now()}
             self._publish_agent_statuses()
 
-    def _finish(self, turn: Turn, status: str, error: Any, exit_code: int | None) -> None:
+    def _finish(self, turn: Turn, status: str, error: Any, exit_code: int | None,
+                final_message: dict[str, Any] | None = None) -> None:
         run = self.store.get_run(turn.run.run_id)
         if run.status in TERMINAL_STATUSES:
             return
         trigger = self.store.get_event(run.channel_id, run.trigger_seq)
+        counts = self._tool_counts.pop(run.run_id, None)
+        if counts:
+            summary = self._append(run.channel_id, "tool_summary", "agent", run.agent_id,
+                                   {"author_handle": turn.agent.handle, "tools": dict(sorted(counts.items())),
+                                    "total": sum(counts.values())},
+                                   run_id=run.run_id, chain_id=trigger.chain_id,
+                                   hop=trigger.hop + (1 if trigger.author_kind == "agent" else 0))
+            self._publish(summary)
+        pending = self._pending_messages.pop(run.run_id, None)
+        if status == "completed" and not turn.channel.focus_mode:
+            final = final_message if final_message is not None else pending
+            if final and final.get("text", "").strip():
+                self._append_output(turn, NormalizedEvent("message", final))
         ended = utc_now()
         elapsed = duration_ms(run.started_at, ended)
         error = normalize_error(error, exit_code) if status in {"failed", "cancelled"} else None
@@ -1331,7 +1376,8 @@ class Orchestrator:
             if status == "completed":
                 self.store.put_session(Session(
                     run.agent_id, run.channel_id, run.harness, run.harness_session_id,
-                    run.cwd, run.delta_end_seq, turn.agent.fingerprint(), "clean",
+                    run.cwd, run.delta_end_seq, turn.agent.fingerprint(),
+                    "clean" if turn.channel.focus_mode else "dirty",
                 ))
             elif run.status == "running":
                 session = self.store.get_session(run.agent_id, run.channel_id)

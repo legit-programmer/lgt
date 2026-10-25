@@ -56,7 +56,7 @@ describe("workspace frames", () => {
     const summary: ChannelSummary = {
       channel_id: "c1", kind: "channel", name: "General", cwd: "/tmp", cwd_managed: false,
       next_seq: 1, created_at: "t", archived_at: null, primary_agent_id: null, ownership_version: 0,
-      allow_handoff: false, routing_mode: "unassigned", active_task_agent_ids: [],
+      allow_handoff: false, focus_mode: false, routing_mode: "unassigned", active_task_agent_ids: [],
       members: [], last_activity_at: "t", preview: null, unread_count: 0, active_runs: [],
     };
     const apply = useWorkspace.getState().applyFrame;

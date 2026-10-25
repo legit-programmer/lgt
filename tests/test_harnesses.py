@@ -173,6 +173,42 @@ def test_claude_allowlist_restricts_tools_in_command(tmp_path):
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
 
 
+def test_claude_terminal_result_carries_authoritative_final_text(tmp_path):
+    runner = ClaudeRunner(("claude",), tool_output_cap=100, line_limit=8192,
+                          cancel_grace_seconds=.1, log_dir=tmp_path)
+    runner.translate({"type": "assistant", "message": {"content": [{"type": "text", "text": "Progress"}]}})
+    terminal = runner.translate({"type": "result", "is_error": False, "result": "Final result\n\nSecond paragraph"})[-1]
+    assert terminal.kind == "run_finished"
+    assert terminal.data["ok"] is True
+    assert terminal.data["final_message"] == {"text": "Final result\n\nSecond paragraph"}
+
+
+@pytest.mark.parametrize("completed_message", [True, False])
+def test_gemini_final_text_excludes_earlier_tool_rounds(tmp_path, completed_message):
+    runner = GeminiRunner(("gemini",), tool_output_cap=100, line_limit=8192,
+                          cancel_grace_seconds=.1, log_dir=tmp_path)
+    runner.translate({"type": "message", "role": "assistant", "content": "Old progress", "delta": True})
+    runner.translate({"type": "tool_use", "tool_id": "t1", "tool_name": "read", "parameters": {}})
+    runner.translate({"type": "tool_result", "tool_id": "t1", "output": "secret"})
+    runner.translate({"type": "message", "role": "assistant", "content": "Final ", "delta": True})
+    runner.translate({"type": "message", "role": "assistant", "content": "reply", "delta": True})
+    if completed_message:
+        runner.translate({"type": "message", "role": "assistant", "content": "Final reply"})
+    terminal = runner.translate({"type": "result", "status": "success"})[-1]
+    assert terminal.data["final_message"] == {"text": "Final reply"}
+
+
+def test_custom_message_phase_is_optional_and_preserves_transfer_metadata(tmp_path):
+    runner = CustomRunner(("custom",), tool_output_cap=100, line_limit=8192,
+                          cancel_grace_seconds=.1, log_dir=tmp_path)
+    transfer = {"mode": "delegation", "target": "beta", "text": "Review this"}
+    event = runner.translate({"type": "message", "text": "Done", "phase": "final_answer", "transfer": transfer})[0]
+    assert event.data == {"text": "Done", "phase": "final_answer", "transfer": transfer}
+    assert runner.translate({"type": "message", "text": "Legacy"})[0].data == {"text": "Legacy"}
+    with pytest.raises(ValueError, match="phase"):
+        runner.translate({"type": "message", "text": "Invalid", "phase": "unknown"})
+
+
 def test_custom_adapter_preserves_structured_transfer_metadata(tmp_path):
     runner = CustomRunner((sys.executable, FIXTURE), tool_output_cap=100,
                           line_limit=8192, cancel_grace_seconds=.1, log_dir=tmp_path)

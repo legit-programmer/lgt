@@ -269,9 +269,11 @@ class ClaudeRunner(StreamingRunner):
             denied_tools = sorted({str(denial.get("tool_name", "tool")) for denial in denials})
             error = ({"code": "permission", "message": "Agent permissions blocked tools: " + ", ".join(denied_tools)}
                      if denials else structured_error(str(event.get("result") or event.get("subtype"))) if event.get("is_error") else None)
-            items.append(NormalizedEvent("run_finished", {"ok": not event.get("is_error", False) and not denials,
-                "error": error,
-                "cancelled": False}))
+            terminal = {"ok": not event.get("is_error", False) and not denials,
+                        "error": error, "cancelled": False}
+            if isinstance(event.get("result"), str):
+                terminal["final_message"] = {"text": event["result"]}
+            items.append(NormalizedEvent("run_finished", terminal))
             return items
         return []
 
@@ -299,6 +301,7 @@ class GeminiRunner(StreamingRunner):
         super().__init__(*args, **kwargs)
         self._text = ""
         self._has_message = False
+        self._final_text = ""
 
     def argv(self, turn: Turn) -> tuple[str, ...]:
         args = (*self.command, "-p", f"{turn.agent.system_prompt}\n\n{turn.prompt}",
@@ -316,12 +319,16 @@ class GeminiRunner(StreamingRunner):
             text = event.get("content", "")
             if event.get("delta"):
                 self._text += text
+                self._final_text += text
                 return [NormalizedEvent("text_delta", {"text": text})]
             self._has_message = True
+            self._final_text = text
             return [NormalizedEvent("message", {"text": text})]
         if kind == "tool_use":
+            self._final_text = ""
             return [tool_call(event.get("tool_id"), event.get("tool_name", "tool"), event.get("parameters", {}))]
         if kind == "tool_result":
+            self._final_text = ""
             return [tool_result(event.get("tool_id"), event.get("output", ""), self.tool_output_cap,
                                 is_error=not event.get("status", "success") == "success")]
         if kind == "result":
@@ -339,7 +346,7 @@ class GeminiRunner(StreamingRunner):
                 items.append(NormalizedEvent("message", {"text": self._text}))
             items.append(NormalizedEvent("run_finished", {"ok": event.get("status") == "success",
                 "error": structured_error(str(event.get("error", "Gemini run failed"))) if event.get("status") != "success" else None,
-                "cancelled": False}))
+                "cancelled": False, "final_message": {"text": self._final_text}}))
             return items
         if kind == "error":
             return []
@@ -371,6 +378,10 @@ class CustomRunner(StreamingRunner):
             return [NormalizedEvent("run_started", {"harness_session_id": event.get("session_id")})]
         if kind in ("text_delta", "message"):
             data = {"text": str(event.get("text", ""))}
+            if kind == "message" and "phase" in event:
+                if event["phase"] not in {"commentary", "final_answer"}:
+                    raise ValueError("message phase must be commentary or final_answer")
+                data["phase"] = event["phase"]
             if kind == "message" and "transfer" in event:
                 data["transfer"] = event["transfer"]
             return [NormalizedEvent(kind, data)]

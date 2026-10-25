@@ -165,6 +165,7 @@ export interface Channel {
   primary_agent_id: string | null;
   ownership_version: number;
   allow_handoff: boolean;
+  focus_mode: boolean;
 }
 
 export interface ChannelSummary extends Channel {
@@ -220,7 +221,7 @@ export interface RunLog {
 }
 
 export interface Activity {
-  kind: "tool" | "writing";
+  kind: "tool" | "writing" | "working";
   summary: string;
   since: string;
 }
@@ -357,6 +358,12 @@ export interface MessageTransfer {
   text: string;
   source: string;
   ownership_version: number;
+}
+
+export interface ToolSummaryPayload {
+  tools: Record<string, number>;
+  total: number;
+  author_handle: string;
 }
 
 export interface ToolCallPayload {

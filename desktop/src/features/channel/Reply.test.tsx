@@ -75,7 +75,7 @@ describe("message replies", () => {
     };
     const { container } = render(<RunSegment ctx={liveCtx} block={{
       type: "run", key: "stream", runId: "stream-run", agentId: "source-agent", seq: 2, ts: message.ts,
-      messages: [], tools: [], live: true, status: "running", cont: false,
+      messages: [], tools: [], toolSummary: null, live: true, status: "running", cont: false,
     }} />);
 
     expect(container.querySelector(".partial-text .fv-mention")?.textContent).toBe("@builder");
@@ -96,6 +96,7 @@ describe("message replies", () => {
     const { container } = render(<RunSegment ctx={ctx} block={{
       type: "run", key: "run", runId: null, agentId: "beta", seq: 2, ts: message.ts,
       messages: [agentMessage, { ...agentMessage, seq: 3 }], live: false, status: "completed", cont: false,
+      toolSummary: null,
       tools: [{ call: { ...message, seq: 4, kind: "tool_call", payload: { tool_call_id: "read", name: "Read" } },
         result: { ...message, seq: 5, kind: "tool_result", payload: { tool_call_id: "read", output: "TOOL OUTPUT", is_error: false } } }],
     }} />);

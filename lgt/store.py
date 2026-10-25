@@ -69,6 +69,7 @@ def _channel(row: sqlite3.Row) -> Channel:
         created_at=row["created_at"], archived_at=row["archived_at"],
         primary_agent_id=row["primary_agent_id"], ownership_version=row["ownership_version"],
         allow_handoff=bool(row["allow_handoff"]),
+        focus_mode=bool(row["focus_mode"]),
     )
 
 
@@ -229,6 +230,7 @@ class Store:
                 "primary_agent_id": "TEXT REFERENCES agents(agent_id)",
                 "ownership_version": "INTEGER NOT NULL DEFAULT 0",
                 "allow_handoff": "INTEGER NOT NULL DEFAULT 1 CHECK (allow_handoff IN (0, 1))",
+                "focus_mode": "INTEGER NOT NULL DEFAULT 0 CHECK (focus_mode IN (0, 1))",
             },
             "dispatch_queue": {"task_owner_id": "TEXT REFERENCES agents(agent_id)"},
         }
@@ -380,14 +382,14 @@ class Store:
                 """INSERT INTO channels (
                        channel_id, kind, name, cwd, cwd_managed, next_seq,
                        rendered_chars_since_checkpoint, created_at, archived_at,
-                       primary_agent_id, ownership_version, allow_handoff
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       primary_agent_id, ownership_version, allow_handoff, focus_mode
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     channel.channel_id, channel.kind, channel.name, channel.cwd,
                     int(channel.cwd_managed), channel.next_seq,
                     channel.rendered_chars_since_checkpoint, channel.created_at,
                     channel.archived_at, channel.primary_agent_id, channel.ownership_version,
-                    int(channel.allow_handoff),
+                    int(channel.allow_handoff), int(channel.focus_mode),
                 ),
             )
             for member_kind, member_id in members:
@@ -470,7 +472,8 @@ class Store:
                 raise KeyError(channel_id)
 
     def patch_channel(self, channel_id: str, *, name: str | None = None,
-                      archived: bool | None = None, allow_handoff: bool | None = None) -> Channel:
+                      archived: bool | None = None, allow_handoff: bool | None = None,
+                      focus_mode: bool | None = None) -> Channel:
         with self.transaction():
             channel = self.get_channel(channel_id)
             if name is not None:
@@ -484,6 +487,9 @@ class Store:
             if allow_handoff is not None:
                 self.conn.execute("UPDATE channels SET allow_handoff = ? WHERE channel_id = ?",
                                   (int(allow_handoff), channel_id))
+            if focus_mode is not None:
+                self.conn.execute("UPDATE channels SET focus_mode = ? WHERE channel_id = ?",
+                                  (int(focus_mode), channel_id))
             return self.get_channel(channel_id)
 
     def set_primary_agent(self, channel_id: str, agent_id: str) -> None:

@@ -22,6 +22,7 @@ async def workspace(tmp_path):
     for name in ["alpha", "beta"]:
         orch.put_agent(Agent(name, name, name, name + " specialist", "codex", "", "help"))
     channel = orch.create_channel("test", agent_ids=["alpha", "beta"], primary_agent_id="alpha")
+    channel = store.patch_channel(channel.channel_id, focus_mode=True)
     await orch.start()
     yield orch, store, factory, channel
     await orch.close()

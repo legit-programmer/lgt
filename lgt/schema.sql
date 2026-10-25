@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS channels (
     archived_at TEXT,
     primary_agent_id TEXT REFERENCES agents(agent_id),
     ownership_version INTEGER NOT NULL DEFAULT 0,
-    allow_handoff INTEGER NOT NULL DEFAULT 1 CHECK (allow_handoff IN (0, 1))
+    allow_handoff INTEGER NOT NULL DEFAULT 1 CHECK (allow_handoff IN (0, 1)),
+    focus_mode INTEGER NOT NULL DEFAULT 0 CHECK (focus_mode IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS channel_members (

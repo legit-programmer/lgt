@@ -1,5 +1,9 @@
 # Backend gaps for the Lgt screens
 
+## Focus mode (implemented 2026-10-25)
+
+Channels and DMs persist `focus_mode`, default off. The backend keeps quiet activity out of live frames and the log, retains final replies and tool summaries, and rebuilds quiet context without native CLI session history. Both headers expose an authoritative toggle that applies to the next turn. Switching on cannot restore discarded activity. See [Focus mode](../kb/topics/backend/focus-mode.md) and the [channel patch contract](../docs/backend-reference.md#channel-changes).
+
 The contracts in the sections after "Open" are implemented. The original gap descriptions are retained as the acceptance checklist. See the [backend reference](../docs/backend-reference.md) and [custom harness protocol](../docs/custom-harness.md) for the current API.
 
 Message replies are implemented through optional `reply_to_seq`/`reply_selection` fields and `POST /channels/{id}/reply-preview`. The backend owns quote snapshots, truncation and automatic author targeting; the desktop supplies the user's selection and displays the returned quote. See [Message replies](../kb/topics/backend/message-replies.md).

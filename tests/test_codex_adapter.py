@@ -142,6 +142,21 @@ async def test_nested_context_usage_and_rate_limit_snapshot(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_message_phases_distinguish_commentary_from_final_reply(tmp_path):
+    client = FakeClient(FakeHandle([
+        note("item/completed", item={"type": "agentMessage", "text": "Working", "phase": "commentary"}),
+        note("item/completed", item={"type": "agentMessage", "text": "Done", "phase": "final_answer"}),
+        note("turn/completed", turn=NS(id="t", status="completed")),
+    ]))
+    runner = CodexAppServerRunner(tool_output_cap=100, line_limit=1000,
+                                  cancel_grace_seconds=.1, log_dir=tmp_path, client_factory=lambda _: client)
+    events = [e async for e in runner.start(sample_turn(tmp_path))]
+    assert [e.data for e in events if e.kind == "message"] == [
+        {"text": "Working", "phase": "commentary"}, {"text": "Done", "phase": "final_answer"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_global_rate_limit_notification_is_streamed_before_terminal(tmp_path):
     class GlobalClient(FakeClient):
         def __init__(self, handle):

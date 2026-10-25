@@ -3,8 +3,8 @@ id: 20261008-context-and-sessions
 title: Context and sessions
 tags: [backend, context]
 created: 2026-10-08
-updated: 2026-10-18
-related: [20261008-run-lifecycle, 20261008-mutable-channel-cwd, 20261008-glossary, 20261008-live-state, 20261012-message-replies]
+updated: 2026-10-25
+related: [20261008-run-lifecycle, 20261008-mutable-channel-cwd, 20261008-glossary, 20261008-live-state, 20261012-message-replies, 20261025-focus-mode]
 summary: How a turn's prompt is rendered from the log, when a harness session is resumed versus rebuilt cold, how resets and edits invalidate sessions, and how checkpoints summarize old context.
 ---
 
@@ -27,18 +27,21 @@ summary: How a turn's prompt is rendered from the log, when a harness session is
 
 - Edits are applied as of `to_seq`. Deleted messages are skipped.
 - Replies carry a text-only, bounded snapshot as labeled reference context before the actual reply, even when the source is outside this delta. Channel `assigned_messages` includes the same quote metadata.
-- Tool calls collapse to one line per run, and raw tool output is never rendered.
+- Tool calls collapse to one line per run, and raw tool output is never rendered. Quiet `tool_summary` events render the same names/counts line.
 - In `resume` mode, the agent's own messages and tools are omitted, because its session already has them.
 - `cwd_changed`, `member_added`, `member_removed` and `system` events render as `[system]` lines.
 - Attachment paths are resolved at render time, so the log never stores data-directory paths.
 - `render_turn` prepends `<context_checkpoint>` summary text when the plan uses a checkpoint.
-- Channel turns also prepend `<channel_routing>` with current primary, handoff policy, member handles/IDs/descriptions, and `assigned_messages` for the delivered queue batch. Assigned text respects edits, deletion and context-reset boundaries. This block refreshes on resumed turns as well as cold ones; DMs retain their original prompt shape.
+- Channel turns also prepend `<channel_routing>` with current primary, handoff policy, member handles/IDs/descriptions, and `assigned_messages` for the delivered queue batch. Assigned text respects edits, deletion and context-reset boundaries. This block refreshes on resumed turns as well as cold ones; DMs omit channel-routing metadata.
 - Ownership and transfer events render as system history. Ownership notices save the selected handle so later renaming cannot change historical prompts. Transfer envelopes are explicit messages; ordinary agent mentions delegate.
+
+Quiet turns prepend `<response_mode>` with autonomous-work/final-reply instructions for channels and DMs. Only retained final messages and tool summaries enter quiet history; native CLI sessions are not reused. See [Focus mode](focus-mode.md).
 
 ## Resume or cold (`resolve_session`)
 
 A stored session resumes only if all of these hold:
 
+- Focus mode is on; quiet turns always rebuild cold from retained history;
 - `last_run_status` is `clean`;
 - the harness is unchanged;
 - the agent config fingerprint (harness, model, explicit reasoning effort, system prompt, tools, permissions and argv) is unchanged;
@@ -46,7 +49,7 @@ A stored session resumes only if all of these hold:
 - `last_seen_seq <= end_seq`;
 - the harness artifact still exists (`artifact_exists`, for example Codex's rollout file under `CODEX_HOME/sessions`);
 - the session is within `session_ttl_seconds`, when one is set;
-- no `context_reset` happened, and no edit touched a seq the session had already seen.
+- no `context_reset` or focus-setting change happened, and no edit touched a seq the session had already seen.
 
 Otherwise `cold_plan` starts from the newest valid checkpoint, or from the event after the last reset. Custom harnesses (protocol v1) always run cold.
 

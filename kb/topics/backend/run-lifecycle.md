@@ -3,8 +3,8 @@ id: 20261008-run-lifecycle
 title: Run lifecycle
 tags: [backend, runs]
 created: 2026-10-08
-updated: 2026-10-15
-related: [20261008-dispatch-and-queue, 20261008-harness-adapters, 20261008-context-and-sessions, 20261008-live-state]
+updated: 2026-10-25
+related: [20261008-dispatch-and-queue, 20261008-harness-adapters, 20261008-context-and-sessions, 20261008-live-state, 20261025-focus-mode]
 summary: Run statuses and the events they emit, how runner output becomes log events, cancellation, failure normalization, and orphan recovery after a crash.
 ---
 
@@ -21,7 +21,7 @@ summary: Run statuses and the events they emit, how runner output becomes log ev
 1. It waits on the global run semaphore. If the run is cancelled while waiting, it finishes as `cancelled`.
 2. It marks the run `starting` and creates the managed cwd if needed.
 3. It gets a runner from `runner_factory(harness)`, which is `HarnessRegistry.runner`, and iterates `runner.start(turn)`.
-4. Each `NormalizedEvent` passes through `_output` inside the channel mailbox:
+4. Each `NormalizedEvent` passes through `_output` inside the channel mailbox. The table below describes Focus-on behavior. [Focus mode](focus-mode.md) defaults off: intermediate text and raw tools are discarded, tool counts are retained, and `_finish` commits only a successful final reply. Each turn captures its channel mode at dispatch.
 
 | Runner event | Effect |
 | --- | --- |
@@ -38,7 +38,7 @@ summary: Run statuses and the events they emit, how runner output becomes log ev
 
 ## Finishing (`_finish`)
 
-- `completed`: writes a clean `Session` with `last_seen_seq = delta_end_seq`. It never uses the channel's current max seq, which would silently drop messages queued during the run.
+- `completed`: writes a `Session` with `last_seen_seq = delta_end_seq`, clean for Focus-on turns and dirty for quiet turns. It never uses the channel's current max seq, which would silently drop messages queued during the run.
 - `failed` or `cancelled` after the run started: marks the session `dirty`, so the next turn rebuilds cold.
 - In all cases it clears the partial, publishes the event, pumps the queue, and on completion considers a checkpoint.
 

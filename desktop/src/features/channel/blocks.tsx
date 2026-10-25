@@ -2,7 +2,7 @@ import { AgentInference } from "../../components/AgentInference";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeftRight, ArrowRight, Ban, Bookmark, ChevronDown, ChevronRight, Clock, CornerDownLeft, FileText, Folder,
-  Hash, History, Pencil, Reply, RotateCcw, Square, UserMinus, UserPlus, X,
+  Focus, Hash, History, Pencil, Reply, RotateCcw, Square, Terminal, UserMinus, UserPlus, X,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
@@ -211,10 +211,18 @@ export function RunSegment({ block, ctx }: { block: RunBlock; ctx: BlockContext 
             </div>
           ) : null}
           {live && !partial && !block.messages.length && !block.tools.length && !queuedRun ? (
-            <p className="partial-text fv-meta">Starting…</p>
+            <p className="partial-text fv-meta">{block.status === "running" ? "Working…" : "Starting…"}</p>
           ) : null}
         </div>
         {block.tools.length ? <ToolList tools={block.tools} live={live} cwd={ctx.cwd} /> : null}
+        {block.toolSummary ? (
+          <div className="fv-tools"><div className="fv-tool">
+            <Terminal />
+            <span className="fv-tool-name">ran {block.toolSummary.total} tools</span>
+            <span className="fv-tool-summary">{Object.entries(block.toolSummary.tools)
+              .map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join(" · ")}</span>
+          </div></div>
+        ) : null}
       </div>
       {live && block.runId && !block.cont ? (
         <div className="fv-msg-actions">
@@ -405,8 +413,9 @@ export function Notice({ event, ctx }: { event: WorkspaceEvent; ctx: BlockContex
     case "channel_changed":
       return (
         <div className="fv-notice">
-          {payload.allow_handoff !== undefined ? <ArrowLeftRight /> : <Hash />}
-          <span>{payload.archived_at ? "channel archived" : payload.allow_handoff !== undefined ?
+          {payload.focus_mode !== undefined ? <Focus /> : payload.allow_handoff !== undefined ? <ArrowLeftRight /> : <Hash />}
+          <span>{payload.archived_at ? "channel archived" : payload.focus_mode !== undefined ?
+            `focus mode ${payload.focus_mode ? "on" : "off"} · applies from the next turn` : payload.allow_handoff !== undefined ?
             `agent handoffs ${payload.allow_handoff ? "enabled" : "disabled"}` : `channel is now #${String(payload.name)}`}</span>
         </div>
       );
