@@ -3,7 +3,7 @@ id: 20261008-routing
 title: Routing
 tags: [backend, routing]
 created: 2026-10-08
-updated: 2026-10-18
+updated: 2026-10-25
 related: [20261008-dispatch-and-queue, 20261008-process-hosting, 20261008-websocket-protocol, 20261012-message-replies, 20261013-skill-invocation]
 summary: Shared channel ownership, required primary selection, inline handoff/delegation mentions, and completion-only dispatch.
 ---
@@ -30,6 +30,8 @@ summary: Shared channel ownership, required primary selection, inline handoff/de
 - Independent overlapping tasks do not change dispatch: unmentioned messages always go to the primary.
 - Delegation inherits `task_owner_id` from its parent. Coalescing keeps deliveries with different task owners separate and gives each handoff its own turn.
 - Only user selection and accepted handoff append `ownership_changed`. In-flight handoffs cannot supersede a newer ownership version.
+
+Channel instructions require agents to report completed or blocked work back to the requesting assigned-message author with an explicit `<@requester_agent_id:delegation>` marker. This applies to handoffs, delegations, and direct mentions, preserves ownership, and includes results, validation, and next steps. Further actionable requests must ping their recipient again; completion reports and acknowledgments do not require another ping. These instructions refresh on cold and resumed channel turns.
 
 ## Handoff and delegation
 

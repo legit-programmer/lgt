@@ -18,6 +18,8 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 - Add per-channel and DM [Focus mode](../backend/focus-mode.md), default off. Quiet turns retain final replies and tool summaries, discard intermediate activity before logging/streaming, and rebuild context without native session reuse. Both headers expose the saved mode; toggles apply to new turns.
 
+- Require channel agents to explicitly ping the requesting agent with results after handoffs, delegations, and direct mentions, including blocked work; avoid acknowledgment loops and preserve ownership when reporting back.
+
 ## 2026-10-21
 
 - Add the Artefacts tab with a 50/50 desktop view, Markdown rendering, sandboxed HTML, lazy PDF.js previews, rename/delete, live reopening on updates, historical Open buttons, and filesystem refresh. Bundle PDF assets for offline use.

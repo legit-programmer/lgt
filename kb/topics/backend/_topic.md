@@ -9,7 +9,7 @@ The Python package in `lgt/`: storage, orchestration, harness adapters, and the 
 - [Context and sessions](context-and-sessions.md) — prompt rendering, resume or cold, checkpoints.
 - [Focus mode](focus-mode.md) — per-channel/DM streaming, final replies, retained tool summaries and native session reuse.
 - [Message replies](message-replies.md) — text-only quotes, selected text, author routing and composer drafts.
-- [Routing](routing.md) — required primary selection, shared ownership, inline handoff/delegation, and completion-only dispatch.
+- [Routing](routing.md) — required primary selection, shared ownership, inline handoff/delegation, completion-only dispatch, and explicit result pings to requesting agents.
 - [Harness adapters](harness-adapters.md) — registry, model reasoning modes, Codex, Claude, Gemini, custom.
 - [Skill discovery and invocation](skill-invocation.md) — sources, executor selection, native loading and permission gates.
 - [Process hosting](process-hosting.md) — process trees, Job Objects, SDK host, one-shot calls.

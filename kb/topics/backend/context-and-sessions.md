@@ -37,6 +37,8 @@ summary: How a turn's prompt is rendered from the log, when a harness session is
 
 Quiet turns prepend `<response_mode>` with autonomous-work/final-reply instructions for channels and DMs. Only retained final messages and tool summaries enter quiet history; native CLI sessions are not reused. See [Focus mode](focus-mode.md).
 
+Channel instructions require agents to report completed or blocked work back to the requesting assigned-message author with an explicit `<@requester_agent_id:delegation>` marker. This applies to handoffs, delegations, and direct mentions, preserves ownership, and includes results, validation, and next steps. Further actionable requests must ping their recipient again; completion reports and acknowledgments do not require another ping. These instructions refresh on cold and resumed channel turns.
+
 ## Resume or cold (`resolve_session`)
 
 A stored session resumes only if all of these hold:

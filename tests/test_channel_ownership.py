@@ -74,6 +74,37 @@ async def test_overlap_keeps_selected_primary_without_completion_stealing(worksp
     assert owner(store, cid) == "assistant"
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["handoff", "delegation", "mention"])
+async def test_agent_task_result_pings_requester_without_changing_owner(workspace, mode):
+    orch, store, factory, cid = workspace
+    await orch.send_message(cid, "Change the design")
+    await eventually(lambda: len(factory.started) == 1)
+    if mode == "mention":
+        factory.started[0].emit("message", text="@assistant Change the design")
+    else:
+        transfer(factory.started[0], mode, "assistant", "Change the design")
+    await eventually(lambda: len(factory.started) == 2)
+    prompt = factory.started[1].turn.prompt
+    assert "report back to that requesting agent" in prompt
+    assert "assigned message's author_id, not the current primary" in prompt
+    assert "do not ping back merely to acknowledge it" in prompt
+    routing = prompt.split("<channel_routing>\n", 1)[1].split("\n</channel_routing>", 1)[0]
+    assert json.loads(routing.split("\n", 1)[1])["assigned_messages"][0]["author_id"] == "coder"
+    factory.started[0].finish()
+    await eventually(lambda: store.get_run(factory.started[0].turn.run.run_id).status == "completed")
+    expected_owner = "assistant" if mode == "handoff" else "coder"
+    result = "<@coder:delegation> Design updated in page.html; layout checks passed."
+    factory.started[1].finish(result)
+    await eventually(lambda: len(factory.started) == 3)
+    assert factory.started[2].turn.agent.agent_id == "coder"
+    assert result in factory.started[2].turn.prompt
+    assert owner(store, cid) == expected_owner
+    factory.started[2].finish("The design change is complete.")
+    await eventually(lambda: not store.list_runs(cid, active_only=True))
+    assert len(factory.started) == 3
+
+
+@pytest.mark.asyncio
 async def test_delegation_preserves_owner(workspace):
     orch, store, factory, cid = workspace
     await orch.send_message(cid, "Create a site", ["coder"])
