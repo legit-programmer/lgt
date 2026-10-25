@@ -3,7 +3,7 @@ id: 20261008-design-system
 title: Ember design system
 tags: [desktop, design]
 created: 2026-10-08
-updated: 2026-10-18
+updated: 2026-10-26
 related: [20261008-screens, 20261008-desktop-architecture]
 summary: The Ember rules from design/README.md and how they are implemented in tokens.css, components.css and app.css, including agent hues, status glyphs and glass usage.
 ---
@@ -32,6 +32,7 @@ summary: The Ember rules from design/README.md and how they are implemented in t
   - These live in `components/Status.tsx`.
 - **Agents are rounded squares and people are circles** (`fv-avatar`, `fv-avatar--person`).
 - **Your messages (owner override, 2026-10-15):** no `accent-soft` and no outline, just a faint `--glass-pane-raised` fill, so they stand apart without being the strongest edge on the paneless timeline. Queued messages keep their dashed queued style.
+- **Your messages sit on the right (owner request, 2026-10-26):** `.fv-msg--human` mirrors the row: avatar on the far right, name beside it, the bubble flush right at its fitted width, attachments right-aligned and the Reply toolbar in the gutter to the bubble's left. Agent messages stay on the left.
 - **Reply on hover:** the Reply toolbar floats over a message's top-right corner and shows on hover, focus or a text selection (`.fv-reply-actions`), so a long conversation isn't striped with identical buttons.
 - **Agent avatars:** DiceBear **Critters** (CC0) is the default style, set by the backend (`DEFAULT_AVATAR_STYLE` in `lgt/models.py`). The picker offers Critters variants. Any stored style still renders, because `components/Avatar.tsx` lazy-loads the matching definition.
 - **Provider logos:** `components/ProviderLogo.tsx` uses locally bundled Claude, Gemini and Codex artwork in CLI selection, onboarding, previews and conversation metadata. Codex follows the text colour; Claude and Gemini retain their brand colours. Custom or unknown harnesses use the terminal glyph. Asset sources and licensing live in `desktop/src/assets/providers/README.md`. Agent avatars remain independent of provider identity.

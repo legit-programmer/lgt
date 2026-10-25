@@ -827,6 +827,58 @@ select {
   margin-top: var(--space-150);
 }
 
+/* The person's messages sit on the right, mirrored: avatar on the far edge, name
+   beside it, the bubble flush right and Reply floating in the gutter to its left.
+   Agents stay on the left. */
+.fv-msg--human {
+  grid-template-columns: minmax(0, 1fr) var(--size-avatar);
+}
+
+.fv-msg--human > :first-child {
+  order: 1;
+}
+
+.fv-msg--human .fv-msg-head {
+  flex-direction: row-reverse;
+}
+
+.fv-msg--human .fv-msg-actions {
+  right: auto;
+  left: var(--space-300);
+}
+
+.fv-msg--human .fv-reply-message {
+  width: fit-content;
+  max-width: min(var(--measure), 100% - var(--reply-gutter));
+  margin-left: auto;
+}
+
+.fv-msg--human .fv-message-text,
+.fv-msg--human .fv-reply-message > .fv-reply-quote {
+  max-width: none;
+  margin-left: auto;
+}
+
+.fv-msg--human .fv-reply-actions {
+  left: auto;
+  right: calc(100% + var(--space-200));
+  align-items: flex-end;
+}
+
+.fv-msg--human .fv-attachments {
+  justify-content: flex-end;
+}
+
+@media (hover: none) {
+  .fv-msg--human .fv-reply-message {
+    max-width: var(--measure);
+  }
+
+  .fv-msg--human .fv-reply-actions {
+    justify-content: flex-end;
+  }
+}
+
 .fv-msg--cont {
   padding-top: 0;
 }

@@ -18,6 +18,10 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 - Start fresh WebSockets at an acknowledged durable head instead of replaying channel history (D2). Preserve missed-event replay on reconnect, advance the cursor on replay overflow, and refresh timelines after subscription to close the startup race. Older history remains paginated on scroll.
 
+## 2026-10-26
+
+- Show the person's messages on the right of the timeline (avatar, name, bubble, attachments and Reply mirrored) and keep agent messages on the left. CSS only, in `styles/components.css`.
+
 ## 2026-10-25
 
 - Add per-channel and DM [Focus mode](../backend/focus-mode.md), default off. Quiet turns retain final replies and tool summaries, discard intermediate activity before logging/streaming, and rebuild context without native session reuse. Both headers expose the saved mode; toggles apply to new turns.
