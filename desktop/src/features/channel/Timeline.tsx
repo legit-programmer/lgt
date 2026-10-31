@@ -77,11 +77,39 @@ export function Timeline({ channelId, ctx, anchorSeq, empty }: TimelineProps) {
   return (
     <div className="timeline" ref={scroller} onScroll={onScroll} role="log" aria-live="polite" aria-busy={timeline?.loading}>
       <div className="timeline-inner" ref={content}>
-        {timeline?.hasOlder && timeline.oldestSeq !== null && timeline.oldestSeq > 1 ? (
-          <div className="timeline-older fv-meta">{timeline.loading ? "Loading earlier messages…" : "Scroll up for earlier messages"}</div>
+        {events.length === 0 ? (
+          <TimelineSkeleton rows={4} />
+        ) : timeline?.hasOlder && timeline.oldestSeq !== null && timeline.oldestSeq > 1 ? (
+          timeline.loading
+            ? <TimelineSkeleton rows={2} />
+            : <div className="timeline-older fv-meta">Scroll up for earlier messages</div>
         ) : null}
         {blocks.map((block) => <BlockView key={block.key} block={block} ctx={ctx} />)}
       </div>
+    </div>
+  );
+}
+
+/** Message-shaped placeholders while a page of history loads: agents on the left, the person on the right. */
+const SKELETON_ROWS = [
+  { human: false, lines: ["92%", "64%"] },
+  { human: true, lines: ["46%"] },
+  { human: false, lines: ["78%", "88%", "40%"] },
+  { human: true, lines: ["58%", "30%"] },
+];
+
+function TimelineSkeleton({ rows }: { rows: number }) {
+  return (
+    <div className="timeline-skeleton" role="status" aria-label="Loading earlier messages">
+      {SKELETON_ROWS.slice(0, rows).map((row, index) => (
+        <div key={index} className={row.human ? "skeleton-msg skeleton-msg--human" : "skeleton-msg"} aria-hidden="true">
+          <span className="skeleton-avatar" />
+          <span className="skeleton-name" />
+          <div className="skeleton-lines">
+            {row.lines.map((width, line) => <span key={line} className="skeleton-line" style={{ width }} />)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

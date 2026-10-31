@@ -16,6 +16,7 @@ Add new entries at the top. Use `git log --oneline` for the full history.
 
 ## 2026-10-31
 
+- Show message-shaped skeleton rows while a timeline page loads, instead of the "Loading earlier messages…" text. The pulse is stepped to keep GPU use low.
 - Start fresh WebSockets at an acknowledged durable head instead of replaying channel history (D2). Preserve missed-event replay on reconnect, advance the cursor on replay overflow, and refresh timelines after subscription to close the startup race. Older history remains paginated on scroll.
 
 ## 2026-10-26

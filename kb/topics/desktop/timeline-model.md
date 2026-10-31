@@ -3,7 +3,7 @@ id: 20261008-timeline-model
 title: Timeline model
 tags: [desktop, ui]
 created: 2026-10-08
-updated: 2026-10-25
+updated: 2026-10-31
 related: [20261008-client-state, 20261008-screens, 20261008-event-store, 20261008-run-lifecycle, 20261012-message-replies, 20261025-focus-mode]
 summary: The rules buildTimeline uses to turn a channel's events into blocks — human messages, run segments with tool groups, routing notices, run failures, dividers, notices — and how the Timeline component scrolls and marks read.
 ---
@@ -41,7 +41,7 @@ summary: The rules buildTimeline uses to turn a channel's events into blocks —
 
 - **Pinned to the bottom:** a `ResizeObserver` keeps the view at the bottom while streaming, unless the user has scrolled up.
 - **Composer overlap:** the composer floats over the bottom of the timeline. `ChannelScreen` publishes its height as `--composer-h`, and `.timeline-inner` pads by that amount, so the newest message rests just above it.
-- **Paging:** scrolling near the top loads older pages, and CSS `overflow-anchor` keeps the position steady.
+- **Paging:** scrolling near the top loads older pages, and CSS `overflow-anchor` keeps the position steady. While a page loads, `TimelineSkeleton` shows message-shaped placeholders: four rows for the first page, two above loaded messages for an older page. Agent rows sit on the left and the person's on the right. Their pulse is stepped, not eased, so it doesn't repaint every frame over the window glass.
 - **Anchors:** palette search results open the channel with `anchorSeq`. The store pages back until that seq is loaded, then scrolls to it and highlights it.
 - **Read cursor:** `POST /channels/{id}/read` is sent, with a short debounce, when the newest seq is visible and the window is in view.
 - **Performance:** blocks use `content-visibility: auto` rather than a virtual list.

@@ -502,6 +502,93 @@ button.topbar-quiet:hover {
   padding: var(--space-200);
 }
 
+/* History skeleton: message-shaped placeholders while a page loads. */
+.timeline-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-200);
+  --skeleton-fill: color-mix(in srgb, var(--text-3) 16%, transparent);
+  /* Stepped, not eased: a smooth pulse repaints every frame and keeps the window glass recompositing. */
+  animation: skeleton-pulse 1.4s infinite steps(2, jump-none);
+}
+
+.skeleton-msg {
+  display: grid;
+  grid-template-columns: var(--size-avatar) minmax(0, 1fr);
+  column-gap: var(--space-300);
+  row-gap: var(--space-150, 6px);
+  padding: var(--space-300);
+}
+
+.skeleton-avatar {
+  grid-row: 1 / span 2;
+  width: var(--size-avatar);
+  height: var(--size-avatar);
+  border-radius: 50%;
+  background: var(--skeleton-fill);
+}
+
+.skeleton-name {
+  align-self: center;
+  width: 96px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--skeleton-fill);
+}
+
+.skeleton-lines {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--skeleton-fill);
+}
+
+.skeleton-msg--human {
+  grid-template-columns: minmax(0, 1fr) var(--size-avatar);
+}
+
+.skeleton-msg--human .skeleton-avatar {
+  grid-column: 2;
+}
+
+.skeleton-msg--human .skeleton-name {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  width: 64px;
+}
+
+.skeleton-msg--human .skeleton-lines {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: end;
+  align-items: flex-end;
+  width: min(100%, 420px);
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-skeleton {
+    animation: none;
+  }
+}
+
 .is-anchor {
   box-shadow: 0 0 0 2px var(--accent);
   transition: box-shadow 400ms var(--ease);
