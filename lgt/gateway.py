@@ -1073,12 +1073,13 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
                 if (
                     not isinstance(initial, dict)
                     or set(initial) != {"last_id"}
-                    or type(initial.get("last_id")) is not int
-                    or initial["last_id"] < 0
+                    or (initial["last_id"] is not None and (
+                        type(initial["last_id"]) is not int or initial["last_id"] < 0
+                    ))
                 ):
                     await send_frame({
                         "type": "error",
-                        "error": {"code": "invalid_cursor", "message": "First frame must contain a nonnegative integer last_id."},
+                        "error": {"code": "invalid_cursor", "message": "First frame must contain last_id: a nonnegative integer or null to start from now."},
                     })
                     await websocket.close(code=1008)
                     return
@@ -1088,7 +1089,7 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             except (ValueError, WebSocketDisconnect):
                 await send_frame({
                     "type": "error",
-                    "error": {"code": "invalid_cursor", "message": "First frame must contain a nonnegative integer last_id."},
+                    "error": {"code": "invalid_cursor", "message": "First frame must contain last_id: a nonnegative integer or null to start from now."},
                 })
                 await websocket.close(code=1008)
                 return
@@ -1097,13 +1098,22 @@ def create_app(orch: Any, *, manage_lifespan: bool = True, daemon: Any = None) -
             channel_ids = _channel_ids_for_human(orch)
             replay_cap = orch.settings.replay_cap
             subscription = orch.bus.subscribe(channel_ids, capacity=replay_cap)
-            replay = orch.store.replay(last_id, sorted(channel_ids), replay_cap + 1)
+            # Subscribe and capture the head without yielding so no live event
+            # can fall between establishing the cursor and the subscription.
+            head = orch.store.event_head()
+            from_now = last_id is None
+            if from_now:
+                last_id = head
+            replay = [] if from_now else orch.store.replay(last_id, sorted(channel_ids), replay_cap + 1)
             snapshots = orch.partial_snapshots(channel_ids)
             queues = orch.queue_snapshots(channel_ids)
             state_frames = orch.snapshot_frames(channel_ids) if hasattr(orch, "snapshot_frames") else []
             replay_max = max([last_id, *(event.id for event in replay)])
+            if from_now:
+                await send_frame({"type": "cursor", "last_id": head})
             if len(replay) > replay_cap:
-                await send_frame({"type": "resync", "channels": sorted(channel_ids)})
+                replay_max = head
+                await send_frame({"type": "resync", "channels": sorted(channel_ids), "last_id": head})
             else:
                 for event in replay:
                     await send_frame({"type": "event", "event": _event_payload(event, orch.store)})

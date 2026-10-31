@@ -113,7 +113,7 @@ export function fetchBackendResource(url: string, init?: RequestInit): Promise<R
   return fetch(url, { ...init, headers, redirect: "error" });
 }
 
-export function socketHandshake(lastId: number): { last_id: number; token?: string } {
+export function socketHandshake(lastId: number | null): { last_id: number | null; token?: string } {
   return launchToken ? { last_id: lastId, token: launchToken } : { last_id: lastId };
 }
 

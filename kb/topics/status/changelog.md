@@ -3,7 +3,7 @@ id: 20261008-changelog
 title: Changelog
 tags: [status]
 created: 2026-10-08
-updated: 2026-10-25
+updated: 2026-10-31
 related: [20261008-open-gaps, 20261008-mutable-channel-cwd, 20261008-conventions]
 summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 ---
@@ -13,6 +13,10 @@ summary: Chronological record of what changed in the repo, by commit, so an agen
 > Summary: Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 
 Add new entries at the top. Use `git log --oneline` for the full history.
+
+## 2026-10-31
+
+- Start fresh WebSockets at an acknowledged durable head instead of replaying channel history (D2). Preserve missed-event replay on reconnect, advance the cursor on replay overflow, and refresh timelines after subscription to close the startup race. Older history remains paginated on scroll.
 
 ## 2026-10-25
 

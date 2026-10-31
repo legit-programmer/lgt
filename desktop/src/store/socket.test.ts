@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ setConnection: vi.fn(), toast: vi.fn(), refreshSummaries: vi.fn() }));
-vi.mock("../api/client", () => ({ socketUrl: () => "wss://lgt.example/ws", socketHandshake: () => ({ last_id: 0, token: "device" }) }));
-vi.mock("./workspace", () => ({ useWorkspace: { getState: () => ({ ...mocks, lastEventId: 0 }) } }));
+const mocks = vi.hoisted(() => ({ setConnection: vi.fn(), toast: vi.fn(), refreshSummaries: vi.fn(), lastEventId: null as number | null }));
+vi.mock("../api/client", () => ({ socketUrl: () => "wss://lgt.example/ws", socketHandshake: (lastId: number | null) => ({ last_id: lastId, token: "device" }) }));
+vi.mock("./workspace", () => ({ useWorkspace: { getState: () => ({ ...mocks }) } }));
 
 class FakeSocket {
   static OPEN = 1;
   static sockets: FakeSocket[] = [];
+  send = vi.fn();
+  onopen: (() => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
   close() { /* tests deliver close events explicitly */ }
   constructor() { FakeSocket.sockets.push(this); }
@@ -34,4 +36,23 @@ describe("socket policy failures", () => {
     expect(mocks.refreshSummaries).not.toHaveBeenCalled();
     workspaceSocket.stop();
   });
+});
+
+
+it("starts from now, then reconnects from an acknowledged zero cursor", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("WebSocket", FakeSocket);
+  mocks.lastEventId = null;
+  const { workspaceSocket } = await import("./socket");
+  workspaceSocket.start();
+  const first = FakeSocket.sockets[0];
+  first.onopen?.();
+  expect(JSON.parse(first.send.mock.calls[0][0])).toEqual({ last_id: null, token: "device" });
+  mocks.lastEventId = 0;
+  first.onclose?.({ code: 1013, reason: "retry" });
+  await vi.advanceTimersByTimeAsync(1000);
+  const second = FakeSocket.sockets[1];
+  second.onopen?.();
+  expect(JSON.parse(second.send.mock.calls[0][0])).toEqual({ last_id: 0, token: "device" });
+  workspaceSocket.stop();
 });

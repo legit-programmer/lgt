@@ -3,7 +3,7 @@ id: 20261008-client-state
 title: Client state and socket
 tags: [desktop, api]
 created: 2026-10-08
-updated: 2026-10-12
+updated: 2026-10-31
 related: [20261008-websocket-protocol, 20261008-timeline-model, 20261008-http-actions-ws-state, 20261008-desktop-architecture]
 summary: The Zustand workspace store (what it holds, how frames are applied, timeline paging), the socket's reconnect and resync logic, and the UI store with hash routing.
 ---
@@ -21,8 +21,10 @@ summary: The Zustand workspace store (what it holds, how frames are applied, tim
 | `partials[runId]` | `delta` and `partial_snapshot` frames. Cleared by the run's `message` event or its terminal `run_status`. |
 | `runs[runId]` | `run_status` events plus the `active_runs` of `agent_status`. Gives each run its agent, status and `started_at`. |
 | `queues[channelId]`, `contexts["channel:agent"]`, `usage`, `limits` | The `queue`, `context`, `usage` and `harness_limits` frames |
-| `lastEventId` | The highest event id seen, used as the reconnect cursor |
+| `lastEventId` | Null until the server acknowledges the initial head; then the latest durable cursor used on reconnect (including zero) |
 | `toasts` | Action failures and socket `error` frames |
+
+A `cursor` frame acknowledges the initial head and refreshes any timeline loaded before subscription, closing the startup gap. Replay-overflow `resync` frames also advance the cursor.
 
 `applyFrame` is the single reducer for socket frames, and `store/workspace.test.ts` tests it. A `resync` frame reloads summaries and force-reloads every open timeline.
 

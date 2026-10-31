@@ -49,7 +49,7 @@ Format: `id` — **Title** — `path` — description.
 - `20261008-routing` — **Routing** — `topics/backend/routing.md` — Shared channel ownership, required primary selection, inline handoff/delegation mentions, completion-only dispatch, and explicit result pings to requesting agents.
 - `20261008-run-lifecycle` — **Run lifecycle** — `topics/backend/run-lifecycle.md` — Run statuses and the events they emit, how runner output becomes log events, cancellation, failure normalization, and orphan recovery after a crash.
 - `20261008-runtime-and-config` — **Runtime and configuration** — `topics/backend/runtime-and-config.md` — How the backend starts (entry point, config loading, lock, harness scan, orchestrator start), every setting, and the data directory layout.
-- `20261008-websocket-protocol` — **WebSocket protocol** — `topics/backend/websocket-protocol.md` — The /ws cursor handshake, replay and snapshot order, every server frame type, client commands, and overflow/resync behavior of the event bus.
+- `20261008-websocket-protocol` — **WebSocket protocol** — `topics/backend/websocket-protocol.md` — The /ws start-from-now cursor handshake, reconnect replay and snapshot order, every server frame type, client commands, and overflow/resync behavior of the event bus.
 
 ### desktop
 - `20261008-client-state` — **Client state and socket** — `topics/desktop/client-state.md` — The Zustand workspace store (what it holds, how frames are applied, timeline paging), the socket's reconnect and resync logic, and the UI store with hash routing.
@@ -77,4 +77,4 @@ Format: `id` — **Title** — `path` — description.
 - `20261008-changelog` — **Changelog** — `topics/status/changelog.md` — Chronological record of what changed in the repo, by commit, so an agent can tell what is new and what superseded the original spec.
 - `20261008-known-issues` — **Known issues and caveats** — `topics/status/known-issues.md` — Behaviors and risks that are not bugs in the gap list but will surprise a newcomer — stopped requests staying in context, SDK private access, packaging, bundle size, test and line-ending quirks.
 - `20261014-todo` — **TODO** — `topics/status/todo.md` — Planned improvements the user has asked for that are not yet designed or scheduled, with the observed problem behind each one.
-- `20261008-open-gaps` — **Open gaps** — `topics/status/open-gaps.md` — Summary of the open backend contracts (D2–D6) that block desktop features, what the UI shows meanwhile, and where the full contracts live.
+- `20261008-open-gaps` — **Open gaps** — `topics/status/open-gaps.md` — Summary of the open backend contracts (D3–D6) that block desktop features, what the UI shows meanwhile, and where the full contracts live.

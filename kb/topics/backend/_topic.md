@@ -16,7 +16,7 @@ The Python package in `lgt/`: storage, orchestration, harness adapters, and the 
 - [Attachments](attachments.md) — storage, limits, binding, serving, native inputs.
 - [Gateway HTTP API](gateway-http.md) — origin policy, errors, route map.
 - [Device pairing and remote access](device-pairing.md) — named credentials, QR payloads, listener configuration, and local revocation.
-- [WebSocket protocol](websocket-protocol.md) — handshake, frames, overflow.
+- [WebSocket protocol](websocket-protocol.md) — start-from-now handshake, reconnect replay, frames, overflow.
 - [Live state frames](live-state.md) — summaries, statuses, context, usage, limits.
 
 - [Desktop daemon lifecycle](desktop-daemon.md) - discovery, detached launch, authentication, shutdown.

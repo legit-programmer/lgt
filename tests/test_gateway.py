@@ -713,7 +713,7 @@ def test_websocket_requests_resync_when_replay_exceeds_cap(gateway_client):
     with client.websocket_connect("/ws") as websocket:
         websocket.send_json({"last_id": 0})
         resync = websocket.receive_json()
-        assert resync == {"type": "resync", "channels": [channel_id]}
+        assert resync == {"type": "resync", "channels": [channel_id], "last_id": orch.store.event_head()}
 
 
 def test_lifespan_is_dependency_injected(gateway_client):
@@ -740,3 +740,56 @@ def test_lifespan_can_be_disabled(tmp_path):
     assert orch.started is False
     assert orch.closed is False
     orch.store.close()
+
+
+@pytest.mark.parametrize("history_size", [0, 3])
+def test_websocket_from_now_skips_history_and_reconnects(gateway_client, history_size):
+    client, orch = gateway_client
+    channel_id = orch.store.list_channels(orch.human_id)[0].channel_id
+    orch.settings.replay_cap = 2
+    for index in range(history_size):
+        orch.store.append_event(channel_id, "message", "human", orch.human_id,
+                                {"text": f"old {index}", "mentions": []})
+    head = orch.store.event_head()
+    orch.snapshots = [{"type": "partial_snapshot", "run_id": "r1", "channel_id": channel_id, "text": "working"}]
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"last_id": None})
+        assert websocket.receive_json() == {"type": "cursor", "last_id": head}
+        assert websocket.receive_json()["type"] == "partial_snapshot"
+        websocket.send_json({"type": "send_message", "channel_id": channel_id, "text": "live"})
+        live = websocket.receive_json()
+        assert live["type"] == "event"
+        assert live["event"]["payload"]["text"] == "live"
+        assert live["event"]["id"] > head
+    # Reconnect from the acknowledged head, even if no live frame was received.
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"last_id": head})
+        assert websocket.receive_json() == live
+
+
+@pytest.mark.parametrize("cursor", [True, "now", -1, 1.5])
+def test_websocket_rejects_invalid_head_cursors(gateway_client, cursor):
+    client, _ = gateway_client
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"last_id": cursor})
+        assert websocket.receive_json()["error"]["code"] == "invalid_cursor"
+
+
+def test_websocket_from_now_keeps_events_published_during_snapshots(gateway_client):
+    client, orch = gateway_client
+    channel_id = orch.store.list_channels(orch.human_id)[0].channel_id
+    head = orch.store.event_head()
+
+    def snapshots(channel_ids):
+        event = orch.store.append_event(channel_id, "message", "human", orch.human_id,
+                                        {"text": "during connection", "mentions": []})
+        orch.bus.publish({"type": "event", "event": event.to_dict()})
+        return []
+
+    orch.partial_snapshots = snapshots
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"last_id": None})
+        assert websocket.receive_json() == {"type": "cursor", "last_id": head}
+        live = websocket.receive_json()
+        assert live["event"]["id"] > head
+        assert live["event"]["payload"]["text"] == "during connection"

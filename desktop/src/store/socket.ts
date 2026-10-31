@@ -3,8 +3,8 @@ import type { ClientCommand, ServerFrame } from "../api/types";
 import { useWorkspace } from "./workspace";
 
 /**
- * One WebSocket per window. The first frame is the replay cursor; the server
- * replays durable events after it, then sends state snapshots. A `resync`
+ * One WebSocket per window. A null initial cursor starts at the current head;
+ * reconnects replay durable events after the acknowledged cursor. A `resync`
  * frame or a 1013 close means the live buffer overflowed: summaries and open
  * timelines are reloaded over HTTP and the socket reconnects from the cursor.
  */
@@ -44,11 +44,13 @@ class WorkspaceSocket {
     }
     this.socket = socket;
     socket.onopen = () => {
+      if (this.socket !== socket) return;
       socket.send(JSON.stringify(socketHandshake(useWorkspace.getState().lastEventId)));
       this.retry = 0;
       useWorkspace.getState().setConnection("open");
     };
     socket.onmessage = (message) => {
+      if (this.socket !== socket) return;
       let frame: ServerFrame;
       try {
         frame = JSON.parse(message.data as string) as ServerFrame;

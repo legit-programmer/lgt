@@ -79,7 +79,7 @@ Encode the `pairing` object as JSON in the QR code. The credential has the prefi
 
 The QR grants access directly and is not single-use or expiring. The raw credential is returned once and only its SHA-256 hash is persisted in `devices`. Listing and renaming never expose it. A name is trimmed and must contain 1–100 printable characters. Missing remote-listening or advertised-address configuration returns `409 pairing_unavailable` without creating a device.
 
-Every HTTP request, including media, sends the credential in the Authorization header. WebSockets send `{"last_id":0,"token":"<device-credential>"}` as the first frame. Credentials never go into URLs. Client implementations should disable redirects for authenticated fetches and send credentials only to the selected backend origin.
+Every HTTP request, including media, sends the credential in the Authorization header. WebSockets initially send `{"last_id":null,"token":"<device-credential>"}` as the first frame. Credentials never go into URLs. Client implementations should disable redirects for authenticated fetches and send credentials only to the selected backend origin.
 
 `GET /devices` returns public device records, including revoked ones. `PATCH /devices/{id}` accepts `{"name":"Work phone"}`. `POST /devices/{id}/revoke` returns the device with `revoked_at` set; repeating it is idempotent. Revocation immediately rejects subsequent HTTP requests and WebSocket handshakes and closes every existing socket for that device with code 1008, including idle sockets. Other devices stay connected. Previously accepted workspace actions and agent runs continue. Credentials and revocations survive restarts; `last_used_at` updates at most once per minute on authenticated HTTP requests and socket handshakes.
 
@@ -220,10 +220,14 @@ Run token counters are `tokens_in`, `tokens_out`, `tokens_cached_in`, `tokens_ca
 The socket path is `/ws`. In daemon mode the first client frame contains a cursor and launch or device token:
 
 ```json
-{"last_id": 0, "token": "<launch-or-device-token>"}
+{"last_id": null, "token": "<launch-or-device-token>"}
 ```
 
 Manual loopback mode omits `token` and sends only `last_id`.
+
+Use `last_id: null` for a fresh connection: the server subscribes and captures the current durable head without yielding, then sends `{"type":"cursor","last_id":n}` before snapshots and live events, without replaying history. The client retains that cursor even when it is zero. Refresh any timelines loaded before this acknowledgment to close the HTTP/socket startup gap; history uses the paginated events endpoint.
+
+On reconnect, send the last acknowledged integer `last_id` to replay only missed events. Explicit `last_id: 0` still requests replay from the beginning for older clients. When replay exceeds `replay_cap`, `resync` includes `last_id` at the captured head; retain it and reload state over HTTP. Live queue overflow still sends `resync` without a cursor and closes with 1013, preserving missed-event replay on reconnect.
 
 The server captures replay rows and partial snapshots before sending frames. Durable events have this envelope:
 
@@ -237,7 +241,8 @@ The event object also includes its timestamp, author, run, chain, and hop fields
 {"type": "delta", "run_id": "...", "channel_id": "...", "text": "chunk"}
 {"type": "partial_snapshot", "run_id": "...", "channel_id": "...", "text": "partial response"}
 {"type": "queue", "channel_id": "...", "items": [{"queue_id": 1, "event_seq": 4, "agent_id": "...", "state": "awaiting_agent", "created_at": "..."}]}
-{"type": "resync", "channels": ["..."]}
+{"type": "cursor", "last_id": 123}
+{"type": "resync", "channels": ["..."], "last_id": 123}
 {"type": "error", "error": {"code": "invalid_command", "message": "..."}}
 ```
 

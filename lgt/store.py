@@ -692,6 +692,13 @@ class Store:
             raise KeyError((channel_id, seq))
         return _event(row)
 
+    def event_head(self) -> int:
+        """Current durable cursor, including ids retained after log compaction."""
+        return self.conn.execute(
+            "SELECT max(COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'events'), 0), "
+            "COALESCE((SELECT max(id) FROM events), 0))"
+        ).fetchone()[0]
+
     def replay(self, last_id: int, channel_ids: list[str], limit: int) -> list[Event]:
         if not channel_ids or limit <= 0:
             return []

@@ -456,7 +456,8 @@ export type ServerFrame =
   | { type: "harness_limits"; harness: string; limits: HarnessLimits | null }
   | ({ type: "me" } & Profile)
   | ({ type: "agent" } & Agent)
-  | { type: "resync"; channels: string[] }
+  | { type: "cursor"; last_id: number }
+  | { type: "resync"; channels: string[]; last_id?: number }
   | { type: "error"; error: { code: string; message: string } };
 
 export type ClientCommand =

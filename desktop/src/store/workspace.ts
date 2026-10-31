@@ -40,7 +40,7 @@ interface WorkspaceState {
   connection: Connection;
   ready: boolean;
   bootError: string | null;
-  lastEventId: number;
+  lastEventId: number | null;
 
   me: Profile | null;
   agents: Record<string, Agent>;
@@ -109,7 +109,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   connection: "connecting",
   ready: false,
   bootError: null,
-  lastEventId: 0,
+  lastEventId: null,
   me: null,
   agents: {},
   statuses: {},
@@ -159,7 +159,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       }
       case "event": {
         const event = frame.event;
-        if (event.kind === "artefact_changed" && event.id > get().lastEventId) {
+        if (event.kind === "artefact_changed" && event.id > (get().lastEventId ?? 0)) {
           set((state) => ({ artefactRevision: state.artefactRevision + 1 }));
           const ui = useUi.getState();
           const selected = ui.selectedArtefact;
@@ -172,7 +172,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           }
         }
         set((state) => {
-          const next: Partial<WorkspaceState> = { lastEventId: Math.max(state.lastEventId, event.id) };
+          const next: Partial<WorkspaceState> = { lastEventId: Math.max(state.lastEventId ?? 0, event.id) };
           const timeline = state.timelines[event.channel_id];
           if (timeline) {
             next.timelines = { ...state.timelines, [event.channel_id]: mergeEvents(timeline, [event], false) };
@@ -261,7 +261,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         get().upsertAgent(agent);
         return;
       }
+      case "cursor":
+        set({ lastEventId: frame.last_id });
+        // A timeline may have loaded before the socket subscribed. Refresh its
+        // latest page after the head is established to close that startup gap.
+        for (const channelId of Object.keys(get().timelines)) void get().loadTimeline(channelId, true);
+        return;
       case "resync":
+        if (frame.last_id !== undefined) set({ lastEventId: frame.last_id });
         void get().refreshSummaries();
         for (const channelId of frame.channels) {
           if (get().timelines[channelId]) void get().loadTimeline(channelId, true);

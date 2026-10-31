@@ -14,7 +14,7 @@ Skill discovery and invocation are implemented for Codex and Claude through `GET
 
 Inline agent transfers are implemented through `<@agent_id:handoff>` and `<@agent_id:delegation>` in completed agent messages. The backend owns dispatch and ownership; the desktop renders known targets as `@handle`. See [agent transfers](../docs/backend-reference.md#channel-changes).
 
-These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. D1 is implemented. D2 through D6 remain open, and the app omits unsupported controls.
+These gaps came up while wiring the Tauri app in [`desktop/`](../desktop/) to a live backend. D1 and D2 are implemented. D3 through D6 remain open, and the app omits unsupported controls.
 
 ### D1. Daemon handshake (implemented)
 
@@ -30,13 +30,9 @@ Tray controls, notifications, start at login, and automatic restart of an incomp
 
 Device pairing now reuses the gateway with named persistent credentials, local-only administration, and immediate socket revocation. The host desktop displays QR codes in Settings → Devices. A native mobile scanner remains client work; see [the pairing contract](../docs/backend-reference.md#device-pairing-and-remote-access).
 
-### D2. WebSocket head cursor
+### D2. WebSocket head cursor — implemented
 
-The first connection has no way to learn the current global event id, so it sends `{"last_id": 0}`. The server then replays the whole history, or sends `resync` once the history exceeds `replay_cap`. The client ignores replayed events for timelines that aren't open, which is correct but wasteful at startup.
-
-Needed, either of:
-- `GET /events/cursor` returning `{"last_id": n}`;
-- a `cursor` field in the post-replay snapshot frames, so a client can start from "now".
+Fresh connections send `{"last_id": null}`. The backend subscribes and acknowledges the current head with a `cursor` frame without historical replay. The desktop refreshes already loaded timelines after acknowledgment to close the startup race, and retains the cursor for missed-event replay on reconnect. Channel history loads in pages of 100, with earlier pages requested on scroll. Replay overflow supplies a head cursor with `resync` so subsequent reconnects do not repeat the same overflow.
 
 ### D3. Tool durations from the Claude adapter
 
